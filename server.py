@@ -162,6 +162,17 @@ CALENDAR_DAYS = int(config.get("calendar_days", 7))
 NEWS_URL = config.get("news_url", "https://www.tagesschau.de/infoservices/alle-meldungen-100~rss2.xml")
 NEWS_SOURCE_NAME = config.get("news_source_name", "Tagesschau")
 
+# Mail backend: "applescript" (default, macOS Mail.app) or "imap"
+# (cross-platform). IMAP needs IMAP_HOST + IMAP_USER (config or env)
+# and IMAP_PASSWORD (env only).
+MAIL_BACKEND = config.get("mail_backend", "applescript")
+IMAP_HOST = config.get("imap_host", "")
+IMAP_USER = config.get("imap_user", "")
+IMAP_PORT = int(config.get("imap_port", 993))
+IMAP_SSL = bool(config.get("imap_ssl", True))
+IMAP_FOLDER = config.get("imap_folder", "INBOX")
+IMAP_PASSWORD = os.environ.get("IMAP_PASSWORD", "").strip()
+
 ai = anthropic.AsyncAnthropic(api_key=ANTHROPIC_API_KEY)
 # Global httpx client is for the HOT path: ElevenLabs TTS in _tts_one(),
 # which fires multiple requests per response (one per text chunk). Sharing
@@ -196,6 +207,7 @@ async def _lifespan(_app):  # type: ignore[no-untyped-def]  # AsyncGenerator
 
 import browser_tools  # noqa: E402  (depends on app symbols above)
 import google_calendar_tools  # noqa: E402
+import imap_mail_tools  # noqa: E402
 import mail_tools  # noqa: E402
 import notes_tools  # noqa: E402
 import screen_capture  # noqa: E402
@@ -615,7 +627,19 @@ async def execute_action(action: dict) -> str:
 
     elif t == "MAIL":
         loop = asyncio.get_event_loop()
-        result = await loop.run_in_executor(None, mail_tools.get_unread_mails, 5)
+        if MAIL_BACKEND == "imap":
+            if not (IMAP_HOST and IMAP_USER and IMAP_PASSWORD):
+                return ("IMAP-Backend ausgewaehlt aber unvollstaendig konfiguriert. "
+                        "Pruefe imap_host / imap_user in config.json und IMAP_PASSWORD in .env.")
+            result = await loop.run_in_executor(
+                None,
+                lambda: imap_mail_tools.get_unread_mails_imap(
+                    host=IMAP_HOST, user=IMAP_USER, password=IMAP_PASSWORD,
+                    port=IMAP_PORT, use_ssl=IMAP_SSL, folder=IMAP_FOLDER, max_count=5,
+                ),
+            )
+        else:
+            result = await loop.run_in_executor(None, mail_tools.get_unread_mails, 5)
         if result == "KEINE_MAILS":
             return "KEINE_MAILS"
         return result

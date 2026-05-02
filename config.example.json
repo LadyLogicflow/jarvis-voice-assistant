@@ -22,6 +22,14 @@
   "news_source_name": "Tagesschau",
   "persist_conversations": true,
 
+  "_comment_mail": "Mail backend. 'applescript' uses macOS Mail.app (default). 'imap' uses any IMAP server (cross-platform); IMAP_PASSWORD goes into .env.",
+  "mail_backend": "applescript",
+  "imap_host": "",
+  "imap_user": "",
+  "imap_port": 993,
+  "imap_ssl": true,
+  "imap_folder": "INBOX",
+
   "_comment_clap": "Clap-trigger sensitivity (scripts/clap-trigger.py).",
   "clap_threshold": 0.15,
   "clap_min_gap": 0.1,
