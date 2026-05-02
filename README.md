@@ -55,8 +55,9 @@ You (speak) → Chrome Browser (Web Speech API) → FastAPI Server (local)
 
 ## Prerequisites
 
-- **Windows 10/11**
-- **Python 3.10+**
+- **Windows 10/11** or **macOS 12+** (an Apple Silicon path is in `SETUP.md`)
+- **Python 3.10 or newer** — 3.9 is end-of-life; google-auth and urllib3 will warn,
+  and pinned features will start breaking. Recommended: 3.12.
 - **Google Chrome**
 - **[Claude Code](https://claude.ai/code)** (recommended for setup)
 

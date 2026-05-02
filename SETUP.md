@@ -17,7 +17,26 @@ Diese Anleitung beschreibt den Mac-Setup. Eine Windows-Variante (PowerShell) ist
 - **macOS 12+** (Apple Silicon oder Intel)
 - **Google Chrome** (fuer Spracheingabe + Jarvis UI)
 - **Homebrew** (Installer: https://brew.sh)
-- **Python 3.10+** (`brew install python@3.12`)
+- **Python 3.10 oder neuer** — Apples Standard-Python (3.9.x) reicht NICHT.
+  Google-Bibliotheken warnen, urllib3 warnt, kuenftige Updates werden brechen.
+
+  Pruefe deine Version:
+  ```bash
+  python3 --version
+  ```
+
+  Falls < 3.10:
+  ```bash
+  brew install python@3.12
+  # ab jetzt explizit python3.12 verwenden:
+  python3.12 -m pip install -r requirements.txt
+  python3.12 -m playwright install chromium
+  python3.12 server.py
+  ```
+
+  Optional `python3` per `~/.zprofile` auf 3.12 zeigen lassen
+  (`alias python3=/opt/homebrew/bin/python3.12` oder via `ln -s`),
+  damit auch die Skripte unter `scripts/` automatisch die neue Version nehmen.
 - **Claude Code** installiert
 
 Pip-Pakete und Browser-Treiber werden automatisch von Claude Code installiert.
