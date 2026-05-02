@@ -125,8 +125,10 @@ from contextlib import asynccontextmanager
 @asynccontextmanager
 async def _lifespan(_app):
     """Replaces the deprecated @app.on_event('startup'/'shutdown') hooks.
-    Spawns the morning-brief scheduler on startup and cancels it on
-    shutdown so uvicorn can exit cleanly."""
+    - Loads weather + tasks (was a blocking module-level call before)
+    - Spawns the morning-brief scheduler
+    - Cancels the scheduler on shutdown so uvicorn can exit cleanly"""
+    await refresh_data()
     task = asyncio.create_task(morning_brief_scheduler())
     print(f"[jarvis] Steuerrecht-Scheduler gestartet (taeglich um {MORNING_HOUR}:00 Uhr)", flush=True)
     try:
@@ -150,13 +152,14 @@ import google_calendar_tools
 import notes_tools
 
 
-def get_weather_sync():
-    """Fetch current weather + today's hourly forecast from wttr.in."""
-    import urllib.request
+async def fetch_weather():
+    """Fetch current weather + today's hourly forecast from wttr.in (async)."""
     try:
-        req = urllib.request.Request(f"https://wttr.in/{CITY}?format=j1", headers={"User-Agent": "curl"})
-        resp = urllib.request.urlopen(req, timeout=5)
-        data = json.loads(resp.read())
+        async with httpx.AsyncClient(timeout=5) as client:
+            resp = await client.get(f"https://wttr.in/{CITY}?format=j1",
+                                    headers={"User-Agent": "curl"})
+            resp.raise_for_status()
+            data = resp.json()
         c = data["current_condition"][0]
         result = {
             "temp": c["temp_C"],
@@ -166,7 +169,6 @@ def get_weather_sync():
             "wind_kmh": c["windspeedKmph"],
             "forecast_today": [],
         }
-        # Stundenvorhersage für die nächsten Stunden (alle 3h, nur zukünftige)
         now_hour = datetime.datetime.now().hour
         for h in data["weather"][0]["hourly"]:
             h_hour = int(h["time"]) // 100
@@ -179,12 +181,13 @@ def get_weather_sync():
                 })
         return result
     except Exception as e:
-        print(f"[jarvis] get_weather_sync failed: {type(e).__name__}: {e}", flush=True)
+        print(f"[jarvis] fetch_weather failed: {type(e).__name__}: {e}", flush=True)
         return None
 
 
 def get_tasks_sync():
-    """Read open tasks from Obsidian (sync)."""
+    """Read open tasks from Obsidian (sync). Cheap file IO; called via
+    run_in_executor from async refresh_data()."""
     if not TASKS_FILE:
         return []
     try:
@@ -197,17 +200,26 @@ def get_tasks_sync():
         return []
 
 
-def refresh_data():
-    """Refresh weather and tasks."""
+async def refresh_data():
+    """Refresh weather (async HTTP) and tasks (file IO via executor) without
+    blocking the event loop."""
     global WEATHER_INFO, TASKS_INFO
-    WEATHER_INFO = get_weather_sync()
-    TASKS_INFO = get_tasks_sync()
+    loop = asyncio.get_event_loop()
+    weather, tasks = await asyncio.gather(
+        fetch_weather(),
+        loop.run_in_executor(None, get_tasks_sync),
+    )
+    WEATHER_INFO = weather
+    TASKS_INFO = tasks
     print(f"[jarvis] Wetter: {WEATHER_INFO}", flush=True)
     print(f"[jarvis] Tasks: {len(TASKS_INFO)} geladen", flush=True)
 
+
 WEATHER_INFO = ""
 TASKS_INFO = []
-refresh_data()
+# refresh_data() is called once at lifespan startup and again on activate;
+# no module-level call so importing server.py stays cheap (no blocking
+# 5-second wttr.in round-trip just to load the module).
 
 # Steuerrecht morning brief cache
 STEUER_BRIEF = ""
@@ -527,7 +539,7 @@ async def process_message(session_id: str, user_text: str, ws: WebSocket):
             print(f"[jarvis] Doppelbegrüßung blockiert (Cooldown {GREETING_COOLDOWN}s)", flush=True)
             return
         _last_greeting_time = now
-        refresh_data()
+        await refresh_data()
         await refresh_steuer_recent()
 
     conversations[session_id].append({"role": "user", "content": user_text})
