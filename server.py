@@ -599,8 +599,17 @@ async def process_message(session_id: str, user_text: str, ws: WebSocket):
                 await speak(action_result, ws, display=action_result)
             return
 
-        if action["type"] == "MAIL" and action_result == "KEINE_MAILS":
-            msg = f"Ihr Posteingang ist leer, {USER_ADDRESS}. Eine seltene Erscheinung."
+        # Empty-result sentinels: every "nothing here" tool returns a known
+        # constant. Skip the LLM round-trip and speak a hardcoded butler line
+        # instead. Same shape for MAIL / CALENDAR / TASKS so behavior stays
+        # consistent across actions.
+        _EMPTY_REPLIES = {
+            "KEINE_MAILS":   f"Ihr Posteingang ist leer, {USER_ADDRESS}. Eine seltene Erscheinung.",
+            "KEINE_TERMINE": f"Ihr Kalender ist die naechsten Tage frei, {USER_ADDRESS}. Erholung in Sicht.",
+            "KEINE_TASKS":   f"Keine offenen Aufgaben, {USER_ADDRESS}. Eine angenehme Lage.",
+        }
+        if isinstance(action_result, str) and action_result in _EMPTY_REPLIES:
+            msg = _EMPTY_REPLIES[action_result]
             conversations[session_id].append({"role": "assistant", "content": msg})
             await speak(msg, ws, display=msg)
             return
