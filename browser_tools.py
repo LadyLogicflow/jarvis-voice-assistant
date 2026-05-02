@@ -141,9 +141,8 @@ async def fetch_news() -> str:
             lines.append(f"• {title}: {desc}" if desc else f"• {title}")
         return "Tagesschau Aktuelle Meldungen:\n" + "\n".join(lines)
     except Exception as e:
+        print(f"[jarvis] fetch_news failed: {type(e).__name__}: {e}", flush=True)
         return f"News konnten nicht geladen werden: {e}"
-    finally:
-        pass  # Keep page open so user can see it
 
 
 async def open_url(url: str):
