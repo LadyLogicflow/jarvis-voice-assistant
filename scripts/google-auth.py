@@ -15,6 +15,11 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 
 PORT = 54321
 
+# google-auth-oauthlib refuses non-HTTPS redirect_uri values by default.
+# This is intentionally lenient ONLY for the one-shot, interactive
+# authorization flow on localhost (loopback adress, no network exposure)
+# and ONLY for this script. NEVER set this variable on a long-running
+# server or anything reachable from outside this machine.
 os.environ["OAUTHLIB_INSECURE_TRANSPORT"] = "1"
 
 flow = InstalledAppFlow.from_client_secrets_file(CREDS_PATH, SCOPES)
