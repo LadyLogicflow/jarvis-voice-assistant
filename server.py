@@ -6,11 +6,13 @@ speaks with ElevenLabs, controls browser with Playwright.
 
 import asyncio
 import base64
+import datetime
 import json
 import os
 import re
+import subprocess
 import time
-import datetime
+from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
 
@@ -119,8 +121,6 @@ MORNING_HOUR = config.get("morning_hour", 7)
 ai = anthropic.AsyncAnthropic(api_key=ANTHROPIC_API_KEY)
 http = httpx.AsyncClient(timeout=30)
 
-from contextlib import asynccontextmanager
-
 
 @asynccontextmanager
 async def _lifespan(_app):
@@ -141,15 +141,15 @@ async def _lifespan(_app):
             pass
 
 
-app = FastAPI(lifespan=_lifespan)
+import browser_tools  # noqa: E402  (depends on app symbols above)
+import google_calendar_tools  # noqa: E402
+import mail_tools  # noqa: E402
+import notes_tools  # noqa: E402
+import screen_capture  # noqa: E402
+import steuer_news  # noqa: E402
+import todoist_tools  # noqa: E402
 
-import browser_tools
-import screen_capture
-import mail_tools
-import steuer_news
-import todoist_tools
-import google_calendar_tools
-import notes_tools
+app = FastAPI(lifespan=_lifespan)
 
 
 async def fetch_weather():
@@ -664,13 +664,11 @@ GREETING_COOLDOWN = 10.0   # Sekunden zwischen zwei Begrüßungen (verhindert Do
 
 
 def _hide_chrome():
-    import subprocess
     script = 'tell application "System Events" to set visible of process "Google Chrome" to false'
     subprocess.Popen(["osascript", "-e", script])
 
 
 def _show_chrome():
-    import subprocess
     script = 'tell application "Google Chrome" to activate'
     subprocess.Popen(["osascript", "-e", script])
 
