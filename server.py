@@ -73,7 +73,7 @@ def get_easter(year: int) -> datetime.date:
     return datetime.date(year, month, day)
 
 
-def get_nrw_holidays(year: int) -> dict:
+def get_nrw_holidays(year: int) -> dict[datetime.date, str]:
     """Return the public holidays for NRW (Germany / North Rhine-Westphalia).
 
     Holiday names are intentionally kept in German because they are part
@@ -97,7 +97,7 @@ def get_nrw_holidays(year: int) -> dict:
     return holidays
 
 
-def check_free_day() -> tuple:
+def check_free_day() -> tuple[bool, str]:
     """Check whether today is a weekend day or a public holiday.
 
     Returns (True, German-label) or (False, '')."""
@@ -163,7 +163,7 @@ http = httpx.AsyncClient(timeout=30)
 
 
 @asynccontextmanager
-async def _lifespan(_app):
+async def _lifespan(_app):  # type: ignore[no-untyped-def]  # AsyncGenerator
     """Replaces the deprecated @app.on_event('startup'/'shutdown') hooks.
     - Loads weather + tasks (was a blocking module-level call before)
     - Spawns the morning-brief scheduler
@@ -195,8 +195,9 @@ import todoist_tools  # noqa: E402
 app = FastAPI(lifespan=_lifespan)
 
 
-async def fetch_weather():
-    """Fetch current weather + today's hourly forecast from wttr.in (async)."""
+async def fetch_weather() -> dict | None:
+    """Fetch current weather + today's hourly forecast from wttr.in (async).
+    Returns None on any failure."""
     try:
         async with httpx.AsyncClient(timeout=5) as client:
             resp = await client.get(f"https://wttr.in/{CITY}?format=j1",
@@ -228,7 +229,7 @@ async def fetch_weather():
         return None
 
 
-def get_tasks_sync():
+def get_tasks_sync() -> list[str]:
     """Read open tasks from Obsidian (sync). Cheap file IO; called via
     run_in_executor from async refresh_data()."""
     if not TASKS_FILE:
@@ -246,7 +247,7 @@ def get_tasks_sync():
 _last_refresh_time: float = 0.0
 
 
-async def refresh_data(force: bool = False):
+async def refresh_data(force: bool = False) -> None:
     """Refresh weather (async HTTP) and tasks (file IO via executor) without
     blocking the event loop. Skips refresh when called again within
     `_REFRESH_COOLDOWN` seconds, unless `force=True`."""
@@ -283,7 +284,7 @@ STEUER_RECENT = ""
 STEUER_RECENT_DATE = ""
 
 
-async def refresh_steuer_recent():
+async def refresh_steuer_recent() -> None:
     """Fetch and cache the last 3 days of BFH news."""
     global STEUER_RECENT, STEUER_RECENT_DATE
     today = datetime.date.today().isoformat()
@@ -298,7 +299,7 @@ async def refresh_steuer_recent():
         STEUER_RECENT = ""
 
 
-async def refresh_steuer_brief():
+async def refresh_steuer_brief() -> None:
     """Fetch steuerrecht news and summarize with Claude. Updates global cache."""
     global STEUER_BRIEF, STEUER_BRIEF_DATE
     log.info("Steuerrecht-Brief wird abgerufen...")
@@ -325,7 +326,7 @@ async def refresh_steuer_brief():
         STEUER_BRIEF = ""
 
 
-async def morning_brief_scheduler():
+async def morning_brief_scheduler() -> None:
     """Background task: fetch steuerrecht brief daily at MORNING_HOUR."""
     triggered_today = ""
     while True:
@@ -354,7 +355,7 @@ def _append_message(session_id: str, role: str, content: str) -> None:
     if len(conv) > MAX_CONVERSATION_HISTORY:
         del conv[: len(conv) - MAX_CONVERSATION_HISTORY]
 
-def build_system_prompt():
+def build_system_prompt() -> str:
     weather_block = ""
     if WEATHER_INFO:
         w = WEATHER_INFO
@@ -436,11 +437,11 @@ WENN {USER_NAME} "Jarvis activate" sagt:
 ==="""
 
 
-def get_system_prompt():
+def get_system_prompt() -> str:
     return build_system_prompt().replace("{time}", time.strftime("%H:%M"))
 
 
-def extract_action(text: str):
+def extract_action(text: str) -> tuple[str, dict | None]:
     match = ACTION_PATTERN.search(text)
     if match:
         clean = text[:match.start()].strip()
@@ -448,7 +449,7 @@ def extract_action(text: str):
     return text, None
 
 
-def _split_text(text: str) -> list:
+def _split_text(text: str) -> list[str]:
     """Split text into <=250-char chunks at sentence boundaries."""
     if len(text) <= 250:
         return [text]
@@ -590,7 +591,7 @@ async def execute_action(action: dict) -> str:
     return ""
 
 
-async def process_message(session_id: str, user_text: str, ws: WebSocket):
+async def process_message(session_id: str, user_text: str, ws: WebSocket) -> None:
     """Process message and send responses via WebSocket."""
     global _last_greeting_time
 
@@ -715,17 +716,17 @@ _last_activate_time: float = 0.0
 _last_greeting_time: float = 0.0
 
 
-def _hide_chrome():
+def _hide_chrome() -> None:
     script = 'tell application "System Events" to set visible of process "Google Chrome" to false'
     subprocess.Popen(["osascript", "-e", script])
 
 
-def _show_chrome():
+def _show_chrome() -> None:
     script = 'tell application "Google Chrome" to activate'
     subprocess.Popen(["osascript", "-e", script])
 
 
-def require_jarvis_token(x_jarvis_token: str | None = Header(default=None)):
+def require_jarvis_token(x_jarvis_token: str | None = Header(default=None)) -> None:
     """FastAPI dependency. No-op when JARVIS_AUTH_TOKEN is unset, otherwise
     rejects requests without a matching `X-Jarvis-Token` header."""
     if not JARVIS_AUTH_TOKEN:
@@ -735,21 +736,21 @@ def require_jarvis_token(x_jarvis_token: str | None = Header(default=None)):
 
 
 @app.get("/hide", dependencies=[Depends(require_jarvis_token)])
-async def hide_endpoint():
+async def hide_endpoint() -> dict:
     loop = asyncio.get_event_loop()
     await loop.run_in_executor(None, _hide_chrome)
     return {"ok": True}
 
 
 @app.get("/show", dependencies=[Depends(require_jarvis_token)])
-async def show_endpoint():
+async def show_endpoint() -> dict:
     loop = asyncio.get_event_loop()
     await loop.run_in_executor(None, _show_chrome)
     return {"ok": True}
 
 
 @app.get("/activate", dependencies=[Depends(require_jarvis_token)])
-async def activate_endpoint():
+async def activate_endpoint() -> dict:
     """Wake-up endpoint called by the clap-trigger.
 
     Debounced to at most once per ACTIVATE_COOLDOWN seconds. The wake
@@ -776,7 +777,7 @@ async def activate_endpoint():
 
 
 @app.websocket("/ws")
-async def websocket_endpoint(ws: WebSocket):
+async def websocket_endpoint(ws: WebSocket) -> None:
     await ws.accept()
     session_id = str(id(ws))
     # Alte Verbindungen aus der Liste entfernen (verhindert Mehrfach-Wake)
@@ -817,7 +818,7 @@ app.mount("/static", StaticFiles(directory=os.path.join(os.path.dirname(__file__
 
 
 @app.get("/")
-async def serve_index():
+async def serve_index() -> FileResponse:
     return FileResponse(os.path.join(os.path.dirname(__file__), "frontend", "index.html"))
 
 

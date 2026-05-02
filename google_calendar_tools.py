@@ -18,7 +18,7 @@ TOKEN_PATH = os.path.join(os.path.dirname(__file__), "token.json")
 CREDS_PATH = os.path.join(os.path.dirname(__file__), "credentials.json")
 
 
-def _get_service():
+def _get_service():  # type: ignore[no-untyped-def]  # googleapiclient Resource
     creds = None
     if os.path.exists(TOKEN_PATH):
         creds = Credentials.from_authorized_user_file(TOKEN_PATH, SCOPES)
