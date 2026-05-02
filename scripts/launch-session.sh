@@ -5,6 +5,21 @@ set -e
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 WORKSPACE="$(dirname "$SCRIPT_DIR")"
 
+# Load .env if present so JARVIS_AUTH_TOKEN is available to both the
+# server we launch and the curl calls below.
+if [ -f "$WORKSPACE/.env" ]; then
+    set -a
+    # shellcheck disable=SC1090,SC1091
+    . "$WORKSPACE/.env"
+    set +a
+fi
+
+# Build curl auth args once (empty when JARVIS_AUTH_TOKEN is unset).
+CURL_AUTH=()
+if [ -n "${JARVIS_AUTH_TOKEN:-}" ]; then
+    CURL_AUTH=(-H "X-Jarvis-Token: $JARVIS_AUTH_TOKEN")
+fi
+
 # 1. Jarvis-Server starten (falls nicht läuft) — kein Terminal-Fenster
 if ! lsof -i tcp:8340 -sTCP:LISTEN -t &>/dev/null; then
     nohup /usr/bin/python3 "$WORKSPACE/server.py" \
@@ -16,7 +31,7 @@ fi
 if pgrep -f "localhost:8340" > /dev/null 2>&1; then
     # Jarvis läuft bereits — Fenster nach vorne + Wake-Signal an Frontend
     osascript -e 'tell application "Google Chrome" to activate' 2>/dev/null
-    curl -s http://localhost:8340/activate > /dev/null 2>&1
+    curl -s "${CURL_AUTH[@]}" http://localhost:8340/activate > /dev/null 2>&1
     echo "[jarvis] Wake-Signal gesendet."
 else
     # Chrome mit Autoplay-Flag starten
@@ -30,7 +45,7 @@ else
     # 3. Fenster auf gewünschte Position und Größe setzen + Begrüßung auslösen
     sleep 3
     osascript -e 'tell application "Google Chrome" to set bounds of front window to {2, 30, 1905, 1075}'
-    curl -s http://localhost:8340/activate > /dev/null 2>&1
+    curl -s "${CURL_AUTH[@]}" http://localhost:8340/activate > /dev/null 2>&1
 
     echo "[jarvis] Session gestartet."
 fi
