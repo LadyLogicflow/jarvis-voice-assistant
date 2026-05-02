@@ -85,7 +85,7 @@ def check_free_day() -> tuple:
 
 import anthropic
 import httpx
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import Depends, FastAPI, Header, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
@@ -98,6 +98,11 @@ with open(CONFIG_PATH, "r") as f:
 ANTHROPIC_API_KEY = _required_env("ANTHROPIC_API_KEY")
 ELEVENLABS_API_KEY = _required_env("ELEVENLABS_API_KEY")
 TODOIST_TOKEN = os.environ.get("TODOIST_API_TOKEN", "").strip()
+
+# Optional shared secret to protect /activate, /show, /hide endpoints.
+# When empty, endpoints stay open (relevant only on localhost). When set,
+# requests must carry header `X-Jarvis-Token: <value>`.
+JARVIS_AUTH_TOKEN = os.environ.get("JARVIS_AUTH_TOKEN", "").strip()
 
 # Non-secret runtime settings: config.json with sensible defaults.
 ELEVENLABS_VOICE_ID = os.environ.get(
@@ -618,21 +623,30 @@ def _show_chrome():
     subprocess.Popen(["osascript", "-e", script])
 
 
-@app.get("/hide")
+def require_jarvis_token(x_jarvis_token: str | None = Header(default=None)):
+    """FastAPI dependency. No-op when JARVIS_AUTH_TOKEN is unset, otherwise
+    rejects requests without a matching `X-Jarvis-Token` header."""
+    if not JARVIS_AUTH_TOKEN:
+        return
+    if x_jarvis_token != JARVIS_AUTH_TOKEN:
+        raise HTTPException(status_code=401, detail="invalid or missing X-Jarvis-Token")
+
+
+@app.get("/hide", dependencies=[Depends(require_jarvis_token)])
 async def hide_endpoint():
     loop = asyncio.get_event_loop()
     await loop.run_in_executor(None, _hide_chrome)
     return {"ok": True}
 
 
-@app.get("/show")
+@app.get("/show", dependencies=[Depends(require_jarvis_token)])
 async def show_endpoint():
     loop = asyncio.get_event_loop()
     await loop.run_in_executor(None, _show_chrome)
     return {"ok": True}
 
 
-@app.get("/activate")
+@app.get("/activate", dependencies=[Depends(require_jarvis_token)])
 async def activate_endpoint():
     """Vom Clap-Trigger aufgerufen: Jarvis aufwecken.
     Debounce: maximal einmal alle 90 Sekunden.
