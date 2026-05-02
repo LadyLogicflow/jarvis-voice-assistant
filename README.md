@@ -1,5 +1,7 @@
 # J.A.R.V.I.S. — Personal AI Voice Assistant
 
+[![CI](https://github.com/LadyLogicflow/jarvis-voice-assistant/actions/workflows/ci.yml/badge.svg)](https://github.com/LadyLogicflow/jarvis-voice-assistant/actions/workflows/ci.yml)
+
 > Double-clap. Jarvis wakes up, greets you with the weather and your tasks, answers your questions with dry British wit, controls your browser, and sees your screen.
 
 Built entirely with [Claude Code](https://claude.ai/code) — no code written manually.
