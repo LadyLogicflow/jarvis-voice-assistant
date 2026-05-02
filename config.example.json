@@ -9,5 +9,18 @@
   "browser_url": "https://your-website.com",
   "obsidian_inbox_path": "/Users/YOUR_USER/Documents/Obsidian/inbox",
   "apps": ["obsidian://open"],
-  "morning_hour": 7
+  "morning_hour": 7,
+
+  "_comment_runtime": "Optional runtime tunables. Defaults shown.",
+  "server_port": 8340,
+  "elevenlabs_model": "eleven_turbo_v2_5",
+  "greeting_cooldown": 10.0,
+  "activate_cooldown": 90.0,
+  "refresh_cooldown": 30.0,
+
+  "_comment_clap": "Clap-trigger sensitivity (scripts/clap-trigger.py).",
+  "clap_threshold": 0.15,
+  "clap_min_gap": 0.1,
+  "clap_max_gap": 1.2,
+  "clap_cooldown": 20.0
 }

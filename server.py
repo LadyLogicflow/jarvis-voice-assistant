@@ -118,6 +118,13 @@ CITY = config.get("city", "Neuss")
 TASKS_FILE = config.get("obsidian_inbox_path", "")
 MORNING_HOUR = config.get("morning_hour", 7)
 
+# Tunable runtime parameters. Defaults match the pre-M3.4 hardcoded values.
+SERVER_PORT = int(config.get("server_port", 8340))
+ELEVENLABS_MODEL = config.get("elevenlabs_model", "eleven_turbo_v2_5")
+GREETING_COOLDOWN = float(config.get("greeting_cooldown", 10.0))
+ACTIVATE_COOLDOWN = float(config.get("activate_cooldown", 90.0))
+_REFRESH_COOLDOWN = float(config.get("refresh_cooldown", 30.0))
+
 ai = anthropic.AsyncAnthropic(api_key=ANTHROPIC_API_KEY)
 # Global httpx client is for the HOT path: ElevenLabs TTS in _tts_one(),
 # which fires multiple requests per response (one per text chunk). Sharing
@@ -209,7 +216,6 @@ def get_tasks_sync():
         return []
 
 
-_REFRESH_COOLDOWN = 30.0  # seconds; weather/tasks rarely change faster
 _last_refresh_time: float = 0.0
 
 
@@ -443,7 +449,7 @@ async def _tts_one(text: str) -> bytes:
             "Accept": "audio/mpeg",
         }, json={
             "text": text,
-            "model_id": "eleven_turbo_v2_5",
+            "model_id": ELEVENLABS_MODEL,
             "voice_settings": {"stability": 0.5, "similarity_boost": 0.85},
         })
         print(f"  TTS chunk status: {resp.status_code}, size: {len(resp.content)}", flush=True)
@@ -679,9 +685,7 @@ async def process_message(session_id: str, user_text: str, ws: WebSocket):
 # Aktive WebSocket-Verbindungen für Broadcast
 active_clients: list = []
 _last_activate_time: float = 0.0
-ACTIVATE_COOLDOWN = 90.0   # Sekunden zwischen zwei /activate-Aufrufen
 _last_greeting_time: float = 0.0
-GREETING_COOLDOWN = 10.0   # Sekunden zwischen zwei Begrüßungen (verhindert Doppelbegrüßung)
 
 
 def _hide_chrome():
@@ -793,6 +797,6 @@ if __name__ == "__main__":
     import uvicorn
     print("=" * 50, flush=True)
     print("  J.A.R.V.I.S. V2 Server", flush=True)
-    print(f"  http://localhost:8340", flush=True)
+    print(f"  http://localhost:{SERVER_PORT}", flush=True)
     print("=" * 50, flush=True)
-    uvicorn.run(app, host="0.0.0.0", port=8340)
+    uvicorn.run(app, host="0.0.0.0", port=SERVER_PORT)
