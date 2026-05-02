@@ -76,7 +76,7 @@ You (speak) → Chrome Browser (Web Speech API) → FastAPI Server (local)
 
 1. Clone the repo:
    ```bash
-   git clone https://github.com/Julian-Ivanov/jarvis-voice-assistant.git
+   git clone https://github.com/LadyLogicflow/jarvis-voice-assistant.git
    cd jarvis-voice-assistant
    ```
 
@@ -91,7 +91,7 @@ You (speak) → Chrome Browser (Web Speech API) → FastAPI Server (local)
 
 1. **Clone and install dependencies:**
    ```bash
-   git clone https://github.com/Julian-Ivanov/jarvis-voice-assistant.git
+   git clone https://github.com/LadyLogicflow/jarvis-voice-assistant.git
    cd jarvis-voice-assistant
    pip install -r requirements.txt
    playwright install chromium
