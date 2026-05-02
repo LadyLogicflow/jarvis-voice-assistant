@@ -1,80 +1,131 @@
 # JARVIS
 
-Projekt-Projekt, erstellt mit dem Pandora Wizard. Ich möchte einen persönlichen Assistenten mit Sprachaus- und eingäbe Nach J.A.R.V.I.S. Vorbild erstellen. Der Anfang liegt bereits unter https://github.com/LadyLogicflow/jarvis-voice-assistant Ich möchte einen persönlichen Assistenten mit Sprachaus- und eingäbe Nach J.A.R.V.I.S. Vorbild erstellen. Der Anfang liegt bereits unter https://github.com/LadyLogicflow/jarvis-voice-assistant Konfiguration: custom desc: provided, custom complexity: unknown
+> Erstellt von **Catrin** am 2026-05-02 | Kategorie: Individuelles Projekt
 
-## Overview
+---
 
-| | |
-|---|---|
-| **Type** | Web Application |
-| **Language** | Python |
-| **Framework** | None |
+## Ueber dieses Projekt
 
-## Project Structure
+Willkommen bei **JARVIS**! Dieses Repository wurde mit dem Pandora-Projektassistenten erstellt und ist dein flexibler Arbeitsbereich fuer dein individuelles Projekt.
+
+### Warum Git fuer dein Projekt?
+
+Egal ob Forschung, Planung, Sammlung oder Experiment - Git gibt dir eine solide Grundlage:
+
+- **Alles versioniert**: Jede Aenderung wird gespeichert. Du kannst jederzeit zu einem frueheren Stand zurueckkehren oder vergleichen, was sich geaendert hat.
+- **Struktur wachsen lassen**: Beginne einfach und baue die Ordnerstruktur nach und nach aus, wie dein Projekt es erfordert.
+- **Pandora** bringt dir einen KI-Agenten direkt in deinen Workflow, der dich beim Organisieren, Recherchieren, Schreiben und Planen unterstuetzt.
+
+---
+
+## Quick Start
+
+1. **Repository klonen** (falls du lokal arbeiten moechtest):
+   ```bash
+   git clone <repository-url>
+   cd JARVIS
+   ```
+
+2. **Im Pandora-Frontend arbeiten**: Oeffne dein Projekt in der Pandora-Oberflaeche und nutze den integrierten Editor und Chat.
+
+3. **Loslegen**: Erstelle deine ersten Dateien und beginne mit deinem Projekt.
+
+4. **Aenderungen committen**:
+   ```bash
+   git add .
+   git commit -m "feat: erste Inhalte hinzugefuegt"
+   git push
+   ```
+
+---
+
+## Ordnerstruktur
 
 ```
 JARVIS/
-├── src/                    # Source code
-│   └── ...
-├── tests/                  # Test files
-│   └── ...
-├── docs/                   # Documentation
-│   └── architecture.md
-├── .editorconfig           # Editor configuration
-├── .gitignore              # Git ignore rules
-└── README.md               # This file
+  README.md           Diese Datei - Projektdokumentation
+  .gitignore           Dateien die Git ignorieren soll
 ```
 
-## Getting Started
+Die Struktur ist bewusst minimal gehalten. Passe sie an dein Projekt an. Hier sind einige Vorschlaege:
 
-### Prerequisites
+- `docs/` - Dokumentation und Notizen
+- `data/` - Datendateien und Recherchematerial
+- `assets/` - Bilder, Grafiken, Medien
+- `output/` - Ergebnisse und Exporte
+- `scripts/` - Skripte und Automatisierungen
 
-- Python 3.11+
-- pip or uv package manager
+---
 
-### Installation
+## Arbeiten mit Git
+
+### Branches
+
+Erstelle fuer groessere Aenderungen einen eigenen Branch:
 
 ```bash
-# Create virtual environment
-python -m venv .venv
-source .venv/bin/activate  # Linux/macOS
-
-# Install dependencies
-pip install -r requirements.txt
-
-# Run the application
-python -m src.main
+git checkout -b feature/neue-idee
+# ... arbeiten, committen ...
+git push -u origin feature/neue-idee
 ```
 
-### Running Tests
+### Commit-Nachrichten
 
-```bash
-pytest tests/
+Verwende aussagekraeftige Commit-Nachrichten:
+
+```
+<typ>: <kurze beschreibung>
+
+Typen: feat, fix, docs, style, refactor, test, chore
 ```
 
-## Development
+Beispiele:
+- `feat: erste Version des Konzepts erstellt`
+- `docs: Rechercheergebnisse dokumentiert`
+- `fix: Formatierung in Bericht korrigiert`
 
-### Code Style
+---
 
-- Follow [PEP 8](https://peps.python.org/pep-0008/)
-- Use type hints for all functions
-- Write Google-style docstrings
-- Format with `ruff` or `black`
+## Der Pandora-Workflow
 
-### Project Conventions
+Dein KI-Agent ist ein vielseitiger Partner, der dein Repository kennt und direkt darin arbeiten kann.
 
-- Write tests for all new features
-- Keep commits small and focused
-- Use meaningful commit messages
-- Document public APIs
+### Was kann der Agent?
 
-## Contributing
+- **Texte schreiben**: Beschreibe was du brauchst, der Agent erstellt einen Entwurf.
+- **Recherchieren**: Informationen sammeln, zusammenfassen und strukturieren.
+- **Organisieren**: Dateien und Ordner anlegen, umbenennen und sortieren.
+- **Planen**: Aufgabenlisten, Zeitplaene und Gliederungen erstellen.
+- **Analysieren**: Vorhandene Inhalte auswerten und zusammenfassen.
+- **Formatieren**: Markdown, Tabellen und andere Formate erzeugen.
 
-1. Create a feature branch from `main`
-2. Make your changes
-3. Write/update tests
-4. Create a merge request
+---
 
-## License
+## 5 Einstiegsprompts
 
-This project is proprietary and confidential.
+Kopiere einen dieser Prompts in den Chat um sofort loszulegen:
+
+1. **Projekt strukturieren**:
+   "Hilf mir eine sinnvolle Ordnerstruktur fuer mein Projekt zum Thema [Thema] anzulegen."
+
+2. **Inhalt erstellen**:
+   "Erstelle ein Dokument zum Thema [Thema] mit den wichtigsten Punkten."
+
+3. **Recherche zusammenfassen**:
+   "Fasse die wichtigsten Aspekte zu [Thema] zusammen und erstelle eine strukturierte Uebersicht."
+
+4. **Aufgaben planen**:
+   "Erstelle eine Aufgabenliste fuer [Vorhaben] mit Prioritaeten und geschaetztem Zeitaufwand."
+
+5. **Bestehendes ueberarbeiten**:
+   "Ueberarbeite die Datei [Dateiname] und verbessere Struktur, Klarheit und Vollstaendigkeit."
+
+---
+
+## Lizenz
+
+Copyright (c) 2026 Catrin. Alle Rechte vorbehalten.
+
+---
+
+*Erstellt mit [Pandora](https://pandora.efiniti.de) - Dein KI-gestuetzter Projektpartner*
