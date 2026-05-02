@@ -6,6 +6,7 @@ token.json
 *.key
 .env
 .env.*
+!.env.example
 
 # Python
 __pycache__/

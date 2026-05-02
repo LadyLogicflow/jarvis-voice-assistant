@@ -12,6 +12,22 @@ import re
 import time
 import datetime
 
+from dotenv import load_dotenv
+
+# Load .env if present. Secrets live in env vars, never in config.json.
+# See .env.example for the full list of supported variables.
+load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
+
+
+def _required_env(key: str) -> str:
+    val = os.environ.get(key, "").strip()
+    if not val:
+        raise RuntimeError(
+            f"Missing required environment variable {key!r}. "
+            f"Set it in .env (see .env.example) or your shell environment."
+        )
+    return val
+
 
 def get_easter(year: int) -> datetime.date:
     """Berechnet das Osterdatum (Anonymus-Gregorianisch)."""
@@ -73,21 +89,27 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
-# Load config
+# Load non-secret config (user name, city, voice id default, etc.)
 CONFIG_PATH = os.path.join(os.path.dirname(__file__), "config.json")
 with open(CONFIG_PATH, "r") as f:
     config = json.load(f)
 
-ANTHROPIC_API_KEY = config["anthropic_api_key"]
-ELEVENLABS_API_KEY = config["elevenlabs_api_key"]
-ELEVENLABS_VOICE_ID = config.get("elevenlabs_voice_id", "rDmv3mOhK6TnhYWckFaD")
+# Secrets: env-only. Required ones raise on startup if missing.
+ANTHROPIC_API_KEY = _required_env("ANTHROPIC_API_KEY")
+ELEVENLABS_API_KEY = _required_env("ELEVENLABS_API_KEY")
+TODOIST_TOKEN = os.environ.get("TODOIST_API_TOKEN", "").strip()
+
+# Non-secret runtime settings: config.json with sensible defaults.
+ELEVENLABS_VOICE_ID = os.environ.get(
+    "ELEVENLABS_VOICE_ID",
+    config.get("elevenlabs_voice_id", "rDmv3mOhK6TnhYWckFaD"),
+)
 USER_NAME = config.get("user_name", "Caterina")
 USER_ADDRESS = config.get("user_address", "Madam")
 USER_ROLE = config.get("user_role", "Leiterin Konzern Steuerabteilung DIHAG und Direktionsleiterin Lohnsteuerhilfeverein HILO")
 CITY = config.get("city", "Neuss")
 TASKS_FILE = config.get("obsidian_inbox_path", "")
 MORNING_HOUR = config.get("morning_hour", 7)
-TODOIST_TOKEN = config.get("todoist_api_token", "")
 
 ai = anthropic.AsyncAnthropic(api_key=ANTHROPIC_API_KEY)
 http = httpx.AsyncClient(timeout=30)

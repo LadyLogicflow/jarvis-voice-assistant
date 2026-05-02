@@ -96,16 +96,25 @@ You (speak) → Chrome Browser (Web Speech API) → FastAPI Server (local)
    playwright install chromium
    ```
 
-2. **Create `config.json`** from the template:
+2. **Create `.env`** from the template (this file holds your **secrets**):
+   ```bash
+   cp .env.example .env
+   ```
+   Then edit `.env` and fill in:
+   ```
+   ANTHROPIC_API_KEY=sk-ant-...
+   ELEVENLABS_API_KEY=sk_...
+   TODOIST_API_TOKEN=...        # optional
+   PICOVOICE_ACCESS_KEY=...     # optional, for wakeword-trigger
+   ```
+
+3. **Create `config.json`** from the template (non-secret settings only):
    ```bash
    cp config.example.json config.json
    ```
-
-3. **Edit `config.json`** with your API keys and preferences:
+   Then edit `config.json`:
    ```json
    {
-     "anthropic_api_key": "sk-ant-...",
-     "elevenlabs_api_key": "sk_...",
      "elevenlabs_voice_id": "YOUR_VOICE_ID",
      "user_name": "Your Name",
      "user_address": "Sir",
@@ -117,6 +126,7 @@ You (speak) → Chrome Browser (Web Speech API) → FastAPI Server (local)
      "apps": ["obsidian://open"]
    }
    ```
+   > Both `.env` and `config.json` are gitignored. Never commit them.
 
 4. **Start Jarvis:**
    ```bash
@@ -173,8 +183,10 @@ jarvis-voice-assistant/
 ├── server.py              # FastAPI backend — the brain
 ├── browser_tools.py       # Playwright browser automation
 ├── screen_capture.py      # Screenshot + Claude Vision
-├── config.json            # Your personal config (gitignored)
-├── config.example.json    # Template for new users
+├── .env                   # Your secrets — API keys (gitignored)
+├── .env.example           # Template for .env
+├── config.json            # Your non-secret settings (gitignored)
+├── config.example.json    # Template for config.json
 ├── requirements.txt       # Python dependencies
 ├── frontend/
 │   ├── index.html         # Jarvis web UI

@@ -14,13 +14,23 @@ import time
 import os
 import json
 
-CONFIG_PATH = os.path.join(os.path.dirname(__file__), "..", "config.json")
+PROJECT_ROOT = os.path.join(os.path.dirname(__file__), "..")
+
+# Load .env from project root if present (Picovoice key is a secret).
+try:
+    from dotenv import load_dotenv
+    load_dotenv(os.path.join(PROJECT_ROOT, ".env"))
+except ImportError:
+    pass  # python-dotenv optional; key may also come from the shell env
+
+CONFIG_PATH = os.path.join(PROJECT_ROOT, "config.json")
 with open(CONFIG_PATH, "r") as f:
     config = json.load(f)
 
-ACCESS_KEY = config.get("picovoice_access_key", "")
+ACCESS_KEY = os.environ.get("PICOVOICE_ACCESS_KEY", "").strip()
 if not ACCESS_KEY:
-    print("FEHLER: 'picovoice_access_key' fehlt in config.json")
+    print("FEHLER: PICOVOICE_ACCESS_KEY fehlt im Environment.")
+    print("Setze ihn in .env (siehe .env.example) oder in deiner Shell.")
     print("Kostenloser Key: https://console.picovoice.ai/")
     sys.exit(1)
 

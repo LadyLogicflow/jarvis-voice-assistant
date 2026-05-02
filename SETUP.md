@@ -57,23 +57,41 @@ Manuell musst du nur Mac-Berechtigungen freigeben (Systemeinstellungen → Daten
 - **Bildschirmaufnahme** (Terminal) — fuer "Was siehst du auf meinem Bildschirm?"
 - **Bedienungshilfen** (Terminal) — fuer das automatische Anordnen von Fenstern
 
-### 2. config.json erstellen
-Claude Code erstellt `config.json` aus `config.example.json`:
+### 2. .env (Secrets) und config.json (Settings) erstellen
+
+Secrets liegen seit M1.1 in einer **`.env`-Datei** (gitignored), nicht mehr in
+`config.json`. Beides wird angelegt:
+
+**`.env`** (kopiere aus `.env.example` und fuelle die Werte ein):
+```bash
+cp .env.example .env
+# Datei oeffnen und Werte einfuegen:
+#   ANTHROPIC_API_KEY=sk-ant-...
+#   ELEVENLABS_API_KEY=sk_...
+#   TODOIST_API_TOKEN=...        (optional)
+#   PICOVOICE_ACCESS_KEY=...     (optional, fuer wakeword-trigger)
+```
+
+**`config.json`** (kopiere aus `config.example.json`) — enthaelt KEINE Secrets mehr:
 ```json
 {
-  "anthropic_api_key": "sk-ant-...",
-  "elevenlabs_api_key": "sk_...",
   "elevenlabs_voice_id": "VOICE_ID",
   "user_name": "Dein Name",
   "user_address": "Sir",
+  "user_role": "Deine Rolle",
   "city": "Hamburg",
   "workspace_path": "/Users/DEIN_USER/Downloads/jarvis-voice-assistant-master",
   "spotify_track": "spotify:track:DEIN_TRACK_ID",
   "browser_url": "https://deine-website.com",
   "obsidian_inbox_path": "/Users/DEIN_USER/Documents/Obsidian/inbox",
-  "apps": ["obsidian://open"]
+  "apps": ["obsidian://open"],
+  "morning_hour": 7
 }
 ```
+
+> **Sicherheit:** `.env` und `config.json` stehen in `.gitignore` und duerfen
+> nie committed werden. Bei Verdacht auf Leak: Tokens in den jeweiligen
+> Provider-Dashboards (Anthropic, ElevenLabs, Todoist, Picovoice) rotieren.
 
 ### 3. ElevenLabs Stimme
 Eine deutsche Stimme auswaehlen und die Voice ID in die Config eintragen. Empfehlung: **Felix Serenitas** (Starter Plan noetig) oder eine der Standard-Stimmen (Free Plan).
@@ -182,8 +200,10 @@ Frage nach:
 - Stadt fuers Wetter
 - Obsidian Vault Pfad (optional)
 
-**Schritt 2 — Config erstellen:**
-Erstelle `config.json` aus `config.example.json` mit den Nutzerdaten. Setze den `workspace_path` auf den aktuellen Ordnerpfad (`pwd`).
+**Schritt 2 — `.env` und `config.json` erstellen:**
+- `.env` aus `.env.example` kopieren und mit den API-Keys (Anthropic, ElevenLabs, optional Todoist/Picovoice) befuellen.
+- `config.json` aus `config.example.json` mit den nicht-sensiblen Nutzerdaten anlegen. Setze den `workspace_path` auf den aktuellen Ordnerpfad (`pwd`).
+- Beide Dateien sind gitignored.
 
 **Schritt 3 — ElevenLabs Stimme einrichten:**
 - Liste verfuegbare Stimmen via ElevenLabs API
