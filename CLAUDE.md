@@ -29,7 +29,23 @@ Wenn der Nutzer nach dem Setup fragt oder "Richte Jarvis ein" sagt, folge den An
    - **Bildschirmaufnahme**: Systemeinstellungen → Datenschutz & Sicherheit → Bildschirmaufnahme → Terminal/iTerm aktivieren (fuer screen_capture)
    - **Bedienungshilfen**: Systemeinstellungen → Datenschutz & Sicherheit → Bedienungshilfen → Terminal aktivieren (fuer Fenster-Anordnung via AppleScript)
 
-Erst NACHDEM alle Voraussetzungen installiert sind, fahre mit dem Setup in `SETUP.md` fort (API Keys abfragen, config.json erstellen, etc.).
+Erst NACHDEM alle Voraussetzungen installiert sind, fahre mit dem Setup in `SETUP.md` fort (API Keys abfragen, .env + config.json erstellen, etc.).
+
+### API-Keys / Secrets — alle in `.env` (nicht in `config.json`)
+
+Seit M1.1 leben sensible Werte in `.env` (gitignored). `.env.example` ist die
+verbindliche Liste. Was Claude Code abfragen sollte:
+
+- **`ANTHROPIC_API_KEY`** — Pflicht. https://console.anthropic.com
+- **`ELEVENLABS_API_KEY`** — Pflicht. https://elevenlabs.io
+- **`TODOIST_API_TOKEN`** — Optional, fuer [ACTION:TASKS/ADDTASK/DONETASK]. https://app.todoist.com/app/settings/integrations/developer
+- **`PICOVOICE_ACCESS_KEY`** — Optional, nur fuer `scripts/wakeword-trigger.py`. https://console.picovoice.ai/
+- **`JARVIS_AUTH_TOKEN`** — Optional, schuetzt `/activate`, `/show`, `/hide` (relevant nur wenn Port 8340 erreichbar ueber Loopback hinaus)
+
+Google Calendar nutzt OAuth, kein API-Key. Setup-Flow:
+1. `credentials.json` aus der Google Cloud Console (OAuth-Client-Secret) ins Projekt-Root legen
+2. Einmalig `python3 scripts/google-auth.py` laufen lassen — Browser oeffnet sich, Nutzer autorisiert, Token landet in `token.json`
+3. Beide Dateien sind gitignored.
 
 ---
 
@@ -37,20 +53,31 @@ Erst NACHDEM alle Voraussetzungen installiert sind, fahre mit dem Setup in `SETU
 
 ```
 .
-├── CLAUDE.md              # This file
-├── SETUP.md               # Setup-Anleitung fuer Claude Code
-├── config.json            # Persoenliche Config (gitignored)
-├── config.example.json    # Template mit Platzhaltern
-├── requirements.txt       # Python Dependencies
-├── server.py              # FastAPI Backend (Claude Haiku + ElevenLabs TTS)
-├── browser_tools.py       # Playwright Browser-Steuerung (Mac + Windows)
-├── screen_capture.py      # Screenshot + Claude Vision
+├── CLAUDE.md                  # This file
+├── SETUP.md                   # Setup-Anleitung fuer Claude Code
+├── CODE_REVIEW.md             # Roadmap (M1-M6 Issues)
+├── LICENSE                    # MIT
+├── .env                       # Secrets (gitignored)
+├── .env.example               # Template fuer .env
+├── config.json                # Non-secret settings (gitignored)
+├── config.example.json        # Template fuer config.json
+├── requirements.txt           # Python Dependencies
+├── server.py                  # FastAPI Backend (Claude Haiku + ElevenLabs TTS)
+├── browser_tools.py           # Playwright Browser-Steuerung (Mac + Windows)
+├── screen_capture.py          # Screenshot + Claude Vision
+├── google_calendar_tools.py   # Google Calendar (lesen + anlegen)
+├── mail_tools.py              # macOS Mail.app (ungelesene E-Mails)
+├── notes_tools.py             # macOS Notes.app (Notiz anlegen)
+├── todoist_tools.py           # Todoist (Aufgaben lesen + anlegen + abschliessen)
+├── steuer_news.py             # BFH-Pressemitteilungen + Entscheidungen (RSS)
 ├── frontend/
-│   ├── index.html         # Jarvis Web-UI
-│   ├── main.js            # Speech Recognition + WebSocket + Audio
-│   └── style.css          # Dark Theme mit Orb-Animation
+│   ├── index.html             # Jarvis Web-UI
+│   ├── main.js                # Speech Recognition + WebSocket + Audio
+│   └── style.css              # Dark Theme mit Orb-Animation
 └── scripts/
-    ├── clap-trigger.py    # Doppelklatschen-Erkennung (cross-platform)
-    ├── launch-session.sh  # macOS Session-Launcher (Terminal + Spotify + Chrome)
-    └── launch-session.ps1 # Windows Session-Launcher (PowerShell)
+    ├── clap-trigger.py        # Doppelklatschen-Erkennung (cross-platform)
+    ├── wakeword-trigger.py    # 'Jarvis' Wake-Word via Picovoice
+    ├── google-auth.py         # Einmalige Google-OAuth-Autorisierung
+    ├── launch-session.sh      # macOS Session-Launcher (Terminal + Spotify + Chrome)
+    └── launch-session.ps1     # Windows Session-Launcher (PowerShell)
 ```
