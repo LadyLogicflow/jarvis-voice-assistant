@@ -4,6 +4,7 @@ Web search via DuckDuckGo Lite, page visits via Playwright, URL opening.
 """
 
 import asyncio
+import logging
 import re
 import subprocess
 import sys
@@ -13,6 +14,8 @@ from urllib.parse import unquote, parse_qs, urlparse
 
 import httpx
 from playwright.async_api import async_playwright
+
+log = logging.getLogger("jarvis.browser")
 
 _browser = None
 _context = None
@@ -63,7 +66,7 @@ async def _get_browser():
     global _browser, _context, _playwright
     if not _browser_alive():
         if _browser is not None:
-            print("[jarvis] browser disconnected, relaunching Chromium", flush=True)
+            log.info("browser disconnected, relaunching Chromium")
             _browser = None
             _context = None
         if _playwright is None:
@@ -166,7 +169,7 @@ async def fetch_news() -> str:
             lines.append(f"• {title}: {desc}" if desc else f"• {title}")
         return "Tagesschau Aktuelle Meldungen:\n" + "\n".join(lines)
     except Exception as e:
-        print(f"[jarvis] fetch_news failed: {type(e).__name__}: {e}", flush=True)
+        log.warning(f"fetch_news failed: {type(e).__name__}: {e}")
         return f"News konnten nicht geladen werden: {e}"
 
 

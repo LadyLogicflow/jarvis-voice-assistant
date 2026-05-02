@@ -8,6 +8,8 @@ import asyncio
 import base64
 import datetime
 import json
+import logging
+import logging.handlers
 import os
 import re
 import subprocess
@@ -19,6 +21,27 @@ from dotenv import load_dotenv
 # Load .env if present. Secrets live in env vars, never in config.json.
 # See .env.example for the full list of supported variables.
 load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
+
+
+# ---------------------------------------------------------------------------
+# Logging setup. RotatingFileHandler keeps jarvis.log under control (10 MB,
+# 3 backups) and StreamHandler keeps the friendly stdout output for
+# launch-session.sh.
+# ---------------------------------------------------------------------------
+_LOG_PATH = os.path.join(os.path.dirname(__file__), "jarvis.log")
+_LOG_FMT = "%(asctime)s %(levelname)-7s %(name)s | %(message)s"
+
+_log_handlers = [
+    logging.handlers.RotatingFileHandler(
+        _LOG_PATH, maxBytes=10 * 1024 * 1024, backupCount=3, encoding="utf-8"
+    ),
+    logging.StreamHandler(),
+]
+for _h in _log_handlers:
+    _h.setFormatter(logging.Formatter(_LOG_FMT))
+
+logging.basicConfig(level=logging.INFO, handlers=_log_handlers, force=True)
+log = logging.getLogger("jarvis")
 
 
 def _required_env(key: str) -> str:
@@ -143,7 +166,7 @@ async def _lifespan(_app):
     - Cancels the scheduler on shutdown so uvicorn can exit cleanly"""
     await refresh_data()
     task = asyncio.create_task(morning_brief_scheduler())
-    print(f"[jarvis] Steuerrecht-Scheduler gestartet (taeglich um {MORNING_HOUR}:00 Uhr)", flush=True)
+    log.info(f"Steuerrecht-Scheduler gestartet (taeglich um {MORNING_HOUR}:00 Uhr)")
     try:
         yield
     finally:
@@ -197,7 +220,7 @@ async def fetch_weather():
                 })
         return result
     except Exception as e:
-        print(f"[jarvis] fetch_weather failed: {type(e).__name__}: {e}", flush=True)
+        log.warning(f"fetch_weather failed: {type(e).__name__}: {e}")
         return None
 
 
@@ -212,7 +235,7 @@ def get_tasks_sync():
             lines = f.readlines()
         return [l.strip().replace("- [ ]", "").strip() for l in lines if l.strip().startswith("- [ ]")]
     except Exception as e:
-        print(f"[jarvis] get_tasks_sync failed: {type(e).__name__}: {e}", flush=True)
+        log.warning(f"get_tasks_sync failed: {type(e).__name__}: {e}")
         return []
 
 
@@ -227,7 +250,7 @@ async def refresh_data(force: bool = False):
     now = time.time()
     if not force and (now - _last_refresh_time) < _REFRESH_COOLDOWN:
         remaining = int(_REFRESH_COOLDOWN - (now - _last_refresh_time))
-        print(f"[jarvis] refresh_data skip (cooldown noch {remaining}s)", flush=True)
+        log.info(f"refresh_data skip (cooldown noch {remaining}s)")
         return
     _last_refresh_time = now
     loop = asyncio.get_event_loop()
@@ -237,8 +260,8 @@ async def refresh_data(force: bool = False):
     )
     WEATHER_INFO = weather
     TASKS_INFO = tasks
-    print(f"[jarvis] Wetter: {WEATHER_INFO}", flush=True)
-    print(f"[jarvis] Tasks: {len(TASKS_INFO)} geladen", flush=True)
+    log.info(f"Wetter: {WEATHER_INFO}")
+    log.info(f"Tasks: {len(TASKS_INFO)} geladen")
 
 
 WEATHER_INFO = ""
@@ -265,16 +288,16 @@ async def refresh_steuer_recent():
     try:
         STEUER_RECENT = await steuer_news.fetch_recent(days=3)
         STEUER_RECENT_DATE = today
-        print(f"[jarvis] Steuer-Recent: {len(STEUER_RECENT)} Zeichen", flush=True)
+        log.info(f"Steuer-Recent: {len(STEUER_RECENT)} Zeichen")
     except Exception as e:
-        print(f"[jarvis] Steuer-Recent Fehler: {e}", flush=True)
+        log.warning(f"Steuer-Recent Fehler: {e}")
         STEUER_RECENT = ""
 
 
 async def refresh_steuer_brief():
     """Fetch steuerrecht news and summarize with Claude. Updates global cache."""
     global STEUER_BRIEF, STEUER_BRIEF_DATE
-    print("[jarvis] Steuerrecht-Brief wird abgerufen...", flush=True)
+    log.info("Steuerrecht-Brief wird abgerufen...")
     try:
         raw = await steuer_news.fetch_all_sources()
         resp = await ai.messages.create(
@@ -292,9 +315,9 @@ async def refresh_steuer_brief():
         )
         STEUER_BRIEF = resp.content[0].text.strip()
         STEUER_BRIEF_DATE = datetime.date.today().isoformat()
-        print(f"[jarvis] Steuerrecht-Brief: {STEUER_BRIEF[:80]}", flush=True)
+        log.info(f"Steuerrecht-Brief: {STEUER_BRIEF[:80]}")
     except Exception as e:
-        print(f"[jarvis] Steuerrecht-Brief Fehler: {e}", flush=True)
+        log.warning(f"Steuerrecht-Brief Fehler: {e}")
         STEUER_BRIEF = ""
 
 
@@ -452,12 +475,12 @@ async def _tts_one(text: str) -> bytes:
             "model_id": ELEVENLABS_MODEL,
             "voice_settings": {"stability": 0.5, "similarity_boost": 0.85},
         })
-        print(f"  TTS chunk status: {resp.status_code}, size: {len(resp.content)}", flush=True)
+        log.info(f"TTS chunk status: {resp.status_code}, size: {len(resp.content)}")
         if resp.status_code == 200:
             return resp.content
-        print(f"  TTS error: {resp.text[:200]}", flush=True)
+        log.warning(f"TTS error: {resp.text[:200]}")
     except Exception as e:
-        print(f"  TTS EXCEPTION: {e}", flush=True)
+        log.warning(f"TTS EXCEPTION: {e}")
     return b""
 
 
@@ -478,7 +501,7 @@ async def speak(text: str, ws: WebSocket, display: str = "") -> bool:
                 })
                 first = False
             except Exception:
-                print("  [speak] WebSocket closed, aborting TTS.", flush=True)
+                log.warning("[speak] WebSocket closed, aborting TTS.")
                 return False
     return True
 
@@ -574,7 +597,7 @@ async def process_message(session_id: str, user_text: str, ws: WebSocket):
     if "activate" in user_text.lower():
         now = time.time()
         if now - _last_greeting_time < GREETING_COOLDOWN:
-            print(f"[jarvis] Doppelbegrüßung blockiert (Cooldown {GREETING_COOLDOWN}s)", flush=True)
+            log.info(f"Doppelbegrüßung blockiert (Cooldown {GREETING_COOLDOWN}s)")
             return
         _last_greeting_time = now
         await refresh_data()
@@ -591,19 +614,19 @@ async def process_message(session_id: str, user_text: str, ws: WebSocket):
         messages=history,
     )
     reply = response.content[0].text
-    print(f"  LLM raw: {reply[:200]}", flush=True)
+    log.info(f"LLM raw: {reply[:200]}")
     spoken_text, action = extract_action(reply)
 
     # Speak the main response immediately (chunk by chunk — no large WS messages)
     if spoken_text:
-        print(f"  Jarvis: {spoken_text[:80]}", flush=True)
+        log.info(f"Jarvis: {spoken_text[:80]}")
         _append_message(session_id, "assistant", spoken_text)
         if not await speak(spoken_text, ws, display=spoken_text):
             return  # WebSocket lost, abort
 
     # Execute action if any
     if action:
-        print(f"  Action: {action['type']} -> {action['payload'][:100]}", flush=True)
+        log.info(f"Action: {action['type']} -> {action['payload'][:100]}")
 
         if action["type"] == "SCREEN":
             await speak("Lassen Sie mich einen Blick auf Ihren Bildschirm werfen.", ws,
@@ -614,9 +637,9 @@ async def process_message(session_id: str, user_text: str, ws: WebSocket):
 
         try:
             action_result = await execute_action(action)
-            print(f"  Result: {str(action_result)[:200]}", flush=True)
+            log.info(f"Result: {str(action_result)[:200]}")
         except Exception as e:
-            print(f"  Action error: {e}", flush=True)
+            log.warning(f"Action error: {e}")
             action_result = f"Fehler: {e}"
 
         if action["type"] == "OPEN":
@@ -730,15 +753,15 @@ async def activate_endpoint():
     now = time.time()
     if now - _last_activate_time < ACTIVATE_COOLDOWN:
         remaining = int(ACTIVATE_COOLDOWN - (now - _last_activate_time))
-        print(f"[jarvis] /activate ignoriert (Cooldown noch {remaining}s)", flush=True)
+        log.info(f"/activate ignoriert (Cooldown noch {remaining}s)")
         return {"ok": False, "reason": f"cooldown {remaining}s"}
     _last_activate_time = now
     # Veraltete Verbindungen bereinigen, nur letzten Client wecken
     if not active_clients:
-        print(f"[jarvis] /activate: kein Client verbunden", flush=True)
+        log.info(f"/activate: kein Client verbunden")
         return {"ok": False, "reason": "no clients"}
     target = active_clients[-1]
-    print(f"[jarvis] Wake-Signal an letzten Client ({len(active_clients)} gesamt)", flush=True)
+    log.info(f"Wake-Signal an letzten Client ({len(active_clients)} gesamt)")
     try:
         await target.send_json({"type": "wake"})
     except Exception:
@@ -754,7 +777,7 @@ async def websocket_endpoint(ws: WebSocket):
     # Alte Verbindungen aus der Liste entfernen (verhindert Mehrfach-Wake)
     active_clients.clear()
     active_clients.append(ws)
-    print(f"[jarvis] Client connected (Liste bereinigt)", flush=True)
+    log.info(f"Client connected (Liste bereinigt)")
 
     async def keepalive():
         while True:
@@ -775,11 +798,11 @@ async def websocket_endpoint(ws: WebSocket):
             if not user_text:
                 continue
 
-            print(f"  You:    {user_text}", flush=True)
+            log.info(f"You:    {user_text}")
             await process_message(session_id, user_text, ws)
 
     except (WebSocketDisconnect, RuntimeError, Exception) as e:
-        print(f"[jarvis] Client disconnected: {type(e).__name__}", flush=True)
+        log.info(f"Client disconnected: {type(e).__name__}")
         conversations.pop(session_id, None)
         if ws in active_clients:
             active_clients.remove(ws)
@@ -795,8 +818,8 @@ async def serve_index():
 
 if __name__ == "__main__":
     import uvicorn
-    print("=" * 50, flush=True)
-    print("  J.A.R.V.I.S. V2 Server", flush=True)
-    print(f"  http://localhost:{SERVER_PORT}", flush=True)
-    print("=" * 50, flush=True)
+    log.info("=" * 50)
+    log.info("J.A.R.V.I.S. V2 Server")
+    log.info(f"http://localhost:{SERVER_PORT}")
+    log.info("=" * 50)
     uvicorn.run(app, host="0.0.0.0", port=SERVER_PORT)
