@@ -17,6 +17,13 @@ import time
 from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
+from tenacity import (
+    AsyncRetrying,
+    RetryError,
+    retry_if_exception_type,
+    stop_after_attempt,
+    wait_exponential,
+)
 
 # Load .env if present. Secrets live in env vars, never in config.json.
 # See .env.example for the full list of supported variables.
@@ -198,37 +205,49 @@ import todoist_tools  # noqa: E402
 app = FastAPI(lifespan=_lifespan)
 
 
+async def _fetch_weather_once() -> dict:
+    """One try at wttr.in; tenacity wraps the retry loop above us."""
+    async with httpx.AsyncClient(timeout=5) as client:
+        resp = await client.get(f"https://wttr.in/{CITY}?format=j1",
+                                headers={"User-Agent": "curl"})
+        resp.raise_for_status()
+        data = resp.json()
+    c = data["current_condition"][0]
+    result = {
+        "temp": c["temp_C"],
+        "feels_like": c["FeelsLikeC"],
+        "description": c["weatherDesc"][0]["value"],
+        "humidity": c["humidity"],
+        "wind_kmh": c["windspeedKmph"],
+        "forecast_today": [],
+    }
+    now_hour = datetime.datetime.now().hour
+    for h in data["weather"][0]["hourly"]:
+        h_hour = int(h["time"]) // 100
+        if h_hour > now_hour:
+            result["forecast_today"].append({
+                "hour": h_hour,
+                "temp": h["tempC"],
+                "desc": h["weatherDesc"][0]["value"],
+                "rain": h.get("chanceofrain", "0"),
+            })
+    return result
+
+
 async def fetch_weather() -> dict | None:
-    """Fetch current weather + today's hourly forecast from wttr.in (async).
-    Returns None on any failure."""
+    """Fetch wttr.in weather with one retry on transient failure.
+    Returns None when both attempts fail."""
     try:
-        async with httpx.AsyncClient(timeout=5) as client:
-            resp = await client.get(f"https://wttr.in/{CITY}?format=j1",
-                                    headers={"User-Agent": "curl"})
-            resp.raise_for_status()
-            data = resp.json()
-        c = data["current_condition"][0]
-        result = {
-            "temp": c["temp_C"],
-            "feels_like": c["FeelsLikeC"],
-            "description": c["weatherDesc"][0]["value"],
-            "humidity": c["humidity"],
-            "wind_kmh": c["windspeedKmph"],
-            "forecast_today": [],
-        }
-        now_hour = datetime.datetime.now().hour
-        for h in data["weather"][0]["hourly"]:
-            h_hour = int(h["time"]) // 100
-            if h_hour > now_hour:
-                result["forecast_today"].append({
-                    "hour": h_hour,
-                    "temp": h["tempC"],
-                    "desc": h["weatherDesc"][0]["value"],
-                    "rain": h.get("chanceofrain", "0"),
-                })
-        return result
+        async for attempt in AsyncRetrying(
+            stop=stop_after_attempt(2),
+            wait=wait_exponential(multiplier=1, min=1, max=4),
+            retry=retry_if_exception_type((httpx.HTTPError, KeyError, ValueError)),
+            reraise=True,
+        ):
+            with attempt:
+                return await _fetch_weather_once()
     except Exception as e:
-        log.warning(f"fetch_weather failed: {type(e).__name__}: {e}")
+        log.warning(f"fetch_weather failed (after retries): {type(e).__name__}: {e}")
         return None
 
 
@@ -470,23 +489,37 @@ def _split_text(text: str) -> list[str]:
     return chunks
 
 
-async def _tts_one(text: str) -> bytes:
-    """Generate TTS for a single short text chunk."""
+async def _tts_post(text: str) -> bytes:
+    """One ElevenLabs request; tenacity wraps retry above."""
     url = f"https://api.elevenlabs.io/v1/text-to-speech/{ELEVENLABS_VOICE_ID}"
-    try:
-        resp = await http.post(url, headers={
-            "xi-api-key": ELEVENLABS_API_KEY,
-            "Content-Type": "application/json",
-            "Accept": "audio/mpeg",
-        }, json={
-            "text": text,
-            "model_id": ELEVENLABS_MODEL,
-            "voice_settings": {"stability": 0.5, "similarity_boost": 0.85},
-        })
-        log.info(f"TTS chunk status: {resp.status_code}, size: {len(resp.content)}")
-        if resp.status_code == 200:
-            return resp.content
+    resp = await http.post(url, headers={
+        "xi-api-key": ELEVENLABS_API_KEY,
+        "Content-Type": "application/json",
+        "Accept": "audio/mpeg",
+    }, json={
+        "text": text,
+        "model_id": ELEVENLABS_MODEL,
+        "voice_settings": {"stability": 0.5, "similarity_boost": 0.85},
+    })
+    log.info(f"TTS chunk status: {resp.status_code}, size: {len(resp.content)}")
+    if resp.status_code != 200:
         log.warning(f"TTS error: {resp.text[:200]}")
+        raise httpx.HTTPStatusError("TTS non-200", request=resp.request, response=resp)
+    return resp.content
+
+
+async def _tts_one(text: str) -> bytes:
+    """Generate TTS for a single short text chunk, with up to 2 retries
+    on transient failures (network blips, occasional 5xx)."""
+    try:
+        async for attempt in AsyncRetrying(
+            stop=stop_after_attempt(3),
+            wait=wait_exponential(multiplier=0.5, min=0.5, max=2),
+            retry=retry_if_exception_type((httpx.HTTPError,)),
+            reraise=True,
+        ):
+            with attempt:
+                return await _tts_post(text)
     except Exception as e:
         log.warning(f"TTS EXCEPTION: {e}")
     return b""

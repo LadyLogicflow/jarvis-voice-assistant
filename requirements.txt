@@ -26,3 +26,6 @@ dateparser>=1.2.0
 
 # Configuration / secrets loading from .env
 python-dotenv>=1.0.0
+
+# Retry helper for transient API failures (Anthropic, ElevenLabs, wttr.in)
+tenacity>=8.2
