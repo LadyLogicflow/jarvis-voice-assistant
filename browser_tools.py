@@ -145,9 +145,26 @@ async def fetch_news() -> str:
         return f"News konnten nicht geladen werden: {e}"
 
 
+_ALLOWED_SCHEMES = {"http", "https"}
+
+
+def _is_safe_url(url: str) -> bool:
+    """Allow only http(s) URLs with a non-empty host. Rejects file://,
+    javascript:, data:, ftp:// etc. — every other scheme a voice command
+    might accidentally produce."""
+    try:
+        parsed = urlparse(url.strip())
+    except Exception:
+        return False
+    return parsed.scheme.lower() in _ALLOWED_SCHEMES and bool(parsed.netloc)
+
+
 async def open_url(url: str):
-    """Open URL in user's default browser (non-blocking)."""
+    """Open URL in user's default browser (non-blocking).
+    Refuses anything that is not http(s) — see _is_safe_url()."""
     import asyncio
+    if not _is_safe_url(url):
+        return {"success": False, "url": url, "error": "rejected: only http/https URLs allowed"}
     loop = asyncio.get_event_loop()
     await loop.run_in_executor(None, webbrowser.open, url)
     return {"success": True, "url": url}

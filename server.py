@@ -425,7 +425,9 @@ async def execute_action(action: dict) -> str:
         return f"Seite nicht erreichbar: {result.get('error', '')}"
 
     elif t == "OPEN":
-        await browser_tools.open_url(p)
+        result = await browser_tools.open_url(p)
+        if not result.get("success"):
+            return f"Diese URL kann ich nicht oeffnen, {USER_ADDRESS}. Nur http- und https-Adressen sind erlaubt."
         return f"Geoeffnet: {p}"
 
     elif t == "SCREEN":
@@ -543,6 +545,10 @@ async def process_message(session_id: str, user_text: str, ws: WebSocket):
             action_result = f"Fehler: {e}"
 
         if action["type"] == "OPEN":
+            # OPEN normally stays silent; speak only when the URL was rejected.
+            if isinstance(action_result, str) and action_result.startswith("Diese URL"):
+                conversations[session_id].append({"role": "assistant", "content": action_result})
+                await speak(action_result, ws, display=action_result)
             return
 
         if action["type"] == "MAIL" and action_result == "KEINE_MAILS":
