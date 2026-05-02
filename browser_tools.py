@@ -152,9 +152,16 @@ async def visit(url: str, max_chars: int = 5000) -> dict:
         await page.close()
 
 
-async def fetch_news() -> str:
-    """Fetch current news from Tagesschau RSS feed."""
-    url = "https://www.tagesschau.de/infoservices/alle-meldungen-100~rss2.xml"
+_DEFAULT_NEWS_URL = "https://www.tagesschau.de/infoservices/alle-meldungen-100~rss2.xml"
+_DEFAULT_NEWS_NAME = "Tagesschau"
+
+
+async def fetch_news(url: str = _DEFAULT_NEWS_URL, source_name: str = _DEFAULT_NEWS_NAME) -> str:
+    """Fetch current news from an RSS feed (Tagesschau by default).
+
+    `url` is the RSS endpoint, `source_name` is the human label used in
+    the leading line so Jarvis can say e.g. 'NDR aktuelle Meldungen' or
+    'Reuters Top Stories'."""
     try:
         async with httpx.AsyncClient(timeout=10) as client:
             resp = await client.get(url, headers={"User-Agent": "Mozilla/5.0"})
@@ -167,7 +174,7 @@ async def fetch_news() -> str:
             desc  = (item.findtext("description") or "").strip()
             desc  = re.sub(r'<[^>]+>', '', desc)[:120]
             lines.append(f"• {title}: {desc}" if desc else f"• {title}")
-        return "Tagesschau Aktuelle Meldungen:\n" + "\n".join(lines)
+        return f"{source_name} Aktuelle Meldungen:\n" + "\n".join(lines)
     except Exception as e:
         log.warning(f"fetch_news failed: {type(e).__name__}: {e}")
         return f"News konnten nicht geladen werden: {e}"

@@ -18,6 +18,8 @@
   "activate_cooldown": 90.0,
   "refresh_cooldown": 30.0,
   "calendar_days": 7,
+  "news_url": "https://www.tagesschau.de/infoservices/alle-meldungen-100~rss2.xml",
+  "news_source_name": "Tagesschau",
 
   "_comment_clap": "Clap-trigger sensitivity (scripts/clap-trigger.py).",
   "clap_threshold": 0.15,
