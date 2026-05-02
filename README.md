@@ -14,42 +14,67 @@ Built entirely with [Claude Code](https://claude.ai/code) — no code written ma
 
 ## Features
 
+### Core (from the original template)
 - **Double-Clap Trigger** — Clap twice and your entire workspace launches: Spotify, VS Code, Obsidian, Chrome with Jarvis UI
 - **Voice Conversation** — Speak freely with Jarvis through your microphone. He listens, thinks, and responds with voice
 - **Sarcastic British Butler** — Jarvis speaks German with the personality of Tony Stark's AI: dry, witty, and always one step ahead
-- **Weather & Tasks** — On startup, Jarvis greets you with the current weather and a humorous summary of your open tasks from Obsidian
+- **Weather & Tasks** — On startup, Jarvis greets you with the current weather and a summary of your open tasks
 - **Browser Automation** — "Search for MiroFish" → Jarvis opens a real browser, navigates to the page, reads the content, and summarizes it for you
 - **Screen Vision** — "What's on my screen?" → Jarvis takes a screenshot, analyzes it with Claude Vision, and describes what he sees
-- **World News** — "What's happening in the world?" → Jarvis opens worldmonitor.app and summarizes current global events
+- **World News** — "What's happening in the world?" → Jarvis fetches current Tagesschau headlines and summarizes them
 - **Window Snapping** — All launched apps automatically snap into quadrants on your screen
+
+### Fork extensions (this fork only)
+- **Wake-Word Trigger** — Optional Picovoice-powered "Jarvis" wake word (in addition to the double-clap)
+- **Google Calendar** — "Was steht heute an?" → Jarvis reads your upcoming events; "Trag morgen 10 Uhr Mandantengespraech ein" → adds the event
+- **Mail.app (macOS)** — "Wie sieht mein Posteingang aus?" → Jarvis reports the unread count and the most recent senders
+- **Notes.app (macOS)** — "Notiere: Mandant Mueller hat angerufen" → Jarvis creates a timestamped note
+- **Todoist** — Aufgaben lesen, anlegen ("Trage Steuererklaerung pruefen ein"), und als erledigt markieren
+- **Steuer-News** — Daily morning brief from BFH-Pressemitteilungen + BFH-Entscheidungen RSS feeds, summarized in two sentences
+- **NRW-Feiertage / Wochenende-Modus** — Jarvis erkennt Wochenenden und gesetzliche Feiertage in NRW und besteht freundlich auf Erholung
+- **Abendmodus** — ab 18:00 Uhr weist Jarvis auf Feierabend hin
 
 ---
 
 ## Architecture
 
 ```
-You (speak) → Chrome Browser (Web Speech API) → FastAPI Server (local)
-                                                       ↓
-                                                Claude Haiku (thinks)
-                                                       ↓
-                                    ┌──────────────────┼───────────────────┐
-                                    ↓                  ↓                   ↓
-                             ElevenLabs TTS     Playwright Browser    Screen Capture
-                             (speaks back)      (searches/opens)     (Claude Vision)
-                                    ↓
-                             Audio → Chrome → You (hear)
+                       You (speak via mic in Chrome)
+                                  │
+                  Web Speech API → Chrome Browser → WebSocket
+                                  │
+                          FastAPI Server (local, port 8340)
+                                  │
+                          Claude Haiku (decides + responds)
+                                  │
+        ┌──────────────────────┬──┴──┬──────────────────────────────┐
+        │                      │     │                              │
+   ElevenLabs TTS        Playwright   Claude Vision           Tool Layer
+   (speaks back)        (browser)    (screenshot)                  │
+                                                                   │
+        ┌──────────┬───────────┬───────────┬───────────┬──────────┐│
+        │          │           │           │           │          ││
+   Google Cal  Mail.app   Notes.app   Todoist API  BFH RSS  Tagesschau RSS
+   (OAuth)   (AppleScr.)  (AppleScr.) (REST)      (XML)    (XML)
+                                  │
+                       Audio → Chrome → You (hear)
 ```
 
 | Component | Technology | Purpose |
 |-----------|-----------|---------|
 | Speech Input | Web Speech API (Chrome) | Converts your voice to text |
-| Server | FastAPI (Python) | Local orchestration — runs on your machine |
+| Server | FastAPI (Python 3.10+) | Local orchestration — runs on your machine |
 | Brain | Claude Haiku (Anthropic) | Thinks, decides, formulates responses |
 | Voice | ElevenLabs TTS | Converts text to natural German speech |
 | Browser Control | Playwright | Automates a real browser you can see |
 | Screen Vision | Claude Vision + Pillow | Screenshots and describes your screen |
 | Clap Detection | sounddevice + numpy | Listens for double-clap to launch everything |
-| Window Management | PowerShell + Win32 API | Snaps windows into screen quadrants |
+| Wake Word | Picovoice Porcupine | Optional "Jarvis" trigger phrase |
+| Google Calendar | google-api-python-client + dateparser | Read events; create events from natural-language dates |
+| Mail / Notes (macOS) | AppleScript via osascript | Read unread inbox; create notes |
+| Todoist | httpx + Todoist REST API | Read / add / complete tasks |
+| Steuer-News | httpx + RSS | Daily morning brief from BFH feeds |
+| Window Management | PowerShell + Win32 API (Win) / AppleScript (Mac) | Snaps windows into screen quadrants |
 
 ---
 
@@ -166,13 +191,26 @@ Clap twice → Spotify plays your song, VS Code opens, Obsidian opens, Chrome op
 
 ## What You Can Say
 
+### Core
 | Command | What Happens |
 |---------|-------------|
-| *"Good morning, Jarvis"* | Jarvis greets you with weather + tasks |
-| *"Search for AI news"* | Opens browser, searches, summarizes results |
-| *"Open skool.com"* | Opens the URL in your browser |
-| *"What's on my screen?"* | Takes screenshot, describes what he sees |
-| *"What's happening in the world?"* | Opens worldmonitor.app, summarizes global news |
+| *"Jarvis activate"* | Greeting: weather, tasks, BFH news of the day |
+| *"Suche AI-Nachrichten"* | Opens browser, searches DuckDuckGo, summarizes the first result |
+| *"Oeffne skool.com"* | Opens the URL (http/https only) in your browser |
+| *"Was siehst du auf meinem Bildschirm?"* | Screenshot + Claude Vision description |
+| *"Was gibt es Neues in der Welt?"* | Tagesschau RSS, summarized in two sentences |
+
+### Fork extensions
+| Command | What Happens |
+|---------|-------------|
+| *"Zeig mir meinen Kalender"* | Reads the next 7 days from Google Calendar |
+| *"Trag morgen 14 Uhr Mandantengespraech ein"* | Creates a Google Calendar event |
+| *"Wie sieht mein Posteingang aus?"* | Reads unread mails from Mail.app, summarizes |
+| *"Notiere: Mueller hat angerufen"* | Creates a timestamped note in Notes.app |
+| *"Was steht heute an?"* | Lists open Todoist tasks (overdue / today / upcoming) |
+| *"Trage Steuererklaerung pruefen ein"* | Adds a task to Todoist |
+| *"Steuererklaerung ist erledigt"* | Closes the matching Todoist task |
+| *"Was gibt es Neues im Steuerrecht?"* | BFH-Pressemitteilungen + -Entscheidungen, summarized |
 | *Any question* | Jarvis answers in his sarcastic butler style |
 
 ---
