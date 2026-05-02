@@ -153,7 +153,8 @@ def get_weather_sync():
                     "rain": h.get("chanceofrain", "0"),
                 })
         return result
-    except:
+    except Exception as e:
+        print(f"[jarvis] get_weather_sync failed: {type(e).__name__}: {e}", flush=True)
         return None
 
 
@@ -166,7 +167,8 @@ def get_tasks_sync():
         with open(tasks_path, "r", encoding="utf-8") as f:
             lines = f.readlines()
         return [l.strip().replace("- [ ]", "").strip() for l in lines if l.strip().startswith("- [ ]")]
-    except:
+    except Exception as e:
+        print(f"[jarvis] get_tasks_sync failed: {type(e).__name__}: {e}", flush=True)
         return []
 
 
