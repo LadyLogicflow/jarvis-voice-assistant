@@ -200,10 +200,21 @@ def get_tasks_sync():
         return []
 
 
-async def refresh_data():
+_REFRESH_COOLDOWN = 30.0  # seconds; weather/tasks rarely change faster
+_last_refresh_time: float = 0.0
+
+
+async def refresh_data(force: bool = False):
     """Refresh weather (async HTTP) and tasks (file IO via executor) without
-    blocking the event loop."""
-    global WEATHER_INFO, TASKS_INFO
+    blocking the event loop. Skips refresh when called again within
+    `_REFRESH_COOLDOWN` seconds, unless `force=True`."""
+    global WEATHER_INFO, TASKS_INFO, _last_refresh_time
+    now = time.time()
+    if not force and (now - _last_refresh_time) < _REFRESH_COOLDOWN:
+        remaining = int(_REFRESH_COOLDOWN - (now - _last_refresh_time))
+        print(f"[jarvis] refresh_data skip (cooldown noch {remaining}s)", flush=True)
+        return
+    _last_refresh_time = now
     loop = asyncio.get_event_loop()
     weather, tasks = await asyncio.gather(
         fetch_weather(),
