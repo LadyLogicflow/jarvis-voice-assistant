@@ -26,15 +26,26 @@ if str(ROOT) not in sys.path:
 
 
 @pytest.fixture(autouse=True)
-def _stub_env_and_config(tmp_path, monkeypatch):
-    """Provide minimal env vars + a fake config.json so server.py imports
-    without crashing. Tests that need real config can override fields
-    after import."""
+def _stub_env_and_config(monkeypatch):
+    """Provide minimal env vars + ensure a config.json exists so
+    `import server` doesn't crash on a fresh checkout. The values are
+    safe to share across tests; individual tests that need real config
+    can override fields after import."""
     monkeypatch.setenv("ANTHROPIC_API_KEY", "test-anthropic-key")
     monkeypatch.setenv("ELEVENLABS_API_KEY", "test-elevenlabs-key")
     monkeypatch.delenv("TODOIST_API_TOKEN", raising=False)
     monkeypatch.delenv("PICOVOICE_ACCESS_KEY", raising=False)
     monkeypatch.delenv("JARVIS_AUTH_TOKEN", raising=False)
+
+    # CI / fresh checkouts don't have a config.json (it's gitignored).
+    # Write a minimal stub if missing — won't overwrite a developer's real
+    # config.json.
+    cfg_path = ROOT / "config.json"
+    if not cfg_path.exists():
+        cfg_path.write_text(
+            '{"user_name":"TestUser","city":"Hamburg","workspace_path":"/tmp"}',
+            encoding="utf-8",
+        )
 
 
 @pytest.fixture
