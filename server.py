@@ -55,7 +55,7 @@ def _required_env(key: str) -> str:
 
 
 def get_easter(year: int) -> datetime.date:
-    """Berechnet das Osterdatum (Anonymus-Gregorianisch)."""
+    """Compute the Easter date (Anonymus / Gregorian algorithm)."""
     a = year % 19
     b = year // 100
     c = year % 100
@@ -74,7 +74,10 @@ def get_easter(year: int) -> datetime.date:
 
 
 def get_nrw_holidays(year: int) -> dict:
-    """Gibt alle gesetzlichen Feiertage in NRW zurueck."""
+    """Return the public holidays for NRW (Germany / North Rhine-Westphalia).
+
+    Holiday names are intentionally kept in German because they are part
+    of the data model surfaced to the user."""
     easter = get_easter(year)
     holidays = {
         datetime.date(year, 1, 1):   "Neujahr",
@@ -95,10 +98,11 @@ def get_nrw_holidays(year: int) -> dict:
 
 
 def check_free_day() -> tuple:
-    """Prueft ob heute ein Wochenende oder Feiertag ist.
-    Gibt (True, Bezeichnung) oder (False, '') zurueck."""
+    """Check whether today is a weekend day or a public holiday.
+
+    Returns (True, German-label) or (False, '')."""
     today = datetime.date.today()
-    weekday = today.weekday()  # 5=Samstag, 6=Sonntag
+    weekday = today.weekday()  # 5 = Saturday, 6 = Sunday
     if weekday == 5:
         return True, "Samstag"
     if weekday == 6:
@@ -274,13 +278,13 @@ TASKS_INFO = []
 STEUER_BRIEF = ""
 STEUER_BRIEF_DATE = ""
 
-# Aktuelle BFH-Neuigkeiten (letzte 3 Tage) — für Begrüßung
+# Latest BFH news (last 3 days) — used in the greeting.
 STEUER_RECENT = ""
 STEUER_RECENT_DATE = ""
 
 
 async def refresh_steuer_recent():
-    """Aktuelle BFH-News der letzten 3 Tage abrufen und cachen."""
+    """Fetch and cache the last 3 days of BFH news."""
     global STEUER_RECENT, STEUER_RECENT_DATE
     today = datetime.date.today().isoformat()
     if STEUER_RECENT_DATE == today:
@@ -705,7 +709,7 @@ async def process_message(session_id: str, user_text: str, ws: WebSocket):
         await speak(summary, ws, display=summary)
 
 
-# Aktive WebSocket-Verbindungen für Broadcast
+# Active WebSocket connections (used for broadcast).
 active_clients: list = []
 _last_activate_time: float = 0.0
 _last_greeting_time: float = 0.0
@@ -746,9 +750,10 @@ async def show_endpoint():
 
 @app.get("/activate", dependencies=[Depends(require_jarvis_token)])
 async def activate_endpoint():
-    """Vom Clap-Trigger aufgerufen: Jarvis aufwecken.
-    Debounce: maximal einmal alle 90 Sekunden.
-    Sendet NUR an den zuletzt verbundenen Client."""
+    """Wake-up endpoint called by the clap-trigger.
+
+    Debounced to at most once per ACTIVATE_COOLDOWN seconds. The wake
+    signal is sent only to the most recently connected client."""
     global _last_activate_time
     now = time.time()
     if now - _last_activate_time < ACTIVATE_COOLDOWN:
@@ -756,7 +761,7 @@ async def activate_endpoint():
         log.info(f"/activate ignoriert (Cooldown noch {remaining}s)")
         return {"ok": False, "reason": f"cooldown {remaining}s"}
     _last_activate_time = now
-    # Veraltete Verbindungen bereinigen, nur letzten Client wecken
+    # Drop stale connections; only wake the most recent client.
     if not active_clients:
         log.info(f"/activate: kein Client verbunden")
         return {"ok": False, "reason": "no clients"}
