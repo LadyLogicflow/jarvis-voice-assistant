@@ -151,6 +151,7 @@ ELEVENLABS_MODEL = config.get("elevenlabs_model", "eleven_turbo_v2_5")
 GREETING_COOLDOWN = float(config.get("greeting_cooldown", 10.0))
 ACTIVATE_COOLDOWN = float(config.get("activate_cooldown", 90.0))
 _REFRESH_COOLDOWN = float(config.get("refresh_cooldown", 30.0))
+CALENDAR_DAYS = int(config.get("calendar_days", 7))
 
 ai = anthropic.AsyncAnthropic(api_key=ANTHROPIC_API_KEY)
 # Global httpx client is for the HOT path: ElevenLabs TTS in _tts_one(),
@@ -566,7 +567,7 @@ async def execute_action(action: dict) -> str:
         return await todoist_tools.complete_task(TODOIST_TOKEN, p)
 
     elif t == "CALENDAR":
-        return await google_calendar_tools.get_events(days=7)
+        return await google_calendar_tools.get_events(days=CALENDAR_DAYS)
 
     elif t == "ADDCAL":
         parts = p.split("|", 1)

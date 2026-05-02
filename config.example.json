@@ -17,6 +17,7 @@
   "greeting_cooldown": 10.0,
   "activate_cooldown": 90.0,
   "refresh_cooldown": 30.0,
+  "calendar_days": 7,
 
   "_comment_clap": "Clap-trigger sensitivity (scripts/clap-trigger.py).",
   "clap_threshold": 0.15,
