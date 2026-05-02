@@ -38,12 +38,35 @@ def _bring_chromium_to_front():
         pass
 
 
-async def _get_browser():
-    global _browser, _context
+_playwright = None  # async_playwright handle, kept alive across reboots
+
+
+def _browser_alive() -> bool:
+    """Cheap liveness check. Catches both states the user can produce
+    (closed window vs killed Chromium process)."""
     if _browser is None:
-        pw = await async_playwright().start()
+        return False
+    try:
+        return _browser.is_connected()
+    except Exception:
+        return False
+
+
+async def _get_browser():
+    """Return a usable BrowserContext. Re-launches Chromium when the
+    previous instance was closed by the user (was a hard fail before:
+    'BrowserContext.new_page: Target page, context or browser has been
+    closed' kept happening on every following SEARCH until restart)."""
+    global _browser, _context, _playwright
+    if not _browser_alive():
+        if _browser is not None:
+            print("[jarvis] browser disconnected, relaunching Chromium", flush=True)
+            _browser = None
+            _context = None
+        if _playwright is None:
+            _playwright = await async_playwright().start()
         launch_args = ["--start-maximized"] if not IS_MAC else []
-        _browser = await pw.chromium.launch(headless=False, args=launch_args)
+        _browser = await _playwright.chromium.launch(headless=False, args=launch_args)
         ua_string = (
             "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
             if IS_MAC
