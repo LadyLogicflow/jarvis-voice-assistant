@@ -119,6 +119,12 @@ TASKS_FILE = config.get("obsidian_inbox_path", "")
 MORNING_HOUR = config.get("morning_hour", 7)
 
 ai = anthropic.AsyncAnthropic(api_key=ANTHROPIC_API_KEY)
+# Global httpx client is for the HOT path: ElevenLabs TTS in _tts_one(),
+# which fires multiple requests per response (one per text chunk). Sharing
+# the client gives us HTTP/2 + connection pool reuse.
+# One-shot calls in tools (fetch_weather, fetch_news, todoist_tools, etc.)
+# intentionally use their own short-lived `async with httpx.AsyncClient()`
+# to keep timeouts/headers local.
 http = httpx.AsyncClient(timeout=30)
 
 
@@ -139,6 +145,9 @@ async def _lifespan(_app):
             await task
         except (asyncio.CancelledError, Exception):
             pass
+        # Close the global httpx client so uvicorn doesn't warn about
+        # un-closed connections during reload.
+        await http.aclose()
 
 
 import browser_tools  # noqa: E402  (depends on app symbols above)
