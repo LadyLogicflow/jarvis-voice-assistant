@@ -23,12 +23,13 @@ IS_MAC = sys.platform == "darwin"
 SCRIPT_NAME = "launch-session.sh" if IS_MAC else "launch-session.ps1"
 SCRIPT_PATH = os.path.join(WORKSPACE_PATH, "scripts", SCRIPT_NAME)
 
+# Tunable from config.json (clap_* keys); defaults match the original behavior.
 SAMPLE_RATE = 44100
 BLOCK_SIZE = 1024
-THRESHOLD = 0.15       # RMS volume spike threshold — lower = more sensitive
-MIN_GAP = 0.1          # Minimum seconds between claps
-MAX_GAP = 1.2          # Maximum seconds between claps — more time for second clap
-COOLDOWN = 20.0        # Seconds to ignore after trigger fires (Jarvis speaks ~15-20s)
+THRESHOLD = float(config.get("clap_threshold", 0.15))   # RMS volume spike; lower = more sensitive
+MIN_GAP   = float(config.get("clap_min_gap", 0.1))       # Minimum seconds between claps
+MAX_GAP   = float(config.get("clap_max_gap", 1.2))       # Maximum seconds between claps
+COOLDOWN  = float(config.get("clap_cooldown", 20.0))     # Seconds to ignore after trigger fires
 
 last_clap_time = 0.0
 cooldown_until = 0.0
