@@ -23,7 +23,7 @@ _context = None
 IS_MAC = sys.platform == "darwin"
 
 
-def _bring_chromium_to_front():
+def _bring_chromium_to_front() -> None:
     """Bring the Playwright Chromium window to the foreground."""
     try:
         if IS_MAC:
@@ -58,7 +58,7 @@ def _browser_alive() -> bool:
         return False
 
 
-async def _get_browser():
+async def _get_browser():  # type: ignore[no-untyped-def]  # playwright BrowserContext
     """Return a usable BrowserContext. Re-launches Chromium when the
     previous instance was closed by the user (was a hard fail before:
     'BrowserContext.new_page: Target page, context or browser has been
@@ -187,7 +187,7 @@ def _is_safe_url(url: str) -> bool:
     return parsed.scheme.lower() in _ALLOWED_SCHEMES and bool(parsed.netloc)
 
 
-async def open_url(url: str):
+async def open_url(url: str) -> dict:
     """Open URL in user's default browser (non-blocking).
     Refuses anything that is not http(s) — see _is_safe_url()."""
     if not _is_safe_url(url):
@@ -197,7 +197,7 @@ async def open_url(url: str):
     return {"success": True, "url": url}
 
 
-async def close():
+async def close() -> None:
     global _browser, _context
     if _browser:
         await _browser.close()

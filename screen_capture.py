@@ -5,7 +5,12 @@ Takes screenshots and describes them via Claude Vision.
 
 import base64
 import io
+from typing import TYPE_CHECKING
+
 from PIL import ImageGrab
+
+if TYPE_CHECKING:
+    from anthropic import AsyncAnthropic
 
 
 def capture_screen() -> bytes:
@@ -16,7 +21,7 @@ def capture_screen() -> bytes:
     return buf.getvalue()
 
 
-async def describe_screen(anthropic_client) -> str:
+async def describe_screen(anthropic_client: "AsyncAnthropic") -> str:
     """Capture screen and describe it using Claude Vision."""
     png_bytes = capture_screen()
     b64 = base64.b64encode(png_bytes).decode("utf-8")
