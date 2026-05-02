@@ -54,50 +54,27 @@ def test_nrw_holidays_2026_easter_chain():
     assert holidays[easter + dt.timedelta(days=60)] == "Fronleichnam"
 
 
-def test_check_free_day_saturday(monkeypatch):
-    """check_free_day() reads datetime.date.today(); patch it."""
-    class FakeDate(dt.date):
-        @classmethod
-        def today(cls):
-            return cls(2026, 5, 2)  # this date is a Saturday
-
-    monkeypatch.setattr(server.datetime, "date", FakeDate)
-    is_free, label = server.check_free_day()
+def test_check_free_day_saturday():
+    """check_free_day() optionally accepts an explicit date — preferred
+    over monkeypatching the date module."""
+    is_free, label = server.check_free_day(dt.date(2026, 5, 2))  # Saturday
     assert is_free is True
     assert label == "Samstag"
 
 
-def test_check_free_day_sunday(monkeypatch):
-    class FakeDate(dt.date):
-        @classmethod
-        def today(cls):
-            return cls(2026, 5, 3)  # Sunday
-
-    monkeypatch.setattr(server.datetime, "date", FakeDate)
-    is_free, label = server.check_free_day()
+def test_check_free_day_sunday():
+    is_free, label = server.check_free_day(dt.date(2026, 5, 3))  # Sunday
     assert is_free is True
     assert label == "Sonntag"
 
 
-def test_check_free_day_workday(monkeypatch):
-    class FakeDate(dt.date):
-        @classmethod
-        def today(cls):
-            return cls(2026, 5, 4)  # Monday, no holiday
-
-    monkeypatch.setattr(server.datetime, "date", FakeDate)
-    is_free, label = server.check_free_day()
+def test_check_free_day_workday():
+    is_free, label = server.check_free_day(dt.date(2026, 5, 4))  # Monday
     assert is_free is False
     assert label == ""
 
 
-def test_check_free_day_holiday(monkeypatch):
-    class FakeDate(dt.date):
-        @classmethod
-        def today(cls):
-            return cls(2026, 12, 25)  # 1. Weihnachtstag, falls on Friday
-
-    monkeypatch.setattr(server.datetime, "date", FakeDate)
-    is_free, label = server.check_free_day()
+def test_check_free_day_holiday():
+    is_free, label = server.check_free_day(dt.date(2026, 12, 25))  # 1. Weihnachtstag
     assert is_free is True
     assert label == "1. Weihnachtstag"
