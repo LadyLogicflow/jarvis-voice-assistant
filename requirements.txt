@@ -1,10 +1,28 @@
+# Core web stack
 fastapi>=0.115.0
 uvicorn[standard]>=0.32.0
-anthropic>=0.39.0
+websockets>=13.0
 httpx>=0.27.0
+
+# LLM / TTS
+anthropic>=0.39.0
+
+# Browser automation + screen vision
 playwright>=1.40.0
 Pillow>=10.0.0
-websockets>=13.0
+
+# Audio (clap + wakeword triggers)
 sounddevice>=0.4.7
 numpy>=1.26.0
+pvporcupine>=3.0.0
+
+# Google Calendar integration
+google-api-python-client>=2.140.0
+google-auth>=2.34.0
+google-auth-oauthlib>=1.2.0
+
+# Natural-language date parsing for [ACTION:ADDCAL]
+dateparser>=1.2.0
+
+# Configuration / secrets loading from .env
 python-dotenv>=1.0.0
