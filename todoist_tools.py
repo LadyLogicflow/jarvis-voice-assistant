@@ -36,7 +36,7 @@ async def get_tasks(token: str, max_tasks: int = 10) -> str:
         except Exception as e:
             return f"Todoist nicht erreichbar: {e}"
 
-    # Nur mir zugewiesene, offene, nicht gelöschte Aufgaben
+    # Only tasks assigned to me, open, not deleted.
     tasks = [
         t for t in all_tasks
         if not t.get("checked")

@@ -45,7 +45,7 @@ def _parse_rss_items(xml_text: str) -> list:
 
 
 async def fetch_all_sources() -> str:
-    """BFH RSS-Feeds abrufen und als Text zurückgeben (für STEUERNEWS-Action)."""
+    """Fetch BFH RSS feeds and return them as text (used by [ACTION:STEUERNEWS])."""
     blocks = []
     async with httpx.AsyncClient(timeout=20, follow_redirects=True, headers=HEADERS) as client:
         for feed in BFH_FEEDS:
@@ -64,7 +64,8 @@ async def fetch_all_sources() -> str:
 
 
 async def fetch_recent(days: int = 3) -> str:
-    """Neuigkeiten der letzten `days` Tage aus BFH-RSS — für die Begrüßung."""
+    """Return BFH news items published within the last `days` days
+    (used in the morning greeting)."""
     cutoff = datetime.date.today() - datetime.timedelta(days=days)
     recent = []
     async with httpx.AsyncClient(timeout=20, follow_redirects=True, headers=HEADERS) as client:
