@@ -308,6 +308,18 @@ async def morning_brief_scheduler():
 ACTION_PATTERN = re.compile(r'\[ACTION:(\w+)\]\s*(.*?)$', re.DOTALL | re.MULTILINE)
 
 conversations: dict[str, list] = {}
+# Trim each session's history to this many messages after every append.
+# We only ever feed the last 16 to the LLM (history[-16:]), so 50 leaves
+# headroom for inspection/debugging without growing without bound.
+MAX_CONVERSATION_HISTORY = 50
+
+
+def _append_message(session_id: str, role: str, content: str) -> None:
+    """Append a message to a conversation and cap the list length."""
+    conv = conversations.setdefault(session_id, [])
+    conv.append({"role": role, "content": content})
+    if len(conv) > MAX_CONVERSATION_HISTORY:
+        del conv[: len(conv) - MAX_CONVERSATION_HISTORY]
 
 def build_system_prompt():
     weather_block = ""
@@ -562,7 +574,7 @@ async def process_message(session_id: str, user_text: str, ws: WebSocket):
         await refresh_data()
         await refresh_steuer_recent()
 
-    conversations[session_id].append({"role": "user", "content": user_text})
+    _append_message(session_id, "user", user_text)
     history = conversations[session_id][-16:]
 
     # LLM call
@@ -579,7 +591,7 @@ async def process_message(session_id: str, user_text: str, ws: WebSocket):
     # Speak the main response immediately (chunk by chunk — no large WS messages)
     if spoken_text:
         print(f"  Jarvis: {spoken_text[:80]}", flush=True)
-        conversations[session_id].append({"role": "assistant", "content": spoken_text})
+        _append_message(session_id, "assistant", spoken_text)
         if not await speak(spoken_text, ws, display=spoken_text):
             return  # WebSocket lost, abort
 
@@ -604,7 +616,7 @@ async def process_message(session_id: str, user_text: str, ws: WebSocket):
         if action["type"] == "OPEN":
             # OPEN normally stays silent; speak only when the URL was rejected.
             if isinstance(action_result, str) and action_result.startswith("Diese URL"):
-                conversations[session_id].append({"role": "assistant", "content": action_result})
+                _append_message(session_id, "assistant", action_result)
                 await speak(action_result, ws, display=action_result)
             return
 
@@ -619,13 +631,13 @@ async def process_message(session_id: str, user_text: str, ws: WebSocket):
         }
         if isinstance(action_result, str) and action_result in _EMPTY_REPLIES:
             msg = _EMPTY_REPLIES[action_result]
-            conversations[session_id].append({"role": "assistant", "content": msg})
+            _append_message(session_id, "assistant", msg)
             await speak(msg, ws, display=msg)
             return
 
         if action_result and "fehlgeschlagen" not in action_result:
             if action["type"] in ("STEUERNEWS", "ADDTASK", "DONETASK", "ADDCAL", "NOTE"):
-                conversations[session_id].append({"role": "assistant", "content": action_result})
+                _append_message(session_id, "assistant", action_result)
                 await speak(action_result, ws, display=action_result)
                 return
 
@@ -660,7 +672,7 @@ async def process_message(session_id: str, user_text: str, ws: WebSocket):
         else:
             summary = f"Das hat leider nicht funktioniert, {USER_ADDRESS}."
 
-        conversations[session_id].append({"role": "assistant", "content": summary})
+        _append_message(session_id, "assistant", summary)
         await speak(summary, ws, display=summary)
 
 
