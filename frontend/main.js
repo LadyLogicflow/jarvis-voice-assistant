@@ -53,6 +53,15 @@ function connect() {
             ws.send(JSON.stringify({ type: 'pong' }));
             return;
         }
+        if (data.type === 'cancelled') {
+            // Server confirmed an in-flight action was aborted.
+            audioQueue = [];
+            isPlaying = false;
+            setOrbState('listening');
+            status.textContent = 'Abgebrochen.';
+            setTimeout(() => { status.textContent = ''; }, 1500);
+            return;
+        }
         if (data.type === 'wake') {
             fetch('/show').catch(() => {});
             if (!sessionStorage.getItem('jarvisGreeted')) {
@@ -157,7 +166,17 @@ if (SPEECH_AVAILABLE) {
         if (last.isFinal) {
             const text = last[0].transcript.trim();
             const lower = text.toLowerCase();
-            // Nur reagieren wenn mit "Jarvis" angesprochen
+
+            // Cancel keywords stop any running action.
+            // Recognized: "stopp jarvis", "stop jarvis", "halt jarvis", "abbruch".
+            if (/(^|\s)(stopp|stop|halt) jarvis\b/i.test(lower) || /\babbruch\b/i.test(lower)) {
+                addTranscript('user', text);
+                ws.send(JSON.stringify({ type: 'cancel' }));
+                status.textContent = 'Abbruch gesendet.';
+                return;
+            }
+
+            // Otherwise: only act on commands that start with "Jarvis".
             if (lower.startsWith('jarvis')) {
                 const command = text.replace(/^jarvis[,\s]*/i, '').trim() || 'Jarvis bereit';
                 addTranscript('user', command);

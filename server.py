@@ -787,6 +787,10 @@ async def process_message(session_id: str, user_text: str, ws: WebSocket) -> Non
 
 # Active WebSocket connections (used for broadcast).
 active_clients: list = []
+
+# In-flight message processing tasks per session, used by the cancel
+# WebSocket message (see websocket_endpoint).
+_inflight_tasks: dict[str, asyncio.Task] = {}
 _last_activate_time: float = 0.0
 _last_greeting_time: float = 0.0
 
@@ -870,20 +874,50 @@ async def websocket_endpoint(ws: WebSocket) -> None:
 
     asyncio.create_task(keepalive())
 
+    def _cancel_inflight(reason: str) -> bool:
+        """Cancel any in-flight process_message task for this session.
+        Returns True if there was something to cancel."""
+        task = _inflight_tasks.get(session_id)
+        if task and not task.done():
+            log.info(f"cancel inflight ({reason})")
+            task.cancel()
+            return True
+        return False
+
     try:
         while True:
             data = await ws.receive_json()
-            if data.get("type") == "pong":
+            msg_type = data.get("type")
+            if msg_type == "pong":
                 continue
+            if msg_type == "cancel":
+                if _cancel_inflight("client requested cancel"):
+                    try:
+                        await ws.send_json({"type": "cancelled"})
+                    except Exception:
+                        pass
+                continue
+
             user_text = data.get("text", "").strip()
             if not user_text:
                 continue
 
+            # Cancel any still-running message before starting a new one,
+            # so the user can interrupt by simply talking again.
+            _cancel_inflight("new message arrived")
+
             log.info(f"You:    {user_text}")
-            await process_message(session_id, user_text, ws)
+            task = asyncio.create_task(process_message(session_id, user_text, ws))
+            _inflight_tasks[session_id] = task
+            try:
+                await task
+            except asyncio.CancelledError:
+                log.info("process_message was cancelled")
 
     except (WebSocketDisconnect, RuntimeError, Exception) as e:
         log.info(f"Client disconnected: {type(e).__name__}")
+        _cancel_inflight("client disconnected")
+        _inflight_tasks.pop(session_id, None)
         conversations.pop(session_id, None)
         if ws in active_clients:
             active_clients.remove(ws)
