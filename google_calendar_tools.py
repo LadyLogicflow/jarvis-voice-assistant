@@ -4,9 +4,14 @@ Reads upcoming events and can add new ones.
 Requires token.json (generated once via scripts/google-auth.py).
 """
 
-import os
 import asyncio
+import os
 from datetime import datetime, timedelta, timezone
+
+import dateparser
+from google.auth.transport.requests import Request
+from google.oauth2.credentials import Credentials
+from googleapiclient.discovery import build
 
 SCOPES = ["https://www.googleapis.com/auth/calendar"]
 TOKEN_PATH = os.path.join(os.path.dirname(__file__), "token.json")
@@ -14,10 +19,6 @@ CREDS_PATH = os.path.join(os.path.dirname(__file__), "credentials.json")
 
 
 def _get_service():
-    from google.oauth2.credentials import Credentials
-    from google.auth.transport.requests import Request
-    from googleapiclient.discovery import build
-
     creds = None
     if os.path.exists(TOKEN_PATH):
         creds = Credentials.from_authorized_user_file(TOKEN_PATH, SCOPES)
@@ -87,15 +88,9 @@ async def add_event(title: str, when: str, duration_h: float = 1.0) -> str:
 
 
 def _add_event(title: str, when: str, duration_h: float) -> str:
-    try:
-        import dateparser
-        dt = dateparser.parse(when, languages=["de", "en"])
-        if not dt:
-            return f"Datum '{when}' konnte nicht verstanden werden."
-    except ImportError:
-        # Fallback: morgen 10 Uhr
-        dt = datetime.now() + timedelta(days=1)
-        dt = dt.replace(hour=10, minute=0, second=0, microsecond=0)
+    dt = dateparser.parse(when, languages=["de", "en"])
+    if not dt:
+        return f"Datum '{when}' konnte nicht verstanden werden."
 
     try:
         service = _get_service()

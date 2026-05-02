@@ -3,11 +3,14 @@ Jarvis V2 — Browser Tools
 Web search via DuckDuckGo Lite, page visits via Playwright, URL opening.
 """
 
+import asyncio
 import re
+import subprocess
 import sys
 import webbrowser
-import subprocess
+import xml.etree.ElementTree as ET
 from urllib.parse import unquote, parse_qs, urlparse
+
 import httpx
 from playwright.async_api import async_playwright
 
@@ -148,7 +151,6 @@ async def visit(url: str, max_chars: int = 5000) -> dict:
 
 async def fetch_news() -> str:
     """Fetch current news from Tagesschau RSS feed."""
-    import xml.etree.ElementTree as ET
     url = "https://www.tagesschau.de/infoservices/alle-meldungen-100~rss2.xml"
     try:
         async with httpx.AsyncClient(timeout=10) as client:
@@ -185,7 +187,6 @@ def _is_safe_url(url: str) -> bool:
 async def open_url(url: str):
     """Open URL in user's default browser (non-blocking).
     Refuses anything that is not http(s) — see _is_safe_url()."""
-    import asyncio
     if not _is_safe_url(url):
         return {"success": False, "url": url, "error": "rejected: only http/https URLs allowed"}
     loop = asyncio.get_event_loop()
