@@ -135,8 +135,18 @@ function playNext() {
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 let recognition;
 let isListening = false;
+const SPEECH_AVAILABLE = !!SpeechRecognition;
 
-if (SpeechRecognition) {
+if (!SPEECH_AVAILABLE) {
+    // Firefox / Safari without webkit prefix have no SpeechRecognition.
+    // Make the failure mode obvious instead of silently doing nothing.
+    status.textContent = 'Spracherkennung nicht verfuegbar. Bitte Google Chrome verwenden.';
+    setOrbState('idle');
+    orb.style.cursor = 'not-allowed';
+    orb.title = 'Spracherkennung nicht verfuegbar (Chrome benoetigt)';
+}
+
+if (SPEECH_AVAILABLE) {
     recognition = new SpeechRecognition();
     recognition.lang = 'de-DE';
     recognition.continuous = true;
@@ -173,7 +183,7 @@ if (SpeechRecognition) {
 }
 
 function startListening() {
-    if (isPlaying) return;
+    if (isPlaying || !SPEECH_AVAILABLE) return;
     try {
         recognition.start();
         isListening = true;
@@ -184,6 +194,10 @@ function startListening() {
 
 orb.addEventListener('click', () => {
     if (isPlaying) return;
+    if (!SPEECH_AVAILABLE) {
+        status.textContent = 'Spracherkennung nicht verfuegbar. Bitte Google Chrome verwenden.';
+        return;
+    }
     if (isListening) {
         recognition.stop();
         isListening = false;
