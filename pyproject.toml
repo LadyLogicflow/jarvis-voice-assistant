@@ -1,0 +1,22 @@
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+addopts = "-q --strict-markers"
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+# Light, opinionated subset. Keep noise low while we still don't have full
+# type-checker coverage.
+select = ["E", "F", "I", "W"]
+ignore = ["E501"]  # long lines are handled by formatter
+
+[tool.coverage.run]
+source = ["."]
+omit = [
+    "tests/*",
+    "scripts/*",
+    "frontend/*",
+]
