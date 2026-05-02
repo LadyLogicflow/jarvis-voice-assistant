@@ -119,7 +119,27 @@ MORNING_HOUR = config.get("morning_hour", 7)
 ai = anthropic.AsyncAnthropic(api_key=ANTHROPIC_API_KEY)
 http = httpx.AsyncClient(timeout=30)
 
-app = FastAPI()
+from contextlib import asynccontextmanager
+
+
+@asynccontextmanager
+async def _lifespan(_app):
+    """Replaces the deprecated @app.on_event('startup'/'shutdown') hooks.
+    Spawns the morning-brief scheduler on startup and cancels it on
+    shutdown so uvicorn can exit cleanly."""
+    task = asyncio.create_task(morning_brief_scheduler())
+    print(f"[jarvis] Steuerrecht-Scheduler gestartet (taeglich um {MORNING_HOUR}:00 Uhr)", flush=True)
+    try:
+        yield
+    finally:
+        task.cancel()
+        try:
+            await task
+        except (asyncio.CancelledError, Exception):
+            pass
+
+
+app = FastAPI(lifespan=_lifespan)
 
 import browser_tools
 import screen_capture
@@ -670,12 +690,6 @@ async def activate_endpoint():
         active_clients.remove(target)
         return {"ok": False, "reason": "client send failed"}
     return {"ok": True}
-
-
-@app.on_event("startup")
-async def startup_event():
-    asyncio.create_task(morning_brief_scheduler())
-    print(f"[jarvis] Steuerrecht-Scheduler gestartet (taeglich um {MORNING_HOUR}:00 Uhr)", flush=True)
 
 
 @app.websocket("/ws")
