@@ -25,6 +25,9 @@ dist/
 *.log
 jarvis.log
 
+# Conversation history persistence (M6.2)
+.jarvis_history.json
+
 # OS
 .DS_Store
 Thumbs.db

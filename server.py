@@ -369,13 +369,50 @@ conversations: dict[str, list] = {}
 # headroom for inspection/debugging without growing without bound.
 MAX_CONVERSATION_HISTORY = 50
 
+# On-disk persistence for the conversation history. Single user, single
+# rolling history file: when Jarvis is restarted (server crash, deploy)
+# the previous conversation seeds the next session so the user doesn't
+# repeat themselves. Set persist_conversations=false in config.json to
+# disable.
+_PERSIST_HISTORY = bool(config.get("persist_conversations", True))
+_HISTORY_PATH = os.path.join(os.path.dirname(__file__), ".jarvis_history.json")
+
+
+def _load_persistent_history() -> list:
+    """Read the rolling history from disk (best-effort)."""
+    if not _PERSIST_HISTORY or not os.path.exists(_HISTORY_PATH):
+        return []
+    try:
+        with open(_HISTORY_PATH, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if isinstance(data, list):
+            return data[-MAX_CONVERSATION_HISTORY:]
+    except Exception as e:
+        log.warning(f"_load_persistent_history failed: {type(e).__name__}: {e}")
+    return []
+
+
+def _save_persistent_history(history: list) -> None:
+    """Best-effort write to disk; never crashes the request path."""
+    if not _PERSIST_HISTORY:
+        return
+    try:
+        tmp = _HISTORY_PATH + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(history[-MAX_CONVERSATION_HISTORY:], f, ensure_ascii=False)
+        os.replace(tmp, _HISTORY_PATH)
+    except Exception as e:
+        log.warning(f"_save_persistent_history failed: {type(e).__name__}: {e}")
+
 
 def _append_message(session_id: str, role: str, content: str) -> None:
-    """Append a message to a conversation and cap the list length."""
+    """Append a message to a conversation, cap the list length, and
+    persist to disk when persistence is enabled."""
     conv = conversations.setdefault(session_id, [])
     conv.append({"role": role, "content": content})
     if len(conv) > MAX_CONVERSATION_HISTORY:
         del conv[: len(conv) - MAX_CONVERSATION_HISTORY]
+    _save_persistent_history(conv)
 
 def build_system_prompt() -> str:
     weather_block = ""
@@ -632,7 +669,9 @@ async def process_message(session_id: str, user_text: str, ws: WebSocket) -> Non
     global _last_greeting_time
 
     if session_id not in conversations:
-        conversations[session_id] = []
+        # Seed a brand-new session with whatever was on disk so the user
+        # doesn't have to re-establish context after a restart.
+        conversations[session_id] = _load_persistent_history()
 
     # Refresh weather + tasks + steuer-recent on activate
     if "activate" in user_text.lower():
