@@ -376,9 +376,12 @@ def build_system_prompt() -> str:
     weather_block = ""
     if WEATHER_INFO:
         w = WEATHER_INFO
-        weather_block = f"\nWetter {CITY}: {w['temp']}°C, gefuehlt {w['feels_like']}°C, {w['description']}"
+        # Format weather data already in spoken form so the LLM doesn't
+        # mirror "18°C" or "100%" verbatim into its reply (TTS reads those
+        # symbols literally as "Grad C" / "Prozent-Zeichen").
+        weather_block = f"\nWetter {CITY}: {w['temp']} Grad, gefuehlt {w['feels_like']} Grad, {w['description']}"
         if w.get("forecast_today"):
-            parts = [f"{f['hour']}:00 Uhr {f['temp']}°C {f['desc']} (Regen {f['rain']}%)"
+            parts = [f"{f['hour']} Uhr: {f['temp']} Grad, {f['desc']}, Regenrisiko {f['rain']} Prozent"
                      for f in w["forecast_today"][:3]]
             weather_block += f"\nVorhersage heute: {' | '.join(parts)}"
 
