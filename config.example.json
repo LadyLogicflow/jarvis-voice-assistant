@@ -52,6 +52,11 @@
   "telegram_quiet_end": "07:00",
   "whisper_model": "base",
 
+  "_comment_mail_monitor": "IMAP IDLE push monitor (issue #48). Reuses the IMAP block above. Categories: werbung | info | handlungsbedarf — only the listed ones are forwarded to Telegram. Quiet hours suppress pushes (already-classified mails stay 'seen').",
+  "mail_monitor_enabled": false,
+  "mail_monitor_forward": ["handlungsbedarf"],
+  "mail_monitor_folder": "INBOX",
+
   "_comment_clap": "Clap-trigger sensitivity (scripts/clap-trigger.py).",
   "clap_threshold": 0.15,
   "clap_min_gap": 0.1,

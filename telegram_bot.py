@@ -78,22 +78,9 @@ async def _transcribe(audio_bytes: bytes) -> str:
     return await loop.run_in_executor(None, _do)
 
 
-# ---------------------------------------------------------------------------
-# Quiet hours (21:00 - 07:00 by default). Shared with the IMAP push
-# monitor (issue #48) once that lands.
-# ---------------------------------------------------------------------------
-def is_quiet_hours(now: datetime.datetime | None = None) -> bool:
-    now = now or datetime.datetime.now()
-    h, m = now.hour, now.minute
-    start_h, start_m = (int(x) for x in S.TELEGRAM_QUIET_START.split(":"))
-    end_h, end_m = (int(x) for x in S.TELEGRAM_QUIET_END.split(":"))
-    cur = h * 60 + m
-    s = start_h * 60 + start_m
-    e = end_h * 60 + end_m
-    if s < e:
-        return s <= cur < e
-    # Wraps midnight (e.g. 21:00 - 07:00).
-    return cur >= s or cur < e
+# Quiet hours helper now lives in settings.is_quiet_hours so the IMAP
+# mail monitor (issue #48) can share it.
+is_quiet_hours = S.is_quiet_hours
 
 
 # Actions that DON'T make sense over Telegram (need the Mac browser /
@@ -263,9 +250,35 @@ async def _text_handler(update, context) -> None:
     await _handle_message(update, context, source_text=update.message.text or "")
 
 
+# Reference to the running Application; set by telegram_bot_main once
+# the bot is up. Other modules (mail_monitor) use it via send_user_text.
+_app = None
+
+
+async def send_user_text(text: str) -> bool:
+    """Push a text message to Catrin's Telegram chat from anywhere in
+    the server. Returns True on success, False if not configured /
+    bot not running / send failed. Quiet-hours aware."""
+    if not S.TELEGRAM_BOT_TOKEN or not S.TELEGRAM_CHAT_ID:
+        return False
+    if _app is None:
+        log.warning("send_user_text: bot not yet running")
+        return False
+    if S.is_quiet_hours():
+        log.info(f"send_user_text suppressed by quiet hours: {text[:60]!r}")
+        return False
+    try:
+        await _app.bot.send_message(chat_id=S.TELEGRAM_CHAT_ID, text=text)
+        return True
+    except Exception as e:
+        log.warning(f"send_user_text failed: {type(e).__name__}: {e}")
+        return False
+
+
 async def telegram_bot_main() -> None:
     """Long-running task: starts the Telegram bot loop. Spawned by
     server.lifespan when TELEGRAM_BOT_TOKEN is configured."""
+    global _app
     if not S.TELEGRAM_BOT_TOKEN:
         log.info("Telegram bot disabled (no TELEGRAM_BOT_TOKEN in env)")
         return
@@ -285,18 +298,19 @@ async def telegram_bot_main() -> None:
         f"{S.TELEGRAM_CHAT_ID or 'open'} | quiet: "
         f"{S.TELEGRAM_QUIET_START}-{S.TELEGRAM_QUIET_END})"
     )
-    app = ApplicationBuilder().token(S.TELEGRAM_BOT_TOKEN).build()
-    app.add_handler(MessageHandler(filters.VOICE | filters.AUDIO, _voice_handler))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, _text_handler))
+    _app = ApplicationBuilder().token(S.TELEGRAM_BOT_TOKEN).build()
+    _app.add_handler(MessageHandler(filters.VOICE | filters.AUDIO, _voice_handler))
+    _app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, _text_handler))
 
-    await app.initialize()
-    await app.start()
-    await app.updater.start_polling(allowed_updates=Update.ALL_TYPES)
+    await _app.initialize()
+    await _app.start()
+    await _app.updater.start_polling(allowed_updates=Update.ALL_TYPES)
     try:
         # Block until cancelled by the lifespan teardown.
         while True:
             await asyncio.sleep(3600)
     finally:
-        await app.updater.stop()
-        await app.stop()
-        await app.shutdown()
+        await _app.updater.stop()
+        await _app.stop()
+        await _app.shutdown()
+        _app = None
