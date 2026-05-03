@@ -93,15 +93,30 @@ async def execute_action(action: dict) -> str:
     elif t == "TASKS":
         if not S.TODOIST_TOKEN or S.TODOIST_TOKEN == "YOUR_TODOIST_API_TOKEN":
             return "Todoist API-Token nicht konfiguriert."
-        return await todoist_tools.get_tasks(S.TODOIST_TOKEN)
+        return await todoist_tools.get_tasks(
+            S.TODOIST_TOKEN,
+            project_ids=S.TODOIST_PROJECT_IDS or None,
+            section_ids_per_project=S.TODOIST_SECTIONS_PER_PROJECT or None,
+        )
 
     elif t == "ADDTASK":
         if not S.TODOIST_TOKEN or S.TODOIST_TOKEN == "YOUR_TODOIST_API_TOKEN":
             return "Todoist API-Token nicht konfiguriert."
-        parts = p.split("|", 1)
-        content = parts[0].strip()
-        due = parts[1].strip() if len(parts) > 1 else ""
-        return await todoist_tools.add_task(S.TODOIST_TOKEN, content, due)
+        # Payload format: "content | due | bereich"
+        # bereich (optional) is one of: privat, hilo, dihag — pins the
+        # task to the matching project (and HILO section).
+        parts = [x.strip() for x in p.split("|")]
+        content = parts[0] if parts else ""
+        due = parts[1] if len(parts) > 1 else ""
+        bereich = parts[2].lower() if len(parts) > 2 else ""
+        project_id = S.TODOIST_PROJECTS.get(bereich) if bereich else None
+        section_id = (
+            S.TODOIST_PROJECTS.get("hilo_section") if bereich == "hilo" else None
+        )
+        return await todoist_tools.add_task(
+            S.TODOIST_TOKEN, content, due,
+            project_id=project_id, section_id=section_id,
+        )
 
     elif t == "DONETASK":
         if not S.TODOIST_TOKEN or S.TODOIST_TOKEN == "YOUR_TODOIST_API_TOKEN":

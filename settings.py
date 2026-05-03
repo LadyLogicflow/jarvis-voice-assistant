@@ -100,6 +100,19 @@ NEWS_SOURCE_NAME = config.get("news_source_name", "Tagesschau")
 PERSIST_HISTORY = bool(config.get("persist_conversations", True))
 HISTORY_PATH = os.path.join(os.path.dirname(__file__), ".jarvis_history.json")
 
+# Todoist project / section scoping (M-???). Keeps the task list focused
+# on Catrin's three relevant areas instead of every project she has.
+# Each entry is a Todoist project_id; HILO additionally restricts to a
+# section_id so only the personal-tasks-for-Catrin section comes through.
+TODOIST_PROJECTS = config.get("todoist_projects", {})
+TODOIST_PROJECT_IDS = [
+    pid for key in ("hilo", "dihag", "privat")
+    if (pid := TODOIST_PROJECTS.get(key))
+]
+TODOIST_SECTIONS_PER_PROJECT = {}
+if TODOIST_PROJECTS.get("hilo") and TODOIST_PROJECTS.get("hilo_section"):
+    TODOIST_SECTIONS_PER_PROJECT[TODOIST_PROJECTS["hilo"]] = [TODOIST_PROJECTS["hilo_section"]]
+
 # Mail backend ("applescript" = macOS Mail.app | "imap" = cross-platform).
 MAIL_BACKEND = config.get("mail_backend", "applescript")
 IMAP_HOST = config.get("imap_host", "")

@@ -3,9 +3,12 @@ Jarvis — Todoist Integration
 Uses Todoist API v1 (api.todoist.com/api/v1).
 """
 
-import httpx
-from typing import Optional
+from __future__ import annotations
+
 from datetime import date
+from typing import Optional
+
+import httpx
 
 BASE = "https://api.todoist.com/api/v1"
 
@@ -24,8 +27,34 @@ async def _my_id(token: str) -> Optional[str]:
             return None
 
 
-async def get_tasks(token: str, max_tasks: int = 10) -> str:
-    """Fetch open tasks assigned to me."""
+def _task_in_scope(
+    task: dict,
+    project_ids: set[str] | None,
+    section_ids_per_project: dict[str, set[str]] | None,
+) -> bool:
+    """True iff a task belongs to one of the wanted projects.
+    For projects listed in `section_ids_per_project`, additionally
+    requires the task to live in one of the listed section ids."""
+    if not project_ids:
+        return True  # no filter = all projects
+    pid = str(task.get("project_id", ""))
+    if pid not in project_ids:
+        return False
+    if section_ids_per_project and pid in section_ids_per_project:
+        wanted_sections = section_ids_per_project[pid]
+        if str(task.get("section_id", "")) not in wanted_sections:
+            return False
+    return True
+
+
+async def get_tasks(
+    token: str,
+    max_tasks: int = 10,
+    project_ids: list[str] | None = None,
+    section_ids_per_project: dict[str, list[str]] | None = None,
+) -> str:
+    """Fetch open tasks assigned to me, optionally filtered to a set of
+    Todoist project IDs (and per-project section IDs)."""
     my_id = await _my_id(token)
 
     async with httpx.AsyncClient(timeout=15) as c:
@@ -36,12 +65,18 @@ async def get_tasks(token: str, max_tasks: int = 10) -> str:
         except Exception as e:
             return f"Todoist nicht erreichbar: {e}"
 
-    # Only tasks assigned to me, open, not deleted.
+    pid_set = set(project_ids) if project_ids else None
+    sec_sets = (
+        {pid: set(secs) for pid, secs in section_ids_per_project.items()}
+        if section_ids_per_project else None
+    )
+
     tasks = [
         t for t in all_tasks
         if not t.get("checked")
         and not t.get("is_deleted")
         and (not my_id or str(t.get("user_id", "")) == my_id)
+        and _task_in_scope(t, pid_set, sec_sets)
     ]
 
     if not tasks:
@@ -71,12 +106,22 @@ async def get_tasks(token: str, max_tasks: int = 10) -> str:
     return f"Todoist — {total} offene Aufgaben:\n" + "\n".join(lines)
 
 
-async def add_task(token: str, content: str, due: str = "") -> str:
-    """Add a new task."""
+async def add_task(
+    token: str,
+    content: str,
+    due: str = "",
+    project_id: str | None = None,
+    section_id: str | None = None,
+) -> str:
+    """Add a new task. Optionally pin it to a project / section."""
     payload: dict = {"content": content}
     if due:
         payload["due_string"] = due
         payload["due_lang"] = "de"
+    if project_id:
+        payload["project_id"] = project_id
+    if section_id:
+        payload["section_id"] = section_id
     async with httpx.AsyncClient(timeout=10) as c:
         try:
             r = await c.post(f"{BASE}/tasks", headers=_h(token), json=payload)
