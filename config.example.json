@@ -43,6 +43,8 @@
   "politik_news_url": "https://www.tagesschau.de/inland/index~rss2.xml",
   "politik_news_name": "Tagesschau Inland",
   "user_address_pool": ["Madam", "Catrin", "Caterina"],
+  "_comment_proactive": "Times of day (24h, HH:MM) at which Jarvis proactively pushes an update. Each slot fires at most once per day.",
+  "proactive_briefs_times": ["12:30", "16:00", "18:00"],
 
   "_comment_clap": "Clap-trigger sensitivity (scripts/clap-trigger.py).",
   "clap_threshold": 0.15,
