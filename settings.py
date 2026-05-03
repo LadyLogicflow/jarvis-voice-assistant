@@ -97,6 +97,19 @@ NEWS_URL = config.get(
 )
 NEWS_SOURCE_NAME = config.get("news_source_name", "Tagesschau")
 
+# Morning brief: full briefing (weather, today's events/tasks, Steuer/Politik)
+# is delivered on Activate before this hour. After it, a short greeting only.
+MORNING_BRIEF_UNTIL_HOUR = int(config.get("morning_brief_until_hour", 11))
+POLITIK_NEWS_URL = config.get(
+    "politik_news_url",
+    "https://www.tagesschau.de/inland/index~rss2.xml",
+)
+POLITIK_NEWS_NAME = config.get("politik_news_name", "Tagesschau Inland")
+
+# Address pool — Jarvis randomly varies how he calls Catrin so the
+# greeting doesn't sound canned.
+USER_ADDRESS_POOL = config.get("user_address_pool", ["Madam", "Catrin", "Caterina"])
+
 PERSIST_HISTORY = bool(config.get("persist_conversations", True))
 HISTORY_PATH = os.path.join(os.path.dirname(__file__), ".jarvis_history.json")
 
@@ -138,8 +151,14 @@ http = httpx.AsyncClient(timeout=30)
 # `import settings as S; S.WEATHER_INFO` so they see updates.
 # ---------------------------------------------------------------------------
 WEATHER_INFO: dict | None = None
-TASKS_INFO: list[str] = []
+TASKS_INFO: list[str] = []  # Obsidian Tasks.md
 STEUER_BRIEF: str = ""
 STEUER_BRIEF_DATE: str = ""
 STEUER_RECENT: str = ""
 STEUER_RECENT_DATE: str = ""
+
+# Morning-brief state. Refreshed on activate before MORNING_BRIEF_UNTIL_HOUR.
+TODAY_TASKS: str = ""        # Todoist tasks due today + overdue
+TODAY_EVENTS: str = ""        # Google Calendar events for today
+POLITIK_BRIEF: str = ""       # Tagesschau Inland summary
+POLITIK_BRIEF_DATE: str = ""

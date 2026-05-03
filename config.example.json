@@ -38,6 +38,12 @@
     "privat": ""
   },
 
+  "_comment_briefing": "Morning briefing only fires before this hour; after it, just a short greeting. Politik news source is separate from the general news feed.",
+  "morning_brief_until_hour": 11,
+  "politik_news_url": "https://www.tagesschau.de/inland/index~rss2.xml",
+  "politik_news_name": "Tagesschau Inland",
+  "user_address_pool": ["Madam", "Catrin", "Caterina"],
+
   "_comment_clap": "Clap-trigger sensitivity (scripts/clap-trigger.py).",
   "clap_threshold": 0.15,
   "clap_min_gap": 0.1,

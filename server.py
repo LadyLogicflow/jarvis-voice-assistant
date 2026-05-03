@@ -41,7 +41,12 @@ from conversation import (
     load_persistent_history,
 )
 from prompt import extract_action, get_system_prompt
-from scheduler import morning_brief_scheduler, refresh_data, refresh_steuer_recent
+from scheduler import (
+    morning_brief_scheduler,
+    refresh_data,
+    refresh_morning_brief_data,
+    refresh_steuer_recent,
+)
 from tts import speak
 
 log = S.log
@@ -158,6 +163,11 @@ async def process_message(session_id: str, user_text: str, ws: WebSocket) -> Non
         _last_greeting_time = now
         await refresh_data()
         await refresh_steuer_recent()
+        # Before MORNING_BRIEF_UNTIL_HOUR also fetch tasks/calendar/politik
+        # so the system prompt has everything for the full briefing.
+        import datetime as _dt
+        if _dt.datetime.now().hour < S.MORNING_BRIEF_UNTIL_HOUR:
+            await refresh_morning_brief_data()
 
     append_message(session_id, "user", user_text)
     history = conversations[session_id][-16:]
