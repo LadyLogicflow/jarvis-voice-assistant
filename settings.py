@@ -115,6 +115,14 @@ USER_ADDRESS_POOL = config.get("user_address_pool", ["Madam", "Catrin", "Caterin
 # check-in, 18:00 Feierabend hint.
 PROACTIVE_BRIEFS_TIMES = config.get("proactive_briefs_times", ["12:30", "16:00", "18:00"])
 
+# Telegram (issue #47). Token in .env (secret), chat_id in config so
+# only Catrin's own chat is responded to.
+TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
+TELEGRAM_CHAT_ID = config.get("telegram_chat_id", "")
+TELEGRAM_QUIET_START = config.get("telegram_quiet_start", "21:00")
+TELEGRAM_QUIET_END = config.get("telegram_quiet_end", "07:00")
+WHISPER_MODEL = config.get("whisper_model", "base")  # tiny | base | small | medium | large
+
 PERSIST_HISTORY = bool(config.get("persist_conversations", True))
 HISTORY_PATH = os.path.join(os.path.dirname(__file__), ".jarvis_history.json")
 
