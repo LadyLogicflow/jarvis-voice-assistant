@@ -123,6 +123,16 @@ TELEGRAM_QUIET_START = config.get("telegram_quiet_start", "21:00")
 TELEGRAM_QUIET_END = config.get("telegram_quiet_end", "07:00")
 WHISPER_MODEL = config.get("whisper_model", "base")  # tiny | base | small | medium | large
 
+# Mail backend ("applescript" = macOS Mail.app | "imap" = cross-platform).
+# Defined here (before mail_monitor_accounts compat block) because the
+# legacy single-account fallback below references these names.
+MAIL_BACKEND = config.get("mail_backend", "applescript")
+IMAP_HOST = config.get("imap_host", "")
+IMAP_USER = config.get("imap_user", "")
+IMAP_PORT = int(config.get("imap_port", 993))
+IMAP_SSL = bool(config.get("imap_ssl", True))
+IMAP_FOLDER = config.get("imap_folder", "INBOX")
+
 # Mail-Monitor (issue #48). Reuses IMAP_HOST / IMAP_USER / IMAP_PASSWORD
 # from the IMAP backend block above. When MAIL_MONITOR_ENABLED is true,
 # Jarvis opens an IMAP IDLE connection on startup and pushes incoming
