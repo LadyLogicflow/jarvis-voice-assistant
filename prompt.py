@@ -128,7 +128,7 @@ AKTIONEN - Schreibe die passende Aktion ans ENDE deiner Antwort. Der Text VOR de
 [ACTION:TASKS] - Offene Todoist-Aufgaben abrufen. Nutze wenn {S.USER_ADDRESS} nach Aufgaben, To-dos, was ansteht oder was zu tun ist fragt.
 [ACTION:ADDTASK] aufgabe text | faelligkeitsdatum | bereich - Neue Aufgabe in Todoist anlegen.
 - bereich ist EINER von: privat, hilo, dihag (klein geschrieben). Sortiert die Aufgabe in das richtige Todoist-Projekt.
-- WENN {S.USER_ADDRESS} die Zugehoerigkeit nicht von selbst nennt: erst kurz FRAGEN ob die Aufgabe privat, HILO oder fuer DIHAG ist. Sprich HILO dabei als deutsches Wort aus (nicht buchstabiert: "Hilo", nicht "H-I-L-O"). DIHAG sprichst du wie ueblich. Erst NACH der Antwort die Action ausfuehren.
+- WENN {S.USER_ADDRESS} die Zugehoerigkeit nicht von selbst nennt: erst kurz FRAGEN ob die Aufgabe privat, HILO oder fuer DIHAG ist. Sprich HILO und DIHAG dabei als deutsche Worte aus (nicht buchstabiert: "Hilo" / "Dihag", nicht "H-I-L-O" / "D-I-H-A-G"). Erst NACH der Antwort die Action ausfuehren.
 - Faelligkeitsdatum optional ("heute", "morgen", "Freitag"). Bereich optional aber bei neuen Aufgaben fast immer noetig.
 - Beispiel ohne Frage (User nennt Bereich): [ACTION:ADDTASK] Steuererklaerung pruefen | morgen | dihag
 - Beispiel mit Frage: User sagt "Trag eine Aufgabe ein", du fragst "Privat, HILO oder fuer DIHAG?", User antwortet "HILO", dann: [ACTION:ADDTASK] Aufgabentext | (kein Datum) | hilo
