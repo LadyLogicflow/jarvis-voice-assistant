@@ -511,8 +511,66 @@ def _split_text(text: str) -> list[str]:
     return chunks
 
 
+_TTS_SUBSTITUTIONS = [
+    # Symbols (most common offenders)
+    ("°C", " Grad"),
+    ("°F", " Grad Fahrenheit"),
+    ("°", " Grad"),
+    ("%", " Prozent"),
+    ("€", " Euro"),
+    ("$", " Dollar"),
+    (" & ", " und "),
+]
+_TTS_REGEX_SUBS = [
+    # German abbreviations (word-bounded so we don't break "z.B."-like
+    # tokens that aren't really abbreviations).
+    (r"\bz\s*\.\s*B\.", "zum Beispiel"),
+    (r"\bd\s*\.\s*h\.", "das heisst"),
+    (r"\bu\s*\.\s*a\.", "unter anderem"),
+    (r"\bz\s*\.\s*T\.", "zum Teil"),
+    (r"\bv\s*\.\s*a\.", "vor allem"),
+    (r"\bbzw\.", "beziehungsweise"),
+    (r"\bggf\.", "gegebenenfalls"),
+    (r"\busw\.", "und so weiter"),
+    (r"\betc\.", "et cetera"),
+    (r"\bca\.", "circa"),
+    (r"\bNr\.", "Nummer"),
+    (r"\bMrd\.", "Milliarden"),
+    (r"\bMio\.", "Millionen"),
+    (r"\bSt\.", "Sankt"),
+    # Tax / legal abbreviations relevant for Catrin's domain.
+    (r"\bBFH\b", "Bundesfinanzhof"),
+    (r"\bBMF\b", "Bundesministerium der Finanzen"),
+    (r"\bEuGH\b", "Europaeischer Gerichtshof"),
+    (r"\bUSt\b", "Umsatzsteuer"),
+    (r"\bGewSt\b", "Gewerbesteuer"),
+    (r"\bEStG\b", "Einkommensteuergesetz"),
+    (r"\bAO\b", "Abgabenordnung"),
+    (r"\bDIHAG\b", "D I H A G"),  # spell letters so it isn't read as one word
+    (r"\bHILO\b", "H I L O"),
+    # Multiple spaces collapse.
+    (r" {2,}", " "),
+]
+
+
+def normalize_for_tts(text: str) -> str:
+    """Strip / spell out symbols and German abbreviations so the TTS
+    voice doesn't read them literally ('°C' -> 'Grad C', 'BFH' -> 'B F H',
+    'z.B.' -> 'Z punkt B punkt'). Idempotent. Stage 2 of issue #43 — the
+    safety net under the system-prompt rules in case the LLM still emits
+    raw symbols (Haiku is empirically stubborn about °C)."""
+    out = text
+    for needle, repl in _TTS_SUBSTITUTIONS:
+        out = out.replace(needle, repl)
+    for pattern, repl in _TTS_REGEX_SUBS:
+        out = re.sub(pattern, repl, out)
+    return out.strip()
+
+
 async def _tts_post(text: str) -> bytes:
-    """One ElevenLabs request; tenacity wraps retry above."""
+    """One ElevenLabs request; tenacity wraps retry above. The text is
+    pre-normalized so the voice never reads raw symbols / abbreviations."""
+    text = normalize_for_tts(text)
     url = f"https://api.elevenlabs.io/v1/text-to-speech/{ELEVENLABS_VOICE_ID}"
     resp = await http.post(url, headers={
         "xi-api-key": ELEVENLABS_API_KEY,
