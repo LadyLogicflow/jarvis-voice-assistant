@@ -110,6 +110,11 @@ POLITIK_NEWS_NAME = config.get("politik_news_name", "Tagesschau Inland")
 # greeting doesn't sound canned.
 USER_ADDRESS_POOL = config.get("user_address_pool", ["Madam", "Catrin", "Caterina"])
 
+# Proactive briefs: Jarvis self-triggers updates at these times of day
+# (HH:MM, 24h). Configurable; 12:30 lunch reminder, 16:00 afternoon
+# check-in, 18:00 Feierabend hint.
+PROACTIVE_BRIEFS_TIMES = config.get("proactive_briefs_times", ["12:30", "16:00", "18:00"])
+
 PERSIST_HISTORY = bool(config.get("persist_conversations", True))
 HISTORY_PATH = os.path.join(os.path.dirname(__file__), ".jarvis_history.json")
 

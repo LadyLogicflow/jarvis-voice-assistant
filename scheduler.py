@@ -268,3 +268,102 @@ async def morning_brief_scheduler() -> None:
             triggered_today = today
             await refresh_steuer_brief()
         await asyncio.sleep(60)
+
+
+# ---------------------------------------------------------------------------
+# Proactive briefs (issue #46): Jarvis self-triggers updates at the times in
+# settings.PROACTIVE_BRIEFS_TIMES. Each slot fires at most once per day.
+# Server.py registers a callback that knows how to push to active clients
+# (we keep zero coupling from scheduler to the WebSocket layer).
+# ---------------------------------------------------------------------------
+
+# Slot-type system prompts. The scheduler picks the one that matches the
+# closest configured time; falls back to the generic short update prompt.
+_PROACTIVE_PROMPTS = {
+    "12:30": (
+        "Du bist Jarvis. Es ist Mittag. Der Nutzer arbeitet. Erinnere {addr} "
+        "an die Mittagspause. KURZ (2-3 Saetze): erst eine trockene Mittagspausen-"
+        "Aufforderung im Butler-Stil; dann nenne offene Aufgaben fuer heute (siehe "
+        "AKTUELLE DATEN, falls vorhanden) und naechste Termine bis Tagesende. "
+        "Wenn keine Aufgaben oder Termine: kurzes Lob im Jarvis-Stil. Keine "
+        "ACTION-Tags, alles wird vorgelesen."
+    ),
+    "16:00": (
+        "Du bist Jarvis. Nachmittagsupdate fuer {addr}. KURZ (2-3 Saetze): "
+        "ein knapper Status-Check (\"Wie laeuft's?\"-Halbsatz im Butler-Ton), "
+        "dann offene Aufgaben fuer heute (siehe AKTUELLE DATEN) und Termine "
+        "die noch bis Tagesende anstehen. Keine ACTION-Tags."
+    ),
+    "18:00": (
+        "Du bist Jarvis. Es ist 18 Uhr — Feierabend-Erinnerung fuer {addr}. "
+        "KURZ (2-3 Saetze): trocken-bestimmt auf Feierabend hinweisen "
+        "(\"Erholung ist Pflicht\"-Tonalitaet), dann erwaehne kurz noch offene "
+        "Aufgaben (warten bis morgen) und ob heute Abend noch ein Termin "
+        "ansteht. Keine ACTION-Tags."
+    ),
+}
+
+_DEFAULT_PROACTIVE_PROMPT = (
+    "Du bist Jarvis. Knappes Tages-Update fuer {addr}: 1-2 Saetze, offene "
+    "Aufgaben heute + verbleibende Termine. Keine ACTION-Tags."
+)
+
+_proactive_handler = None
+
+
+def register_proactive_handler(fn) -> None:
+    """server.py registers its broadcaster here so scheduler stays
+    decoupled from the WebSocket layer."""
+    global _proactive_handler
+    _proactive_handler = fn
+
+
+async def _generate_proactive_message(slot: str) -> str:
+    """Refresh today's data and ask Claude for the spoken update."""
+    await refresh_morning_brief_data()
+    addr = S.USER_ADDRESS  # the system prompt will rotate; default ok here
+    system_prompt = _PROACTIVE_PROMPTS.get(slot, _DEFAULT_PROACTIVE_PROMPT).format(
+        addr=addr,
+    )
+    today_block = ""
+    if S.TODAY_TASKS:
+        today_block += f"\nHeutige Aufgaben:\n{S.TODAY_TASKS}"
+    if S.TODAY_EVENTS:
+        today_block += f"\nHeutige Termine:\n{S.TODAY_EVENTS}"
+    user_msg = f"Aktuelle Tagesdaten:{today_block or ' (keine offenen Punkte)'}"
+    resp = await S.ai.messages.create(
+        model="claude-haiku-4-5-20251001",
+        max_tokens=200,
+        system=system_prompt,
+        messages=[{"role": "user", "content": user_msg}],
+    )
+    return resp.content[0].text.strip()
+
+
+async def proactive_briefs_scheduler() -> None:
+    """Long-running task: fire each configured slot once per day."""
+    triggered: dict[str, str] = {}  # slot "HH:MM" -> ISO date last fired
+    while True:
+        try:
+            now = datetime.datetime.now()
+            today = datetime.date.today().isoformat()
+            current_hhmm = now.strftime("%H:%M")
+            for slot in S.PROACTIVE_BRIEFS_TIMES:
+                if current_hhmm != slot:
+                    continue
+                if triggered.get(slot) == today:
+                    continue
+                triggered[slot] = today
+                if _proactive_handler is None:
+                    log.info(f"proactive {slot}: no handler registered, skipping")
+                    continue
+                log.info(f"proactive {slot}: generating message")
+                try:
+                    message = await _generate_proactive_message(slot)
+                    log.info(f"proactive {slot}: '{message[:80]}'")
+                    await _proactive_handler(message)
+                except Exception as e:
+                    log.warning(f"proactive {slot} failed: {type(e).__name__}: {e}")
+        except Exception as e:
+            log.warning(f"proactive scheduler loop error: {type(e).__name__}: {e}")
+        await asyncio.sleep(30)

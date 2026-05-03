@@ -41,8 +41,10 @@ from conversation import (
     load_persistent_history,
 )
 from prompt import extract_action, get_system_prompt
+import scheduler
 from scheduler import (
     morning_brief_scheduler,
+    proactive_briefs_scheduler,
     refresh_data,
     refresh_morning_brief_data,
     refresh_steuer_recent,
@@ -52,22 +54,38 @@ from tts import speak
 log = S.log
 
 
+async def _broadcast_proactive(text: str) -> None:
+    """Push a server-generated message to the most recent client.
+    Brings Chrome to the foreground first so the user sees + hears it."""
+    if not active_clients:
+        log.info("proactive: no clients connected, skipping")
+        return
+    target = active_clients[-1]
+    loop = asyncio.get_event_loop()
+    await loop.run_in_executor(None, _show_chrome)
+    await speak(text, target, display=text)
+
+
 @asynccontextmanager
 async def _lifespan(_app):  # type: ignore[no-untyped-def]  # AsyncGenerator
-    """Startup: prime weather/tasks + spawn the morning-brief task.
-    Shutdown: cancel the task and close the shared httpx client so
-    uvicorn doesn't warn about un-closed connections during reload."""
+    """Startup: prime weather/tasks + spawn the morning-brief task and
+    the proactive-briefs task. Shutdown: cancel both and close the
+    shared httpx client."""
     await refresh_data()
-    task = asyncio.create_task(morning_brief_scheduler())
+    scheduler.register_proactive_handler(_broadcast_proactive)
+    task_brief = asyncio.create_task(morning_brief_scheduler())
+    task_proactive = asyncio.create_task(proactive_briefs_scheduler())
     log.info(f"Steuerrecht-Scheduler gestartet (taeglich um {S.MORNING_HOUR}:00 Uhr)")
+    log.info(f"Proaktive Briefs aktiv: {S.PROACTIVE_BRIEFS_TIMES}")
     try:
         yield
     finally:
-        task.cancel()
-        try:
-            await task
-        except (asyncio.CancelledError, Exception):
-            pass
+        for t in (task_brief, task_proactive):
+            t.cancel()
+            try:
+                await t
+            except (asyncio.CancelledError, Exception):
+                pass
         await S.http.aclose()
 
 
