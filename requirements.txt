@@ -33,3 +33,6 @@ tenacity>=8.2
 # Telegram bot channel (issue #47)
 python-telegram-bot>=21.0
 faster-whisper>=1.0  # local STT, no PyTorch / no API key
+
+# IMAP IDLE push monitor (issue #48) — async, supports IDLE
+aioimaplib>=1.0

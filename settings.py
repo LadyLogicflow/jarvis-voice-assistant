@@ -123,6 +123,33 @@ TELEGRAM_QUIET_START = config.get("telegram_quiet_start", "21:00")
 TELEGRAM_QUIET_END = config.get("telegram_quiet_end", "07:00")
 WHISPER_MODEL = config.get("whisper_model", "base")  # tiny | base | small | medium | large
 
+# Mail-Monitor (issue #48). Reuses IMAP_HOST / IMAP_USER / IMAP_PASSWORD
+# from the IMAP backend block above. When MAIL_MONITOR_ENABLED is true,
+# Jarvis opens an IMAP IDLE connection on startup and pushes incoming
+# Mails (after Haiku classification) to Telegram during waking hours.
+MAIL_MONITOR_ENABLED = bool(config.get("mail_monitor_enabled", False))
+# Which categories trigger a Telegram push. Default: only mails the
+# classifier flagged as "handlungsbedarf". Set to ["handlungsbedarf",
+# "info"] to also forward FYI mails.
+MAIL_MONITOR_FORWARD = config.get("mail_monitor_forward", ["handlungsbedarf"])
+MAIL_MONITOR_FOLDER = config.get("mail_monitor_folder", "INBOX")
+
+
+def is_quiet_hours(now=None) -> bool:
+    """True when current time is within TELEGRAM_QUIET_START..END (wraps
+    midnight). Shared by telegram_bot.py and mail_monitor.py."""
+    import datetime as _dt
+    now = now or _dt.datetime.now()
+    h, m = now.hour, now.minute
+    s_h, s_m = (int(x) for x in TELEGRAM_QUIET_START.split(":"))
+    e_h, e_m = (int(x) for x in TELEGRAM_QUIET_END.split(":"))
+    cur = h * 60 + m
+    s = s_h * 60 + s_m
+    e = e_h * 60 + e_m
+    if s < e:
+        return s <= cur < e
+    return cur >= s or cur < e
+
 PERSIST_HISTORY = bool(config.get("persist_conversations", True))
 HISTORY_PATH = os.path.join(os.path.dirname(__file__), ".jarvis_history.json")
 

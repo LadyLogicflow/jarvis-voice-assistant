@@ -28,6 +28,9 @@ jarvis.log
 # Conversation history persistence (M6.2)
 .jarvis_history.json
 
+# Mail monitor seen-UID tracker (issue #48)
+.jarvis_mail_seen.json
+
 # OS
 .DS_Store
 Thumbs.db
