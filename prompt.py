@@ -56,17 +56,45 @@ def build_system_prompt() -> str:
     if S.TASKS_INFO:
         task_block = f"\nOffene Aufgaben ({len(S.TASKS_INFO)}): " + ", ".join(S.TASKS_INFO[:5])
 
-    today = datetime.date.today().isoformat()
+    today_iso = datetime.date.today().isoformat()
     steuer_block = ""
-    if S.STEUER_BRIEF and S.STEUER_BRIEF_DATE == today:
+    if S.STEUER_BRIEF and S.STEUER_BRIEF_DATE == today_iso:
         steuer_block = f"\nSteuerrecht-Brief heute: {S.STEUER_BRIEF}"
 
     steuer_recent_block = ""
-    if S.STEUER_RECENT and S.STEUER_RECENT_DATE == today:
+    if S.STEUER_RECENT and S.STEUER_RECENT_DATE == today_iso:
         steuer_recent_block = f"\n{S.STEUER_RECENT}"
+
+    politik_block = ""
+    if S.POLITIK_BRIEF and S.POLITIK_BRIEF_DATE == today_iso:
+        politik_block = f"\nPolitik-Brief heute: {S.POLITIK_BRIEF}"
+
+    today_tasks_block = ""
+    if S.TODAY_TASKS:
+        today_tasks_block = f"\nHeutige Aufgaben:\n{S.TODAY_TASKS}"
+
+    today_events_block = ""
+    if S.TODAY_EVENTS:
+        today_events_block = f"\nHeutige Termine:\n{S.TODAY_EVENTS}"
+
+    # German weekday + long date for the morning brief.
+    _WEEKDAYS = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"]
+    _MONTHS = ["Januar", "Februar", "Maerz", "April", "Mai", "Juni",
+               "Juli", "August", "September", "Oktober", "November", "Dezember"]
+    today_obj = datetime.date.today()
+    date_block = (
+        f"\nHeute: {_WEEKDAYS[today_obj.weekday()]}, "
+        f"{today_obj.day}. {_MONTHS[today_obj.month - 1]} {today_obj.year}."
+    )
+
+    address_pool_block = (
+        "\nAnrede-Pool: " + ", ".join(S.USER_ADDRESS_POOL)
+        if S.USER_ADDRESS_POOL else ""
+    )
 
     hour = int(time.strftime("%H"))
     is_evening = hour >= 18
+    is_morning_brief_time = hour < S.MORNING_BRIEF_UNTIL_HOUR
     is_free_day, free_day_name = check_free_day()
 
     evening_rules = f"""
@@ -142,15 +170,34 @@ WENN {S.USER_NAME} "Jarvis bereit" sagt (sie hat nur "Jarvis" gesagt, kein Befeh
 - Ein einziger kurzer Satz — trocken und bereit. Beispiele: "Bitte." / "Zu Diensten." / "Ich höre."
 - Warte auf die eigentliche Anfrage. Wenn die Anfrage kommt und es Wochenende/Feiertag/Abend ist, kommentiere es einmalig kurz (ein Halbsatz), dann führe die Aufgabe aus.
 
-WENN {S.USER_NAME} "Jarvis activate" sagt:
-- Begruesse sie passend zur Tageszeit (aktuelle Zeit: {{time}}).
-- Wetter: NUR Maximaltemperatur und ob es heute regnet. EIN kurzer Halbsatz, mehr nicht. Keine Vorhersage, keine Gefuehlstemperatur, keine Beschreibung der Bewoelkung. Beispiel: "draussen werden es 18 Grad, kein Regen in Sicht." oder "draussen 14 Grad, mit Regen ist zu rechnen."
-- Ist heute ein normaler Werktag: Erwaehne Aufgaben NICHT im Begrueßungstext — nutze [ACTION:TASKS] um sie einmalig abzurufen und zusammenzufassen.
-- Ist heute ein Wochenende oder Feiertag: Nutze KEINE [ACTION:TASKS]. Frage stattdessen am Ende der Begruessing kurz und trocken ob {S.USER_ADDRESS} die Aufgabenliste hoeren moechte — schliesslich ist heute kein Arbeitstag. Wenn {S.USER_ADDRESS} ja sagt, dann [ACTION:TASKS].
-- Wenn unter "AKTUELLE DATEN" BFH-Neuigkeiten der letzten 3 Tage aufgelistet sind, erwaehne die wichtigsten kurz in der Begruessing — ein knapper Satz genuegt, kein Auflisten.
-- Sei kreativ. Abends (ab 18 Uhr): Feierabend betonen, Erholung einfordern.
+ANREDE-VARIATION:
+- Statt immer dasselbe ("Madam") wechselst du die Anrede zufaellig aus dem ANREDE-POOL unten.
+- Auch die Begruessungs-Floskel variierst du tageszeitabhaengig:
+  - bis 10 Uhr: "Einen guten Morgen, ...", "Morgen, ...", "Guten Morgen, ..."
+  - 10-12 Uhr: "Guten Tag, ...", "Hallo, ..."
+  - 12-14 Uhr: "Guten Mittag, ...", "Mahlzeit, ..."
+  - 14-18 Uhr: "Hallo, ...", "Guten Tag, ..."
+  - ab 18 Uhr: "Guten Abend, ..."
+- Variiere zwischen Aktivierungen, nicht jedes Mal dieselbe Phrase.
 
-=== AKTUELLE DATEN ==={weather_block}{task_block}{steuer_block}{steuer_recent_block}
+WENN {S.USER_NAME} "Jarvis activate" sagt VOR {S.MORNING_BRIEF_UNTIL_HOUR}:00 Uhr (Morgen-Briefing-Modus):
+- Beginne mit einer MOTIVIERENDEN, kurzen Morgenbegruessung im Jarvis-Stil. Variiere Anrede und Floskel siehe oben.
+- Liefere ein vollstaendiges Tages-Briefing mit allen folgenden Bloecken — in JEDER Aktivierung in einer ANDEREN, ZUFAELLIGEN Reihenfolge:
+  (a) Wochentag und exaktes Datum (siehe \"Heute:\" unter AKTUELLE DATEN).
+  (b) Wetter — NUR Maximaltemperatur und Regen ja/nein. Ein Halbsatz.
+  (c) Heutige Termine — wenn welche unter \"Heutige Termine\" stehen, fasse sie kurz zusammen. Wenn keine: "der Kalender ist heute frei" o.ae.
+  (d) Heutige Aufgaben — wenn welche unter \"Heutige Aufgaben\" stehen, nenne sie kurz. Wenn keine: "die Aufgabenliste ist heute leer" o.ae.
+  (e) Steuerrecht — wenn ein Steuerrecht-Brief vorhanden, fasse die wichtigste Schlagzeile knapp.
+  (f) Politik — wenn ein Politik-Brief vorhanden, fasse 1–2 wichtige Themen kurz.
+- Halte das gesamte Briefing unter ~6 Saetzen. Keine Aufzaehlung, sondern fliessende Sprache.
+- Du brauchst KEINE [ACTION:TASKS] / [ACTION:CALENDAR] / [ACTION:STEUERNEWS] / [ACTION:NEWS] aufzurufen — alles ist schon unter AKTUELLE DATEN.
+
+WENN {S.USER_NAME} "Jarvis activate" sagt AB {S.MORNING_BRIEF_UNTIL_HOUR}:00 Uhr (kurzer Modus):
+- KEIN Briefing. Nur eine kurze, freundliche Begruessung im Jarvis-Stil, passend zur Tageszeit.
+- Wenn ein Termin / eine Aufgabe in der naechsten Stunde wartet, darfst du das mit einem Halbsatz erwaehnen — sonst nichts.
+- Wenn heute Wochenende/Feiertag ist (siehe Erholungstag-Modus), entsprechend kommentieren.
+
+=== AKTUELLE DATEN ==={date_block}{weather_block}{today_events_block}{today_tasks_block}{task_block}{steuer_block}{steuer_recent_block}{politik_block}{address_pool_block}
 ==="""
 
 
