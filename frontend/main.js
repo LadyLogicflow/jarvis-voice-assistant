@@ -10,6 +10,23 @@ let audioUnlocked = false;
 let audioCtx = null;
 let lastDisconnectTime = 0;
 
+// Auto-hide: when Jarvis finishes speaking he stays visible for this many
+// milliseconds. Any further speech (the user talking, or new audio playing)
+// resets the timer. Empirically 30 s is enough for a follow-up question
+// without making the desktop permanently busy.
+const AUTO_HIDE_DELAY_MS = 30000;
+let _hideTimer = null;
+function scheduleHide() {
+    if (_hideTimer) clearTimeout(_hideTimer);
+    _hideTimer = setTimeout(() => {
+        _hideTimer = null;
+        fetch('/hide').catch(() => {});
+    }, AUTO_HIDE_DELAY_MS);
+}
+function cancelHide() {
+    if (_hideTimer) { clearTimeout(_hideTimer); _hideTimer = null; }
+}
+
 // Begrüßungs-Debounce via sessionStorage (überlebt Seitenneuladen durch Fensterresize)
 const GREET_COOLDOWN = 90000; // 90 Sekunden
 function shouldGreet() {
@@ -63,6 +80,10 @@ function connect() {
             return;
         }
         if (data.type === 'wake') {
+            // External wake-up (clap-trigger / wakeword / shortcut) — keep
+            // window visible until the user is finished, not just until
+            // the greeting audio ends.
+            cancelHide();
             fetch('/show').catch(() => {});
             if (!sessionStorage.getItem('jarvisGreeted')) {
                 // Erste Aktivierung dieser Sitzung → volle Begrüßung
@@ -105,12 +126,16 @@ function playNext() {
         isPlaying = false;
         setOrbState('listening');
         status.textContent = '';
-        // Jarvis verstecken wenn fertig
-        setTimeout(() => { fetch('/hide').catch(() => {}); }, 1500);
+        // Schedule a hide AUTO_HIDE_DELAY_MS from now. If the user starts
+        // talking before then, the recognition handler cancels the timer
+        // and Jarvis stays visible for the follow-up.
+        scheduleHide();
         setTimeout(startListening, 500);
         return;
     }
     isPlaying = true;
+    // New audio means there's interaction happening — keep window visible.
+    cancelHide();
     setOrbState('speaking');
     status.textContent = '';
     if (isListening) {
@@ -166,6 +191,9 @@ if (SPEECH_AVAILABLE) {
         if (last.isFinal) {
             const text = last[0].transcript.trim();
             const lower = text.toLowerCase();
+
+            // Any final speech result is a sign of activity — postpone hide.
+            cancelHide();
 
             // Cancel keywords stop any running action.
             // Recognized: "stopp jarvis", "stop jarvis", "halt jarvis", "abbruch".
