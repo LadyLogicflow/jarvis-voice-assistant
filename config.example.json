@@ -30,6 +30,14 @@
   "imap_ssl": true,
   "imap_folder": "INBOX",
 
+  "_comment_todoist": "Project IDs that the [ACTION:TASKS] reads from + [ACTION:ADDTASK] can write to. hilo_section restricts the HILO project to one section.",
+  "todoist_projects": {
+    "hilo": "",
+    "hilo_section": "",
+    "dihag": "",
+    "privat": ""
+  },
+
   "_comment_clap": "Clap-trigger sensitivity (scripts/clap-trigger.py).",
   "clap_threshold": 0.15,
   "clap_min_gap": 0.1,
