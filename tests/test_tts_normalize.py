@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-import server
+import tts
 
 
 @pytest.mark.parametrize("raw,expected", [
@@ -37,14 +37,14 @@ import server
      "Bundesfinanzhof-Pressemitteilung: 18 Grad im Saal, 50 Prozent Anwesenheit"),
 ])
 def test_normalize_for_tts_table(raw, expected):
-    assert server.normalize_for_tts(raw) == expected
+    assert tts.normalize_for_tts(raw) == expected
 
 
 def test_normalize_is_idempotent():
     """Running it twice should give the same result as once."""
     text = "Heute z.B. 18°C im BFH"
-    once = server.normalize_for_tts(text)
-    twice = server.normalize_for_tts(once)
+    once = tts.normalize_for_tts(text)
+    twice = tts.normalize_for_tts(once)
     assert once == twice
 
 
@@ -52,11 +52,11 @@ def test_normalize_preserves_plain_text():
     """Vanilla sentences without symbols / abbreviations stay byte-equal
     (modulo the trailing strip)."""
     text = "Guten Morgen, Madam. Es ist halb acht."
-    assert server.normalize_for_tts(text) == text
+    assert tts.normalize_for_tts(text) == text
 
 
 def test_normalize_collapses_double_spaces():
     """The substitution can leave double spaces; check they collapse."""
     raw = "100% sicher"
-    out = server.normalize_for_tts(raw)
+    out = tts.normalize_for_tts(raw)
     assert "  " not in out
