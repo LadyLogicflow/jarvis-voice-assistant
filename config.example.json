@@ -52,10 +52,14 @@
   "telegram_quiet_end": "07:00",
   "whisper_model": "base",
 
-  "_comment_mail_monitor": "IMAP IDLE push monitor (issue #48). Reuses the IMAP block above. Categories: werbung | info | handlungsbedarf — only the listed ones are forwarded to Telegram. Quiet hours suppress pushes (already-classified mails stay 'seen').",
+  "_comment_mail_monitor": "IMAP IDLE push monitor (issue #48). Multiple accounts in parallel. Each account's password lives in env IMAP_PASSWORD_{NAME_UPPER}. Categories: werbung | info | handlungsbedarf — only the listed ones forward to Telegram. Quiet hours suppress pushes.",
   "mail_monitor_enabled": false,
   "mail_monitor_forward": ["handlungsbedarf"],
   "mail_monitor_folder": "INBOX",
+  "mail_monitor_accounts": [
+    {"name": "Apple", "host": "imap.mail.me.com", "user": "you@me.com", "port": 993, "ssl": true, "folder": "INBOX"},
+    {"name": "HILO",  "host": "imap.example.de",   "user": "you@hilo.de", "port": 993, "ssl": true, "folder": "INBOX"}
+  ],
 
   "_comment_clap": "Clap-trigger sensitivity (scripts/clap-trigger.py).",
   "clap_threshold": 0.15,

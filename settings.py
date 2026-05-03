@@ -134,6 +134,42 @@ MAIL_MONITOR_ENABLED = bool(config.get("mail_monitor_enabled", False))
 MAIL_MONITOR_FORWARD = config.get("mail_monitor_forward", ["handlungsbedarf"])
 MAIL_MONITOR_FOLDER = config.get("mail_monitor_folder", "INBOX")
 
+# Multi-account mail monitor (e.g. Apple iCloud + HILO at the same time).
+# Each entry in `mail_monitor_accounts` is a dict with name/host/user/
+# port/ssl/folder. The password for account "FOO" is read from the env
+# var IMAP_PASSWORD_FOO (uppercased name with non-alnum -> underscore).
+def _normalize_account(raw: dict) -> dict:
+    name = raw.get("name", "default")
+    env_key = "IMAP_PASSWORD_" + "".join(
+        c.upper() if c.isalnum() else "_" for c in name
+    )
+    pw = os.environ.get(env_key, "").strip()
+    return {
+        "name": name,
+        "host": raw.get("host", ""),
+        "user": raw.get("user", ""),
+        "password": pw,
+        "port": int(raw.get("port", 993)),
+        "ssl": bool(raw.get("ssl", True)),
+        "folder": raw.get("folder", "INBOX"),
+        "env_key": env_key,
+    }
+
+
+_raw_accounts = config.get("mail_monitor_accounts", [])
+# Backwards compat: when the user only configured the legacy single
+# IMAP_HOST/USER/PASSWORD block, treat it as one account named "default"
+# so the multi-account loop works uniformly.
+if not _raw_accounts and IMAP_HOST and IMAP_USER and IMAP_PASSWORD:
+    _raw_accounts = [{
+        "name": "default", "host": IMAP_HOST, "user": IMAP_USER,
+        "port": IMAP_PORT, "ssl": IMAP_SSL, "folder": IMAP_FOLDER,
+    }]
+    # Inject the legacy password under the expected env name.
+    os.environ["IMAP_PASSWORD_DEFAULT"] = IMAP_PASSWORD
+
+MAIL_MONITOR_ACCOUNTS = [_normalize_account(a) for a in _raw_accounts]
+
 
 def is_quiet_hours(now=None) -> bool:
     """True when current time is within TELEGRAM_QUIET_START..END (wraps
