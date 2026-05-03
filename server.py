@@ -49,6 +49,7 @@ from scheduler import (
     refresh_morning_brief_data,
     refresh_steuer_recent,
 )
+from telegram_bot import telegram_bot_main
 from tts import speak
 
 log = S.log
@@ -75,12 +76,13 @@ async def _lifespan(_app):  # type: ignore[no-untyped-def]  # AsyncGenerator
     scheduler.register_proactive_handler(_broadcast_proactive)
     task_brief = asyncio.create_task(morning_brief_scheduler())
     task_proactive = asyncio.create_task(proactive_briefs_scheduler())
+    task_telegram = asyncio.create_task(telegram_bot_main())
     log.info(f"Steuerrecht-Scheduler gestartet (taeglich um {S.MORNING_HOUR}:00 Uhr)")
     log.info(f"Proaktive Briefs aktiv: {S.PROACTIVE_BRIEFS_TIMES}")
     try:
         yield
     finally:
-        for t in (task_brief, task_proactive):
+        for t in (task_brief, task_proactive, task_telegram):
             t.cancel()
             try:
                 await t
