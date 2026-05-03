@@ -62,9 +62,8 @@ _TTS_REGEX_SUBS = [
     (r"\bGewSt\b", "Gewerbesteuer"),
     (r"\bEStG\b", "Einkommensteuergesetz"),
     (r"\bAO\b", "Abgabenordnung"),
-    (r"\bDIHAG\b", "D I H A G"),  # spell letters so it isn't read as one word
-    # HILO bleibt als Wort stehen — Catrin sagt es ist ein deutsches
-    # Wort (Lohnsteuerhilfeverein-Markenname), nicht buchstabiert.
+    # DIHAG und HILO werden als deutsche Worte ausgesprochen, nicht
+    # buchstabiert. Markennamen / etablierte Aussprachen, kein Mapping noetig.
     # Multiple spaces collapse.
     (r" {2,}", " "),
 ]
