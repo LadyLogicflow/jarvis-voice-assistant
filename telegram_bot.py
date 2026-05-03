@@ -21,6 +21,7 @@ import os
 import tempfile
 from typing import Optional
 
+from actions import EMPTY_REPLIES, execute_action
 import settings as S
 from prompt import extract_action, get_system_prompt
 from tts import _split_text, _tts_one, normalize_for_tts
@@ -95,12 +96,49 @@ def is_quiet_hours(now: datetime.datetime | None = None) -> bool:
     return cur >= s or cur < e
 
 
-# ---------------------------------------------------------------------------
-# Talk to Claude. Mirrors the core of server.process_message but without
-# the WebSocket layer and without action-execution for v1 (we add actions
-# in a follow-up; voice replies on Telegram are mostly Q&A).
-# ---------------------------------------------------------------------------
+# Actions that DON'T make sense over Telegram (need the Mac browser /
+# screen / Mail.app). Their tags are stripped and we tell the user.
+_TELEGRAM_BAD_ACTIONS = {"OPEN", "SCREEN"}
+
+
+async def _summarize_action(action_type: str, action_result: str) -> str:
+    """Ask Claude to condense the raw tool output into 2-3 spoken
+    sentences — same shape as server.process_message does for the
+    WebSocket flow."""
+    if action_type == "MAIL":
+        sys_prompt = (
+            f"Du bist Jarvis, der britisch-hoefliche KI-Butler. "
+            f"Gib eine KURZE ueberblickende Info zu den ungelesenen E-Mails — "
+            f"maximal 2 Saetze. Nenne nur die Anzahl, wer geschrieben hat und "
+            f"ob etwas Dringendes dabei ist. Sprich {S.USER_ADDRESS} an. "
+            f"KEINE Tags in eckigen Klammern."
+        )
+    elif action_type == "NEWS":
+        sys_prompt = (
+            f"Du bist Jarvis. Fasse die Nachrichten in maximal 2-3 praegnanten "
+            f"Saetzen zusammen. Sprich {S.USER_ADDRESS} an. "
+            f"KEINE Tags in eckigen Klammern."
+        )
+    else:
+        sys_prompt = (
+            f"Du bist Jarvis. Fasse die folgenden Informationen KURZ auf "
+            f"Deutsch zusammen, maximal 2-3 Saetze, im Jarvis-Stil. "
+            f"Sprich {S.USER_ADDRESS} an. KEINE Tags in eckigen Klammern. "
+            f"KEINE ACTION-Tags."
+        )
+    resp = await S.ai.messages.create(
+        model="claude-haiku-4-5-20251001",
+        max_tokens=180,
+        system=sys_prompt,
+        messages=[{"role": "user", "content": f"Fasse zusammen:\n\n{action_result}"}],
+    )
+    summary, _ = extract_action(resp.content[0].text)
+    return summary
+
+
 async def _ask_claude(user_text: str) -> str:
+    """Mirror server.process_message: LLM call, optional action, optional
+    summarization. Returns the final spoken text."""
     response = await S.ai.messages.create(
         model="claude-haiku-4-5-20251001",
         max_tokens=400,
@@ -108,12 +146,40 @@ async def _ask_claude(user_text: str) -> str:
         messages=[{"role": "user", "content": user_text}],
     )
     reply = response.content[0].text
-    spoken_text, _action = extract_action(reply)
-    # Ignore actions on the Telegram channel for v1 — they'd send to the
-    # Mac (browser, AppleScript) which doesn't help when Catrin is mobile.
-    # Future: a subset of actions makes sense for Telegram (CALENDAR,
-    # TASKS, STEUERNEWS) — those return text and could be summarized.
-    return spoken_text or reply
+    spoken_text, action = extract_action(reply)
+    log.info(f"Telegram LLM: spoken='{spoken_text[:80]}' action={action}")
+
+    # No action — just speak the LLM's text.
+    if not action:
+        return spoken_text or reply
+
+    a_type = action["type"]
+
+    if a_type in _TELEGRAM_BAD_ACTIONS:
+        # OPEN / SCREEN don't help when she's on the phone.
+        return (
+            f"{spoken_text} Diese Aktion ({a_type}) macht ueber Telegram keinen "
+            f"Sinn, {S.USER_ADDRESS} — versuch's am Mac."
+        ).strip()
+
+    try:
+        action_result = await execute_action(action)
+        log.info(f"Telegram action result: '{str(action_result)[:120]}'")
+    except Exception as e:
+        log.warning(f"Telegram action failed: {type(e).__name__}: {e}")
+        return f"{spoken_text} Die Aktion ist fehlgeschlagen, {S.USER_ADDRESS}."
+
+    # Empty-result sentinels.
+    if isinstance(action_result, str) and action_result in EMPTY_REPLIES:
+        return EMPTY_REPLIES[action_result]
+
+    # Actions whose result is already user-facing text.
+    if a_type in ("STEUERNEWS", "ADDTASK", "DONETASK", "ADDCAL", "NOTE"):
+        return action_result
+
+    # The rest go through a summarization pass like the WebSocket flow.
+    summary = await _summarize_action(a_type, action_result)
+    return f"{spoken_text} {summary}".strip() if spoken_text else summary
 
 
 async def _tts_full(text: str) -> bytes:
