@@ -33,16 +33,24 @@ def build_system_prompt() -> str:
     weather_block = ""
     if S.WEATHER_INFO:
         w = S.WEATHER_INFO
-        # Format weather data already in spoken form so the LLM doesn't
-        # mirror "18°C" or "100%" verbatim into its reply (TTS reads those
-        # symbols literally as "Grad C" / "Prozent-Zeichen").
-        weather_block = f"\nWetter {S.CITY}: {w['temp']} Grad, gefuehlt {w['feels_like']} Grad, {w['description']}"
-        if w.get("forecast_today"):
-            parts = [
-                f"{f['hour']} Uhr: {f['temp']} Grad, {f['desc']}, Regenrisiko {f['rain']} Prozent"
-                for f in w["forecast_today"][:3]
-            ]
-            weather_block += f"\nVorhersage heute: {' | '.join(parts)}"
+        # Pre-compute the only two facts Jarvis is allowed to mention:
+        # - Maximum temperature today (current + remaining hourly forecast)
+        # - Whether it will rain (any forecast slot with rain probability >= 50%)
+        try:
+            temps = [int(w["temp"])] + [int(f["temp"]) for f in w.get("forecast_today", [])]
+            max_temp = max(temps)
+        except (ValueError, KeyError):
+            max_temp = w.get("temp", "?")
+        try:
+            rain_probs = [int(f.get("rain", "0")) for f in w.get("forecast_today", [])]
+            will_rain = any(p >= 50 for p in rain_probs)
+        except ValueError:
+            will_rain = False
+        regen_text = "ja" if will_rain else "nein"
+        # Format already in spoken form so Haiku doesn't mirror raw symbols.
+        weather_block = (
+            f"\nWetter {S.CITY} heute: Maximaltemperatur {max_temp} Grad, Regen {regen_text}."
+        )
 
     task_block = ""
     if S.TASKS_INFO:
@@ -131,7 +139,7 @@ WENN {S.USER_NAME} "Jarvis bereit" sagt (sie hat nur "Jarvis" gesagt, kein Befeh
 
 WENN {S.USER_NAME} "Jarvis activate" sagt:
 - Begruesse sie passend zur Tageszeit (aktuelle Zeit: {{time}}).
-- Gebe eine kurze Info ueber das Wetter in {S.CITY} — Temperatur, Sonne/Regen, Gefuehlstemperatur. Keine Luftfeuchtigkeit.
+- Wetter: NUR Maximaltemperatur und ob es heute regnet. EIN kurzer Halbsatz, mehr nicht. Keine Vorhersage, keine Gefuehlstemperatur, keine Beschreibung der Bewoelkung. Beispiel: "draussen werden es 18 Grad, kein Regen in Sicht." oder "draussen 14 Grad, mit Regen ist zu rechnen."
 - Ist heute ein normaler Werktag: Erwaehne Aufgaben NICHT im Begrueßungstext — nutze [ACTION:TASKS] um sie einmalig abzurufen und zusammenzufassen.
 - Ist heute ein Wochenende oder Feiertag: Nutze KEINE [ACTION:TASKS]. Frage stattdessen am Ende der Begruessing kurz und trocken ob {S.USER_ADDRESS} die Aufgabenliste hoeren moechte — schliesslich ist heute kein Arbeitstag. Wenn {S.USER_ADDRESS} ja sagt, dann [ACTION:TASKS].
 - Wenn unter "AKTUELLE DATEN" BFH-Neuigkeiten der letzten 3 Tage aufgelistet sind, erwaehne die wichtigsten kurz in der Begruessing — ein knapper Satz genuegt, kein Auflisten.

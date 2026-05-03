@@ -92,8 +92,17 @@ function connect() {
                 setOrbState('thinking');
                 ws.send(JSON.stringify({ text: 'Jarvis activate' }));
             } else {
-                // Bereits begrüßt → nur nach vorne kommen, auf Befehl warten
+                // Bereits begrüßt → make sure recognition is actually running.
+                // After a hide / background suspend, Web Speech often pauses
+                // silently — the user then talks and nothing happens. Force-
+                // restart it. `startListening()` is a no-op if it's already
+                // active, so calling it unconditionally is safe.
+                if (isListening) {
+                    try { recognition.stop(); } catch (e) {}
+                    isListening = false;
+                }
                 setOrbState('listening');
+                setTimeout(startListening, 200);
             }
             return;
         }
