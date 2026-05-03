@@ -212,14 +212,6 @@ TODOIST_SECTIONS_PER_PROJECT = {}
 if TODOIST_PROJECTS.get("hilo") and TODOIST_PROJECTS.get("hilo_section"):
     TODOIST_SECTIONS_PER_PROJECT[TODOIST_PROJECTS["hilo"]] = [TODOIST_PROJECTS["hilo_section"]]
 
-# Mail backend ("applescript" = macOS Mail.app | "imap" = cross-platform).
-MAIL_BACKEND = config.get("mail_backend", "applescript")
-IMAP_HOST = config.get("imap_host", "")
-IMAP_USER = config.get("imap_user", "")
-IMAP_PORT = int(config.get("imap_port", 993))
-IMAP_SSL = bool(config.get("imap_ssl", True))
-IMAP_FOLDER = config.get("imap_folder", "INBOX")
-
 
 # ---------------------------------------------------------------------------
 # Shared clients (singletons).
