@@ -168,17 +168,26 @@ async def _process_new_uids(account: dict, client, uids: list[int]) -> None:
                 log.warning(f"mail_monitor[{name}] fetch uid={uid} empty: "
                             f"typ={typ!r} data={data!r}")
                 continue
-            raw_blocks = [b for b in data if isinstance(b, (bytes, bytearray)) and len(b) > 10]
-            if not raw_blocks:
-                # Log the (small) response payload so we can diagnose.
+            # The header content is the LARGEST bytes entry in the
+            # response. Joining all of them (previous approach) gave
+            # email.message_from_bytes a salad of FETCH-protocol framing
+            # + header bytes, so it returned empty From/Subject.
+            byte_items = [b for b in data if isinstance(b, (bytes, bytearray))]
+            if not byte_items:
                 preview = " | ".join(repr(d)[:120] for d in data)
-                log.warning(f"mail_monitor[{name}] fetch uid={uid} no usable "
-                            f"blocks; raw={preview}")
+                log.warning(f"mail_monitor[{name}] fetch uid={uid} no bytes "
+                            f"in response; raw={preview}")
                 continue
-            raw = b"\n".join(raw_blocks)
+            raw = max(byte_items, key=len)
             msg = email.message_from_bytes(raw)
             sender = _decode_header(parseaddr(msg.get("From", ""))[0]) or msg.get("From", "")
             subject = _decode_header(msg.get("Subject"))
+            if not sender and not subject:
+                # Parser came back empty — log the raw header so we can
+                # see what we got from Apple.
+                preview = raw[:300].decode(errors="replace")
+                log.warning(f"mail_monitor[{name}] uid={uid} empty headers; "
+                            f"raw[0:300]={preview!r}")
             body_preview = msg.get_payload(decode=False) or ""
             if isinstance(body_preview, list):
                 body_preview = ""
