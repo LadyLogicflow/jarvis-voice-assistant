@@ -24,14 +24,23 @@ else
     JARVIS_PY=/usr/bin/python3
 fi
 
-# Load .env if present so JARVIS_AUTH_TOKEN is available to both the
-# server we launch and the curl calls below.
-if [ -f "$WORKSPACE/.env" ]; then
-    set -a
-    # shellcheck disable=SC1090,SC1091
-    . "$WORKSPACE/.env"
-    set +a
-fi
+# Read the JARVIS_AUTH_TOKEN value from .env without sourcing the file.
+# (Sourcing breaks when a value contains shell-special chars like &, $, ;.)
+read_env_value() {
+    local key="$1"
+    [ -f "$WORKSPACE/.env" ] || return 0
+    awk -v k="$key" '
+        $0 ~ "^[ \\t]*"k"=" {
+            sub("^[ \\t]*"k"=", "")
+            # Strip optional surrounding single or double quotes.
+            sub("^[\"\x27]", "")
+            sub("[\"\x27]$", "")
+            print
+            exit
+        }' "$WORKSPACE/.env"
+}
+
+JARVIS_AUTH_TOKEN="$(read_env_value JARVIS_AUTH_TOKEN)"
 
 # Build curl auth args once (empty when JARVIS_AUTH_TOKEN is unset).
 CURL_AUTH=()
