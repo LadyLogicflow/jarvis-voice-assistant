@@ -149,14 +149,28 @@ async def _process_new_uids(account: dict, client, uids: list[int]) -> None:
         if uid <= _max_seen.get(name, 0):
             continue
         try:
+            # Simpler FETCH spec: RFC822.HEADER + BODY.PEEK[TEXT]. The
+            # previous (BODY.PEEK[HEADER.FIELDS (FROM SUBJECT DATE)] ...)
+            # form has nested parens inside square brackets that
+            # aioimaplib doesn't always quote correctly for Apple iCloud.
             typ, data = await client.uid(
                 "fetch", str(uid).encode(),
-                "(BODY.PEEK[HEADER.FIELDS (FROM SUBJECT DATE)] BODY.PEEK[TEXT]<0.2000>)"
+                "(RFC822.HEADER BODY.PEEK[TEXT]<0.2000>)"
             )
+            log.info(f"mail_monitor[{name}] fetch uid={uid}: typ={typ} "
+                     f"data_len={len(data) if data else 0}")
             if typ != "OK" or not data:
+                # Last resort: log the raw response so we can see what
+                # Apple actually said.
+                log.warning(f"mail_monitor[{name}] fetch uid={uid} empty: "
+                            f"typ={typ!r} data={data!r}")
                 continue
             raw_blocks = [b for b in data if isinstance(b, (bytes, bytearray)) and len(b) > 10]
             if not raw_blocks:
+                # Log the (small) response payload so we can diagnose.
+                preview = " | ".join(repr(d)[:120] for d in data)
+                log.warning(f"mail_monitor[{name}] fetch uid={uid} no usable "
+                            f"blocks; raw={preview}")
                 continue
             raw = b"\n".join(raw_blocks)
             msg = email.message_from_bytes(raw)
