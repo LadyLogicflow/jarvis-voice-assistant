@@ -224,6 +224,18 @@ async def _idle_session(account: dict, aioimaplib_module) -> None:
         )
     log.info(f"mail_monitor[{name}] login ok")
 
+    # Re-read CAPABILITY: many servers (Apple iCloud especially) only
+    # advertise IDLE after authentication. Without this refresh,
+    # client.idle_start() raises Abort('server has not IDLE capability').
+    try:
+        await client.capability()
+        caps_iter = getattr(client.protocol, "capabilities", None) or []
+        caps_str = " ".join(str(c) for c in caps_iter) or "(none)"
+        log.info(f"mail_monitor[{name}] post-login capabilities: {caps_str}")
+    except Exception as e:
+        log.info(f"mail_monitor[{name}] capability refresh skipped: "
+                 f"{type(e).__name__}: {e}")
+
     select_resp = await client.select(account["folder"])
     if getattr(select_resp, "result", None) != "OK":
         raise RuntimeError(
