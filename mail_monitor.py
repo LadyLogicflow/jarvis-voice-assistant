@@ -195,6 +195,20 @@ async def _uids_above(client, low_uid: int) -> list[int]:
     return sorted(set(uids))
 
 
+def _resp_summary(resp) -> str:
+    """Stringify aioimaplib Response (or (typ, lines) tuple) for logging."""
+    try:
+        result = getattr(resp, "result", None) or (resp[0] if resp else "?")
+        lines = getattr(resp, "lines", None) or (resp[1] if resp and len(resp) > 1 else [])
+        text = " ".join(
+            line.decode(errors="replace") if isinstance(line, (bytes, bytearray)) else str(line)
+            for line in (lines or [])
+        )
+        return f"{result} {text}".strip()
+    except Exception:
+        return repr(resp)
+
+
 async def _idle_session(account: dict, aioimaplib_module) -> None:
     """One IMAP login + IDLE cycle for one account. Returns when the
     connection drops."""
@@ -202,8 +216,19 @@ async def _idle_session(account: dict, aioimaplib_module) -> None:
     cls = aioimaplib_module.IMAP4_SSL if account["ssl"] else aioimaplib_module.IMAP4
     client = cls(host=account["host"], port=account["port"], timeout=60)
     await client.wait_hello_from_server()
-    await client.login(account["user"], account["password"])
-    await client.select(account["folder"])
+
+    login_resp = await client.login(account["user"], account["password"])
+    if getattr(login_resp, "result", None) != "OK":
+        raise RuntimeError(
+            f"LOGIN rejected for user={account['user']!r}: {_resp_summary(login_resp)}"
+        )
+    log.info(f"mail_monitor[{name}] login ok")
+
+    select_resp = await client.select(account["folder"])
+    if getattr(select_resp, "result", None) != "OK":
+        raise RuntimeError(
+            f"SELECT {account['folder']!r} failed: {_resp_summary(select_resp)}"
+        )
 
     if _max_seen.get(name, 0) == 0:
         baseline = await _baseline_uid(client, account["folder"])
@@ -215,6 +240,14 @@ async def _idle_session(account: dict, aioimaplib_module) -> None:
         if new_uids:
             log.info(f"mail_monitor[{name}] catching up on {len(new_uids)} mail(s)")
             await _process_new_uids(account, client, new_uids)
+
+    # Some servers (Apple iCloud especially) reject IDLE if it follows
+    # SELECT too tightly. A NOOP between gives the server a beat to
+    # settle the SELECT state.
+    try:
+        await client.noop()
+    except Exception as e:
+        log.info(f"mail_monitor[{name}] noop ignored: {type(e).__name__}: {e}")
 
     log.info(f"mail_monitor[{name}]: IDLE-Loop aktiv")
     while True:
