@@ -224,17 +224,34 @@ async def _idle_session(account: dict, aioimaplib_module) -> None:
         )
     log.info(f"mail_monitor[{name}] login ok")
 
-    # Re-read CAPABILITY: many servers (Apple iCloud especially) only
-    # advertise IDLE after authentication. Without this refresh,
-    # client.idle_start() raises Abort('server has not IDLE capability').
-    try:
-        await client.capability()
-        caps_iter = getattr(client.protocol, "capabilities", None) or []
-        caps_str = " ".join(str(c) for c in caps_iter) or "(none)"
-        log.info(f"mail_monitor[{name}] post-login capabilities: {caps_str}")
-    except Exception as e:
-        log.info(f"mail_monitor[{name}] capability refresh skipped: "
-                 f"{type(e).__name__}: {e}")
+    # aioimaplib caches the pre-login CAPABILITY list. Apple iCloud
+    # (among others) only advertises IDLE *after* authentication, so
+    # idle_start() raises Abort('server has not IDLE capability') even
+    # though the server fully supports IDLE.
+    #
+    # Workaround: read the cached caps for diagnostics, then force-inject
+    # IDLE. aioimaplib's check is only against the cached set; if IDLE
+    # is in there, the actual IDLE command goes out and the server
+    # accepts it.
+    caps_obj = getattr(client.protocol, "capabilities", None)
+    caps_str = " ".join(sorted(str(c) for c in (caps_obj or []))) or "(none)"
+    log.info(f"mail_monitor[{name}] cached capabilities: {caps_str}")
+    if caps_obj is not None and "IDLE" not in caps_obj:
+        injected = False
+        for adder in ("add", "append"):
+            fn = getattr(caps_obj, adder, None)
+            if callable(fn):
+                try:
+                    fn("IDLE")
+                    injected = True
+                    break
+                except (TypeError, AttributeError):
+                    pass
+        if injected:
+            log.info(f"mail_monitor[{name}] forced IDLE into capabilities")
+        else:
+            log.warning(f"mail_monitor[{name}] could not inject IDLE "
+                        f"(caps type={type(caps_obj).__name__})")
 
     select_resp = await client.select(account["folder"])
     if getattr(select_resp, "result", None) != "OK":
