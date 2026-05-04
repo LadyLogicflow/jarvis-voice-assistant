@@ -207,11 +207,15 @@ async def _baseline_uid(client, folder: str) -> int:
     return (int(m.group(1)) - 1) if m else 0
 
 
-async def _uids_above(client, low_uid: int) -> list[int]:
-    """Return UIDs > low_uid via UID FETCH (Apple iCloud safe)."""
-    if low_uid < 0:
-        low_uid = 0
-    typ, data = await client.uid("fetch", f"{low_uid + 1}:*".encode(), "(UID)")
+async def _uids_in_range(client, low_uid: int, high_uid: int) -> list[int]:
+    """Return UIDs in (low_uid, high_uid] via UID FETCH with explicit
+    bounds. Avoids the '*' wildcard which Apple iCloud sometimes
+    handles unexpectedly."""
+    if high_uid <= low_uid:
+        return []
+    typ, data = await client.uid(
+        "fetch", f"{low_uid + 1}:{high_uid}".encode(), "(UID)"
+    )
     if typ != "OK" or not data:
         return []
     uids: list[int] = []
@@ -219,7 +223,7 @@ async def _uids_above(client, low_uid: int) -> list[int]:
         if isinstance(item, (bytes, bytearray)):
             for m in re.finditer(rb"UID (\d+)", item):
                 u = int(m.group(1))
-                if u > low_uid:
+                if low_uid < u <= high_uid:
                     uids.append(u)
     return sorted(set(uids))
 
@@ -294,8 +298,11 @@ async def _idle_session(account: dict, aioimaplib_module) -> None:
         _save_state(name, baseline)
         log.info(f"mail_monitor[{name}] baseline UID = {baseline}")
     else:
-        new_uids = await _uids_above(client, _max_seen[name])
-        if new_uids:
+        server_max = await _baseline_uid(client, account["folder"])
+        if server_max > _max_seen[name]:
+            new_uids = await _uids_in_range(client, _max_seen[name], server_max)
+            if not new_uids:
+                new_uids = list(range(_max_seen[name] + 1, server_max + 1))
             log.info(f"mail_monitor[{name}] catching up on {len(new_uids)} mail(s)")
             await _process_new_uids(account, client, new_uids)
 
@@ -313,14 +320,26 @@ async def _idle_session(account: dict, aioimaplib_module) -> None:
     # 60 s), works on every server, max latency 60 s.
     poll_interval = 60
     log.info(f"mail_monitor[{name}]: polling-Loop aktiv (interval={poll_interval}s)")
+    poll_count = 0
     while True:
         await asyncio.sleep(poll_interval)
-        new_uids = await _uids_above(client, _max_seen.get(name, 0))
-        if new_uids:
-            log.info(f"mail_monitor[{name}] poll: {len(new_uids)} new mail(s)")
+        poll_count += 1
+        # STATUS UIDNEXT is the authoritative "highest UID assigned".
+        # Cheaper than UID FETCH and tells us if there's anything new.
+        server_max = await _baseline_uid(client, account["folder"])
+        our_max = _max_seen.get(name, 0)
+        if server_max > our_max:
+            log.info(f"mail_monitor[{name}] poll #{poll_count}: server_max="
+                     f"{server_max} > our_max={our_max}, fetching")
+            new_uids = await _uids_in_range(client, our_max, server_max)
+            if not new_uids:
+                # UID FETCH returned nothing despite UIDNEXT signaling
+                # new mail. Process the explicit range as fallback.
+                log.warning(f"mail_monitor[{name}] UID FETCH returned no UIDs "
+                            f"despite UIDNEXT={server_max + 1}; using explicit range")
+                new_uids = list(range(our_max + 1, server_max + 1))
             await _process_new_uids(account, client, new_uids)
         else:
-            # NOOP keeps the IMAP connection alive past idle timeouts.
             await client.noop()
 
 
