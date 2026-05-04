@@ -307,20 +307,21 @@ async def _idle_session(account: dict, aioimaplib_module) -> None:
     except Exception as e:
         log.info(f"mail_monitor[{name}] noop ignored: {type(e).__name__}: {e}")
 
-    log.info(f"mail_monitor[{name}]: IDLE-Loop aktiv")
+    # Apple iCloud accepts IDLE but never sends EXISTS pushes — they use
+    # the proprietary XAPPLEPUSHSERVICE protocol which aioimaplib doesn't
+    # speak. Fall back to active polling: cheap (one UID FETCH every
+    # 60 s), works on every server, max latency 60 s.
+    poll_interval = 60
+    log.info(f"mail_monitor[{name}]: polling-Loop aktiv (interval={poll_interval}s)")
     while True:
-        idle_task = await client.idle_start(timeout=29 * 60)
-        msg = await client.wait_server_push()
-        client.idle_done()
-        try:
-            await asyncio.wait_for(idle_task, timeout=10)
-        except (asyncio.TimeoutError, Exception):
-            pass
-
-        if msg and any(b"EXISTS" in m for m in msg if isinstance(m, (bytes, bytearray))):
-            new_uids = await _uids_above(client, _max_seen.get(name, 0))
-            if new_uids:
-                await _process_new_uids(account, client, new_uids)
+        await asyncio.sleep(poll_interval)
+        new_uids = await _uids_above(client, _max_seen.get(name, 0))
+        if new_uids:
+            log.info(f"mail_monitor[{name}] poll: {len(new_uids)} new mail(s)")
+            await _process_new_uids(account, client, new_uids)
+        else:
+            # NOOP keeps the IMAP connection alive past idle timeouts.
+            await client.noop()
 
 
 async def _account_loop(account: dict, aioimaplib_module) -> None:
