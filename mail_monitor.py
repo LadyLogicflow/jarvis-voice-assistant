@@ -286,6 +286,27 @@ async def _idle_session(account: dict, aioimaplib_module) -> None:
             log.warning(f"mail_monitor[{name}] could not inject IDLE "
                         f"(caps type={type(caps_obj).__name__})")
 
+    # One-time diagnostic: log all available folders + their UIDNEXT.
+    # Catrin's iCloud test mails increment INBOX UIDNEXT but UID FETCH
+    # returns nothing for those UIDs — heuristic says the mails landed
+    # in a different mailbox. The folder list will tell us where.
+    try:
+        list_resp = await client.list('""', "*")
+        if getattr(list_resp, "result", None) == "OK":
+            folders: list[str] = []
+            for line in list_resp.lines or []:
+                if isinstance(line, (bytes, bytearray)):
+                    text = line.decode(errors="replace")
+                    # Folder name is the last quoted string on the line.
+                    quoted = re.findall(r'"([^"]+)"', text)
+                    if quoted:
+                        folders.append(quoted[-1])
+            log.info(f"mail_monitor[{name}] folders ({len(folders)}): "
+                     f"{', '.join(folders)}")
+    except Exception as e:
+        log.info(f"mail_monitor[{name}] folder LIST skipped: "
+                 f"{type(e).__name__}: {e}")
+
     select_resp = await client.select(account["folder"])
     if getattr(select_resp, "result", None) != "OK":
         raise RuntimeError(
