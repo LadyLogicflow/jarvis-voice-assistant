@@ -160,7 +160,7 @@ async def _process_new_uids(account: dict, client, uids: list[int]) -> None:
             # We skip the body-preview FETCH entirely; subject + sender
             # is enough for the classifier.
             typ, data = await client.uid(
-                "fetch", str(uid).encode(), "(BODY.PEEK[HEADER])"
+                "fetch", str(uid), "BODY.PEEK[HEADER]"
             )
             log.info(f"mail_monitor[{name}] fetch uid={uid}: typ={typ} "
                      f"data_len={len(data) if data else 0}")
@@ -231,7 +231,7 @@ async def _uids_in_range(client, low_uid: int, high_uid: int) -> list[int]:
     if high_uid <= low_uid:
         return []
     typ, data = await client.uid(
-        "fetch", f"{low_uid + 1}:{high_uid}".encode(), "(UID)"
+        "fetch", f"{low_uid + 1}:{high_uid}", "UID"
     )
     if typ != "OK" or not data:
         return []
