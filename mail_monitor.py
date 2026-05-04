@@ -119,6 +119,27 @@ def _format_for_telegram(account_name: str, sender: str, subject: str, category:
     )
 
 
+def _format_for_voice(sender: str, subject: str) -> str:
+    """Natural-language sentence for Jarvis to speak via the Mac UI.
+    No emoji, no brackets, no category jargon."""
+    return f"Eine neue, dringende E-Mail von {sender} mit dem Betreff: {subject}."
+
+
+# Callback the server registers to push spoken alerts to the Web-UI.
+# Stays None when the server hasn't wired it up — Telegram still works.
+_mail_alert_handler = None
+
+
+def register_mail_alert_handler(fn) -> None:
+    """server.py registers its broadcaster here so mail_monitor stays
+    decoupled from the WebSocket layer. Mail-monitor calls the handler
+    whenever a handlungsbedarf-mail arrives during waking hours; the
+    handler decides whether to actually speak (e.g. only when a client
+    is connected)."""
+    global _mail_alert_handler
+    _mail_alert_handler = fn
+
+
 # ---------------------------------------------------------------------------
 # Per-account IDLE session
 # ---------------------------------------------------------------------------
@@ -156,6 +177,14 @@ async def _process_new_uids(account: dict, client, uids: list[int]) -> None:
                 else:
                     text = _format_for_telegram(name, sender, subject, category)
                     await telegram_bot.send_user_text(text)
+                    # Mac-Ansage zusaetzlich, falls die Web-UI verbunden
+                    # ist (der Handler im server.py prueft das selbst).
+                    if _mail_alert_handler is not None:
+                        try:
+                            await _mail_alert_handler(_format_for_voice(sender, subject))
+                        except Exception as e:
+                            log.warning(f"mail_monitor[{name}] mac alert failed: "
+                                        f"{type(e).__name__}: {e}")
         except Exception as e:
             log.warning(f"mail_monitor[{name}] uid={uid}: {type(e).__name__}: {e}")
         finally:
