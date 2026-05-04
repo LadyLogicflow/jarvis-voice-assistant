@@ -2,8 +2,27 @@
 # Jarvis — Launch Session (macOS)
 
 set -e
+
+# When invoked from macOS Shortcuts the PATH is minimal — extend it so
+# Homebrew binaries (osascript is /usr/bin, but lsof / curl / pgrep
+# can be missing on Apple Silicon depending on user profile setup).
+export PATH="/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
+
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 WORKSPACE="$(dirname "$SCRIPT_DIR")"
+
+# Pick the right Python: prefer the project's venv (has all packages
+# + a recent enough Python). Fall back to /opt/homebrew/bin/python3 or
+# system /usr/bin/python3.
+if [ -x "$WORKSPACE/.venv/bin/python" ]; then
+    JARVIS_PY="$WORKSPACE/.venv/bin/python"
+elif [ -x /opt/homebrew/bin/python3 ]; then
+    JARVIS_PY=/opt/homebrew/bin/python3
+elif [ -x /usr/local/bin/python3 ]; then
+    JARVIS_PY=/usr/local/bin/python3
+else
+    JARVIS_PY=/usr/bin/python3
+fi
 
 # Load .env if present so JARVIS_AUTH_TOKEN is available to both the
 # server we launch and the curl calls below.
@@ -22,7 +41,8 @@ fi
 
 # 1. Jarvis-Server starten (falls nicht läuft) — kein Terminal-Fenster
 if ! lsof -i tcp:8340 -sTCP:LISTEN -t &>/dev/null; then
-    nohup /usr/bin/python3 "$WORKSPACE/server.py" \
+    cd "$WORKSPACE"
+    nohup "$JARVIS_PY" "$WORKSPACE/server.py" \
         > "$WORKSPACE/jarvis.log" 2>&1 &
     sleep 3
 fi
