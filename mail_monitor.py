@@ -18,6 +18,7 @@ import email
 import email.header
 import json
 import os
+import re
 from email.utils import parseaddr
 
 import settings as S
@@ -162,6 +163,38 @@ async def _process_new_uids(account: dict, client, uids: list[int]) -> None:
             _save_state(name, _max_seen[name])
 
 
+async def _baseline_uid(client, folder: str) -> int:
+    """Highest currently-assigned UID via STATUS UIDNEXT.
+
+    UID SEARCH ALL would be the obvious choice, but Apple iCloud rejects
+    UID SEARCH (only allows COPY/FETCH/EXPUNGE/STORE). STATUS UIDNEXT
+    works on every IMAP server.
+    """
+    typ, data = await client.status(folder, "(UIDNEXT)")
+    if typ != "OK" or not data:
+        return 0
+    joined = b" ".join(d for d in data if isinstance(d, (bytes, bytearray)))
+    m = re.search(rb"UIDNEXT (\d+)", joined)
+    return (int(m.group(1)) - 1) if m else 0
+
+
+async def _uids_above(client, low_uid: int) -> list[int]:
+    """Return UIDs > low_uid via UID FETCH (Apple iCloud safe)."""
+    if low_uid < 0:
+        low_uid = 0
+    typ, data = await client.uid("fetch", f"{low_uid + 1}:*".encode(), "(UID)")
+    if typ != "OK" or not data:
+        return []
+    uids: list[int] = []
+    for item in data:
+        if isinstance(item, (bytes, bytearray)):
+            for m in re.finditer(rb"UID (\d+)", item):
+                u = int(m.group(1))
+                if u > low_uid:
+                    uids.append(u)
+    return sorted(set(uids))
+
+
 async def _idle_session(account: dict, aioimaplib_module) -> None:
     """One IMAP login + IDLE cycle for one account. Returns when the
     connection drops."""
@@ -172,19 +205,16 @@ async def _idle_session(account: dict, aioimaplib_module) -> None:
     await client.login(account["user"], account["password"])
     await client.select(account["folder"])
 
-    typ, data = await client.uid("search", b"ALL")
-    if typ == "OK" and data and data[0]:
-        all_uids = [int(x) for x in data[0].split() if x.isdigit()]
-        if all_uids:
-            current_max = max(all_uids)
-            if _max_seen.get(name, 0) == 0:
-                _max_seen[name] = current_max
-                _save_state(name, current_max)
-                log.info(f"mail_monitor[{name}] baseline UID = {current_max}")
-            elif current_max > _max_seen[name]:
-                new_uids = [u for u in all_uids if u > _max_seen[name]]
-                log.info(f"mail_monitor[{name}] catching up on {len(new_uids)} mail(s)")
-                await _process_new_uids(account, client, new_uids)
+    if _max_seen.get(name, 0) == 0:
+        baseline = await _baseline_uid(client, account["folder"])
+        _max_seen[name] = baseline
+        _save_state(name, baseline)
+        log.info(f"mail_monitor[{name}] baseline UID = {baseline}")
+    else:
+        new_uids = await _uids_above(client, _max_seen[name])
+        if new_uids:
+            log.info(f"mail_monitor[{name}] catching up on {len(new_uids)} mail(s)")
+            await _process_new_uids(account, client, new_uids)
 
     log.info(f"mail_monitor[{name}]: IDLE-Loop aktiv")
     while True:
@@ -197,12 +227,9 @@ async def _idle_session(account: dict, aioimaplib_module) -> None:
             pass
 
         if msg and any(b"EXISTS" in m for m in msg if isinstance(m, (bytes, bytearray))):
-            typ, data = await client.uid("search", b"ALL")
-            if typ == "OK" and data and data[0]:
-                all_uids = [int(x) for x in data[0].split() if x.isdigit()]
-                new_uids = [u for u in all_uids if u > _max_seen.get(name, 0)]
-                if new_uids:
-                    await _process_new_uids(account, client, new_uids)
+            new_uids = await _uids_above(client, _max_seen.get(name, 0))
+            if new_uids:
+                await _process_new_uids(account, client, new_uids)
 
 
 async def _account_loop(account: dict, aioimaplib_module) -> None:
