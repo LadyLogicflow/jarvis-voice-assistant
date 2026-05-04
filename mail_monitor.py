@@ -149,19 +149,22 @@ async def _process_new_uids(account: dict, client, uids: list[int]) -> None:
         if uid <= _max_seen.get(name, 0):
             continue
         try:
-            # Simpler FETCH spec: RFC822.HEADER + BODY.PEEK[TEXT]. The
-            # previous (BODY.PEEK[HEADER.FIELDS (FROM SUBJECT DATE)] ...)
-            # form has nested parens inside square brackets that
-            # aioimaplib doesn't always quote correctly for Apple iCloud.
+            # Most portable FETCH form: BODY.PEEK[HEADER]. Apple iCloud
+            # rejects the previous attempts:
+            #  - (BODY.PEEK[HEADER.FIELDS (FROM SUBJECT DATE)] ...) —
+            #    nested parens, aioimaplib quoting bug
+            #  - (RFC822.HEADER BODY.PEEK[TEXT]<0.2000>) — Apple BAD
+            #    Parse Error (didn't accept either RFC822.HEADER or the
+            #    partial-range syntax)
+            # BODY.PEEK[HEADER] is the standard form every server takes.
+            # We skip the body-preview FETCH entirely; subject + sender
+            # is enough for the classifier.
             typ, data = await client.uid(
-                "fetch", str(uid).encode(),
-                "(RFC822.HEADER BODY.PEEK[TEXT]<0.2000>)"
+                "fetch", str(uid).encode(), "(BODY.PEEK[HEADER])"
             )
             log.info(f"mail_monitor[{name}] fetch uid={uid}: typ={typ} "
                      f"data_len={len(data) if data else 0}")
             if typ != "OK" or not data:
-                # Last resort: log the raw response so we can see what
-                # Apple actually said.
                 log.warning(f"mail_monitor[{name}] fetch uid={uid} empty: "
                             f"typ={typ!r} data={data!r}")
                 continue
