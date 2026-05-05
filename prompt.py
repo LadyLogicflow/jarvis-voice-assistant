@@ -92,6 +92,21 @@ def build_system_prompt() -> str:
         if S.USER_ADDRESS_POOL else ""
     )
 
+    # Mail-Decision-Tree-Anker: wenn eine Mail im Session-State liegt,
+    # weiss Jarvis dass "vorlesen", "antworten" oder "ignorieren" sich
+    # auf diese Mail beziehen.
+    import session_state as _ss
+    _active = _ss.get("default").active_mail
+    if _active:
+        active_mail_block = (
+            f"\nAktive Mail (kuerzlich gemeldet — falls {S.USER_ADDRESS} "
+            f"\"vorlesen\", \"antworten\" oder \"ignorieren\" sagt, ist diese gemeint):"
+            f"\n  Konto: {_active.account}, Absender: {_active.sender}, "
+            f"Betreff: {_active.subject}"
+        )
+    else:
+        active_mail_block = ""
+
     hour = int(time.strftime("%H"))
     is_evening = hour >= 18
     is_morning_brief_time = hour < S.MORNING_BRIEF_UNTIL_HOUR
@@ -164,6 +179,8 @@ AKTIONEN - Schreibe die passende Aktion ans ENDE deiner Antwort. Der Text VOR de
 [ACTION:CALENDAR] - Termine aus Google Kalender abrufen. Nutze wenn {S.USER_ADDRESS} nach Terminen, dem Kalender, was wann ansteht oder ihrer Woche fragt.
 [ACTION:ADDCAL] titel | datum uhrzeit - Neuen Termin in Google Kalender eintragen. Beispiel: [ACTION:ADDCAL] Mandantengespraech | morgen 14 Uhr
 [ACTION:NOTE] titel | inhalt - Neue Notiz in macOS Notizen-App anlegen. Nutze wenn {S.USER_ADDRESS} etwas notieren, festhalten oder merken moechte. Inhalt optional. Beispiel: [ACTION:NOTE] Mandant Müller | Hat wegen Betriebsprüfung angerufen, Rückruf morgen
+[ACTION:READ_MAIL] - Liest die aktuelle Mail (die zuletzt eingegangene und gemeldete) komplett vor. Nutze wenn {S.USER_ADDRESS} sagt "vorlesen", "lies vor", "was steht drin" — also nachdem Jarvis eine neue Mail gemeldet hat und sie den Inhalt hoeren moechte. KEIN Text davor, NUR die Aktion ausgeben.
+[ACTION:MARK_MAIL_READ] - Markiert die aktuelle Mail (die zuletzt vorgelesene/gemeldete) im IMAP als gelesen und beendet damit den Mail-Workflow. Nutze wenn {S.USER_ADDRESS} sagt "ignorieren", "egal", "lass" oder nach einem "nein" zu Antworten und Aufgabe daraus. Schreibe einen kurzen Halbsatz davor wie "Markiere als erledigt." dann die Aktion.
 
 WENN {S.USER_NAME} "Jarvis bereit" sagt (sie hat nur "Jarvis" gesagt, kein Befehl):
 - KEINE Begrüßung, kein Wetter, keine Aufgaben, keine Neuigkeiten.
@@ -197,7 +214,7 @@ WENN {S.USER_NAME} "Jarvis activate" sagt AB {S.MORNING_BRIEF_UNTIL_HOUR}:00 Uhr
 - Wenn ein Termin / eine Aufgabe in der naechsten Stunde wartet, darfst du das mit einem Halbsatz erwaehnen — sonst nichts.
 - Wenn heute Wochenende/Feiertag ist (siehe Erholungstag-Modus), entsprechend kommentieren.
 
-=== AKTUELLE DATEN ==={date_block}{weather_block}{today_events_block}{today_tasks_block}{task_block}{steuer_block}{steuer_recent_block}{politik_block}{address_pool_block}
+=== AKTUELLE DATEN ==={date_block}{weather_block}{today_events_block}{today_tasks_block}{task_block}{steuer_block}{steuer_recent_block}{politik_block}{address_pool_block}{active_mail_block}
 ==="""
 
 

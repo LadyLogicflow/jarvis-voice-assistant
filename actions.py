@@ -23,9 +23,11 @@ import settings as S
 import browser_tools
 import google_calendar_tools
 import imap_mail_tools
+import mail_actions
 import mail_tools
 import notes_tools
 import screen_capture
+import session_state
 import todoist_tools
 
 log = S.log
@@ -147,5 +149,51 @@ async def execute_action(action: dict) -> str:
             return S.STEUER_BRIEF
         await refresh_steuer_brief()
         return S.STEUER_BRIEF if S.STEUER_BRIEF else "Keine neuen Veroeffentlichungen abrufbar."
+
+    elif t == "READ_MAIL":
+        # Vorlesen der aktuellen Mail (active_mail aus session_state).
+        # Optional payload: "account|uid" um eine andere als die aktive
+        # Mail zu adressieren. Default: die aktive Mail aus 'default'.
+        active = session_state.get("default").active_mail
+        if p and "|" in p:
+            acc_name, uid_str = p.split("|", 1)
+            acc_name, uid_str = acc_name.strip(), uid_str.strip()
+            try:
+                uid_int = int(uid_str)
+            except ValueError:
+                return f"READ_MAIL: ungueltige UID {uid_str!r}"
+        elif active:
+            acc_name, uid_int = active.account, active.uid
+        else:
+            return f"Es liegt gerade keine Mail zur Diskussion vor, {S.USER_ADDRESS}."
+        result = await mail_actions.read_mail_body(acc_name, uid_int)
+        if "error" in result:
+            return f"Mail konnte nicht geladen werden: {result['error']}"
+        body = result["text"] or "(kein lesbarer Textinhalt)"
+        return (
+            f"Mail von {result['sender']}, Betreff: {result['subject']}.\n\n"
+            f"{body}\n\n"
+            f"Soll ich die beantworten?"
+        )
+
+    elif t == "MARK_MAIL_READ":
+        # IMAP \Seen setzen + active_mail leeren. Optional payload
+        # "account|uid"; Default: die aktive Mail.
+        active = session_state.get("default").active_mail
+        if p and "|" in p:
+            acc_name, uid_str = p.split("|", 1)
+            acc_name, uid_str = acc_name.strip(), uid_str.strip()
+            try:
+                uid_int = int(uid_str)
+            except ValueError:
+                return f"MARK_MAIL_READ: ungueltige UID {uid_str!r}"
+        elif active:
+            acc_name, uid_int = active.account, active.uid
+        else:
+            return "Keine aktive Mail zum Markieren."
+        ok = await mail_actions.mark_mail_read(acc_name, uid_int)
+        session_state.clear_active_mail("default")
+        return ("Erledigt — Mail ist als gelesen markiert."
+                if ok else "Markierung fehlgeschlagen, ist aber im Auge behalten.")
 
     return ""
