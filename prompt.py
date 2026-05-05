@@ -34,6 +34,29 @@ def pick_address() -> str:
         return random.choice(pool)
     return S.USER_ADDRESS
 
+
+def pick_greeting() -> str:
+    """Pick a time-of-day-appropriate greeting phrase.
+
+    Same anti-bias trick as pick_address: the previous prompt described
+    a table of greetings in prose ("bis 10 Uhr: ..., 10-12 Uhr: ...")
+    and trusted the model to choose. In practice Claude defaulted to
+    'Guten Morgen' regardless of hour. We pick server-side and inject
+    the concrete phrase into the prompt so there's no ambiguity.
+    """
+    hour = datetime.datetime.now().hour
+    if hour < 10:
+        pool = ["Einen guten Morgen", "Morgen", "Guten Morgen"]
+    elif hour < 12:
+        pool = ["Guten Tag", "Hallo"]
+    elif hour < 14:
+        pool = ["Guten Mittag", "Mahlzeit"]
+    elif hour < 18:
+        pool = ["Hallo", "Guten Tag", "Guten Nachmittag"]
+    else:
+        pool = ["Guten Abend", "Hallo"]
+    return random.choice(pool)
+
 # Action parsing regex used by `extract_action()` and indirectly by
 # action handlers in `actions.py`.
 ACTION_PATTERN = re.compile(r'\[ACTION:(\w+)\]\s*(.*?)$', re.DOTALL | re.MULTILINE)
@@ -48,11 +71,12 @@ def extract_action(text: str) -> tuple[str, dict | None]:
 
 
 def build_system_prompt() -> str:
-    # Pick the address ONCE per build and use it everywhere in this
-    # prompt. Without this, the template hardcoded S.USER_ADDRESS
-    # ("Madam") into 14+ instructions, which biased the model heavily
-    # toward "Madam" no matter what the variation rule said.
+    # Pick the address + greeting ONCE per build and use them
+    # consistently. The previous template's "vary in your head"
+    # instructions left the model defaulting to "Madam" / "Guten
+    # Morgen" regardless of what the rules said.
     addr = pick_address()
+    greeting = pick_greeting()
     weather_block = ""
     if S.WEATHER_INFO:
         w = S.WEATHER_INFO
@@ -113,6 +137,11 @@ def build_system_prompt() -> str:
     address_pool_block = (
         "\nAnrede-Pool: " + ", ".join(S.USER_ADDRESS_POOL)
         if S.USER_ADDRESS_POOL else ""
+    )
+
+    greeting_block = (
+        f"\nUhrzeit jetzt: {time.strftime('%H:%M')}. "
+        f"Passende Begruessungs-Floskel jetzt: \"{greeting}\"."
     )
 
     # Mail-Decision-Tree-Anker: wenn eine Mail im Session-State liegt,
@@ -210,15 +239,10 @@ WENN {S.USER_NAME} "Jarvis bereit" sagt (sie hat nur "Jarvis" gesagt, kein Befeh
 - Ein einziger kurzer Satz — trocken und bereit. Beispiele: "Bitte." / "Zu Diensten." / "Ich höre."
 - Warte auf die eigentliche Anfrage. Wenn die Anfrage kommt und es Wochenende/Feiertag/Abend ist, kommentiere es einmalig kurz (ein Halbsatz), dann führe die Aufgabe aus.
 
-ANREDE-VARIATION:
-- Statt immer dasselbe ("Madam") wechselst du die Anrede zufaellig aus dem ANREDE-POOL unten.
-- Auch die Begruessungs-Floskel variierst du tageszeitabhaengig:
-  - bis 10 Uhr: "Einen guten Morgen, ...", "Morgen, ...", "Guten Morgen, ..."
-  - 10-12 Uhr: "Guten Tag, ...", "Hallo, ..."
-  - 12-14 Uhr: "Guten Mittag, ...", "Mahlzeit, ..."
-  - 14-18 Uhr: "Hallo, ...", "Guten Tag, ..."
-  - ab 18 Uhr: "Guten Abend, ..."
-- Variiere zwischen Aktivierungen, nicht jedes Mal dieselbe Phrase.
+ANREDE und BEGRUESSUNG:
+- Verwende die Anrede {addr} (zufaellig aus dem ANREDE-POOL unten gewaehlt).
+- Wenn Du eine Begruessungs-Floskel brauchst, verwende GENAU "{greeting}" — diese Floskel passt zur aktuellen Tageszeit. KEINE andere Begruessung. Bei 14 Uhr also nicht "Guten Morgen", bei 19 Uhr nicht "Guten Tag".
+- Beispiel: "{greeting}, {addr}." am Anfang einer Begruessung.
 
 WENN {S.USER_NAME} "Jarvis activate" sagt VOR {S.MORNING_BRIEF_UNTIL_HOUR}:00 Uhr (Morgen-Briefing-Modus):
 - Beginne mit einer MOTIVIERENDEN, kurzen Morgenbegruessung im Jarvis-Stil. Variiere Anrede und Floskel siehe oben.
@@ -237,7 +261,7 @@ WENN {S.USER_NAME} "Jarvis activate" sagt AB {S.MORNING_BRIEF_UNTIL_HOUR}:00 Uhr
 - Wenn ein Termin / eine Aufgabe in der naechsten Stunde wartet, darfst du das mit einem Halbsatz erwaehnen — sonst nichts.
 - Wenn heute Wochenende/Feiertag ist (siehe Erholungstag-Modus), entsprechend kommentieren.
 
-=== AKTUELLE DATEN ==={date_block}{weather_block}{today_events_block}{today_tasks_block}{task_block}{steuer_block}{steuer_recent_block}{politik_block}{address_pool_block}{active_mail_block}
+=== AKTUELLE DATEN ==={date_block}{greeting_block}{weather_block}{today_events_block}{today_tasks_block}{task_block}{steuer_block}{steuer_recent_block}{politik_block}{address_pool_block}{active_mail_block}
 ==="""
 
 
