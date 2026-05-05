@@ -247,7 +247,7 @@ async def process_message(session_id: str, user_text: str, ws: WebSocket) -> Non
         return
 
     if not action_result or "fehlgeschlagen" in action_result:
-        summary = f"Das hat leider nicht funktioniert, {S.USER_ADDRESS}."
+        summary = f"Das hat leider nicht funktioniert, {pick_address()}."
         append_message(session_id, "assistant", summary)
         await speak(summary, ws, display=summary)
         return

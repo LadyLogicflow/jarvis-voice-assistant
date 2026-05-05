@@ -184,12 +184,14 @@ async def mark_mail_read(account_name: str, uid: int) -> bool:
     client = None
     try:
         client = await _connect(acc)
-        typ, data = await client.uid("store", str(uid), "+FLAGS", "\\Seen")
+        # Apple iCloud rejects the bare flag form. Standard IMAP form
+        # is "(\Seen)" — parens around the flag list.
+        typ, data = await client.uid("store", str(uid), "+FLAGS", "(\\Seen)")
+        log.info(f"mark_mail_read[{account_name}] uid={uid}: STORE typ={typ}")
         if typ != "OK":
             log.warning(f"mark_mail_read[{account_name}] uid={uid}: "
                         f"STORE failed typ={typ} data={data!r}")
             return False
-        log.info(f"mark_mail_read[{account_name}] uid={uid}: marked \\Seen")
         return True
     except Exception as e:
         log.warning(f"mark_mail_read[{account_name}] uid={uid}: "
