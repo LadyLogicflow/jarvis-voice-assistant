@@ -132,9 +132,27 @@ async def add_task(
             return f"Fehler beim Anlegen: {e}"
 
 
-async def complete_task(token: str, task_name: str) -> str:
-    """Find task by name and mark complete."""
-    async with httpx.AsyncClient(timeout=10) as c:
+async def complete_task(
+    token: str,
+    task_name: str,
+    project_ids: list[str] | None = None,
+    section_ids_per_project: dict[str, list[str]] | None = None,
+) -> str:
+    """Find one of MY open tasks (in scoped projects/sections) by
+    substring match and mark complete.
+
+    Filters that the previous version was missing — and that caused a
+    real risk on shared HILO/DIHAG projects:
+    - user_id == my_id  (don't close colleagues' tasks)
+    - project_id in scoped set  (don't close tasks in projects Catrin
+      doesn't normally see)
+    - section filter inside the HILO project
+    On multiple matches: returns the list back to the caller and asks
+    Catrin to disambiguate, instead of silently picking one.
+    """
+    my_id = await _my_id(token)
+
+    async with httpx.AsyncClient(timeout=15) as c:
         try:
             r = await c.get(f"{BASE}/tasks", headers=_h(token))
             r.raise_for_status()
@@ -142,18 +160,35 @@ async def complete_task(token: str, task_name: str) -> str:
         except Exception as e:
             return f"Todoist nicht erreichbar: {e}"
 
-    needle = task_name.lower()
-    match = next(
-        (t for t in all_tasks if not t.get("checked") and needle in t["content"].lower()),
-        None,
+    pid_set = set(project_ids) if project_ids else None
+    sec_sets = (
+        {pid: set(secs) for pid, secs in section_ids_per_project.items()}
+        if section_ids_per_project else None
     )
-    if not match:
+
+    needle = task_name.lower()
+    candidates = [
+        t for t in all_tasks
+        if not t.get("checked")
+        and not t.get("is_deleted")
+        and (not my_id or str(t.get("user_id", "")) == my_id)
+        and _task_in_scope(t, pid_set, sec_sets)
+        and needle in t.get("content", "").lower()
+    ]
+
+    if not candidates:
         return f"Keine offene Aufgabe gefunden die '{task_name}' enthält."
 
+    if len(candidates) > 1:
+        names = "\n".join(f"• {t.get('content', '(ohne Titel)')}" for t in candidates[:5])
+        return (f"Mehrere passende Aufgaben — welche meinst du?\n{names}\n"
+                f"Sag bitte praeziser welche.")
+
+    match = candidates[0]
     async with httpx.AsyncClient(timeout=10) as c:
         try:
             r = await c.post(f"{BASE}/tasks/{match['id']}/close", headers=_h(token))
             r.raise_for_status()
-            return f"Erledigt: {match['content']}"
+            return f"Erledigt: {match.get('content', match['id'])}"
         except Exception as e:
             return f"Fehler beim Abschließen: {e}"

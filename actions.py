@@ -123,7 +123,11 @@ async def execute_action(action: dict) -> str:
     elif t == "DONETASK":
         if not S.TODOIST_TOKEN or S.TODOIST_TOKEN == "YOUR_TODOIST_API_TOKEN":
             return "Todoist API-Token nicht konfiguriert."
-        return await todoist_tools.complete_task(S.TODOIST_TOKEN, p)
+        return await todoist_tools.complete_task(
+            S.TODOIST_TOKEN, p,
+            project_ids=S.TODOIST_PROJECT_IDS or None,
+            section_ids_per_project=S.TODOIST_SECTIONS_PER_PROJECT or None,
+        )
 
     elif t == "CALENDAR":
         return await google_calendar_tools.get_events(days=S.CALENDAR_DAYS)
