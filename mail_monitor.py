@@ -201,13 +201,15 @@ async def _process_new_uids(account: dict, client, uids: list[int]) -> None:
                 if S.is_quiet_hours():
                     log.info(f"mail_monitor[{name}] uid={uid}: quiet hours, suppressed")
                 else:
-                    text = _format_for_telegram(name, sender, subject, category)
-                    await telegram_bot.send_user_text(text)
+                    spoken = _format_for_voice(sender, subject)
+                    caption = _format_for_telegram(name, sender, subject, category)
+                    # Telegram: voice-note (mit Text als Caption zum Nachlesen).
+                    await telegram_bot.send_user_voice(spoken, caption=caption)
                     # Mac-Ansage zusaetzlich, falls die Web-UI verbunden
                     # ist (der Handler im server.py prueft das selbst).
                     if _mail_alert_handler is not None:
                         try:
-                            await _mail_alert_handler(_format_for_voice(sender, subject))
+                            await _mail_alert_handler(spoken)
                         except Exception as e:
                             log.warning(f"mail_monitor[{name}] mac alert failed: "
                                         f"{type(e).__name__}: {e}")
