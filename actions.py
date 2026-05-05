@@ -58,7 +58,10 @@ async def _generate_draft_body(mail_data: dict, instruction: str = "") -> str:
     proaktiv eine sinnvolle Antwort vor und nutzt dabei den
     business_context.md falls vorhanden.
 
-    Liefert reinen Mail-Text (keine Tags, keine Erklaerung)."""
+    Liefert reinen Mail-Text — ODER einen NEED_INPUT-Marker, wenn
+    Claude erkennt dass er ohne Eckpunkte von Catrin kein guter
+    Vorschlag liefern kann (z.B. weil weder Mail noch Kontext einen
+    Sachverhalt nahelegen, dem er einfach folgen koennte)."""
     business = _load_business_context()
     business_block = (
         f"\n\nGESCHAEFTLICHER KONTEXT (nutze diese Hinweise wenn die "
@@ -76,6 +79,17 @@ async def _generate_draft_body(mail_data: dict, instruction: str = "") -> str:
         f"Gruessen' oder 'Beste Gruesse'), {S.USER_NAME}. KEINE Tags, KEINE "
         f"Erklaerungen davor oder dahinter, NUR der Mail-Text."
         f"{business_block}"
+        f"\n\nWICHTIG — Wenn KEIN Vorschlag moeglich:\n"
+        f"Wenn die Original-Mail einen Sachverhalt anspricht den weder der "
+        f"GESCHAEFTLICHE KONTEXT abdeckt noch Du aus dem Mail-Inhalt allein "
+        f"sinnvoll beantworten kannst (z.B. weil die Mail eine konkrete "
+        f"Entscheidung von {S.USER_NAME} verlangt: Termin-Zusage, inhaltliche "
+        f"Stellungnahme, Bewertung), dann erfinde KEINE Antwort. Antworte "
+        f"stattdessen NUR mit der Zeile:\n"
+        f"NEED_INPUT: <eine kurze Frage was Du von {S.USER_NAME} brauchst, "
+        f"max 80 Zeichen>\n"
+        f"Beispiel: 'NEED_INPUT: Soll ich den Termin am Donnerstag zusagen?'\n"
+        f"Beispiel: 'NEED_INPUT: Wie sind die Konditionen die ich bestaetigen soll?'"
     )
     if instruction:
         user_msg = (
@@ -93,7 +107,9 @@ async def _generate_draft_body(mail_data: dict, instruction: str = "") -> str:
             f"---\n"
             f"Schlage proaktiv eine sinnvolle Antwort vor — nutze dazu den "
             f"GESCHAEFTLICHEN KONTEXT oben falls die Mail einen darin "
-            f"beschriebenen Sachverhalt betrifft."
+            f"beschriebenen Sachverhalt betrifft. Wenn Du KEINEN sinnvollen "
+            f"Vorschlag liefern kannst, antworte mit NEED_INPUT statt eine "
+            f"Antwort zu erfinden."
         )
     try:
         resp = await S.ai.messages.create(
@@ -346,6 +362,14 @@ async def execute_action(action: dict) -> str:
         draft_body = await _generate_draft_body(mail_data, instruction)
         if not draft_body:
             return "Konnte den Entwurf nicht erstellen."
+        # NEED_INPUT-Marker: Claude konnte ohne Eckpunkte keinen
+        # Vorschlag bauen. Frage Catrin nach.
+        if draft_body.startswith("NEED_INPUT:"):
+            question = draft_body.split(":", 1)[1].strip()
+            return (
+                f"Hier habe ich keinen passenden Standard-Sachverhalt — "
+                f"{question} Sag mir Eckpunkte, dann baue ich den Entwurf."
+            )
         # Ablage im Pending-Slot.
         acc = mail_actions._account_by_name(active.account)
         from_addr = (acc or {}).get("user", "")
