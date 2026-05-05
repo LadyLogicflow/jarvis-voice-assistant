@@ -34,6 +34,67 @@ import todoist_tools
 log = S.log
 
 
+async def _generate_draft_body(mail_data: dict, instruction: str) -> str:
+    """Lass Claude einen Antwort-Entwurf basierend auf Original-Mail +
+    Catrins Anweisung generieren. Liefert reinen Mail-Text (keine
+    Tags, keine Erklaerung)."""
+    sys_prompt = (
+        f"Du bist Jarvis, der Butler-Assistent von {S.USER_NAME} "
+        f"({S.USER_ROLE}). Erstelle eine PROFESSIONELLE deutsche E-Mail-"
+        f"Antwort im Namen von {S.USER_NAME}. Stil: foermlich, knapp, "
+        f"klar, ohne Floskeln. Format: passende Anrede ('Sehr geehrte Frau X' "
+        f"/ 'Sehr geehrter Herr Y' / 'Hallo X' wenn der Tonfall der Original-"
+        f"Mail das nahelegt), 1-3 Saetze Inhalt, Gruss-Zeile ('Mit freundlichen "
+        f"Gruessen' oder 'Beste Gruesse'), {S.USER_NAME}. KEINE Tags, KEINE "
+        f"Erklaerungen davor oder dahinter, NUR der Mail-Text."
+    )
+    user_msg = (
+        f"Original-Mail von: {mail_data.get('sender', '')}\n"
+        f"Betreff: {mail_data.get('subject', '')}\n"
+        f"Inhalt:\n{(mail_data.get('text', '') or '')[:1500]}\n\n"
+        f"---\n"
+        f"Anweisung von {S.USER_NAME} fuer die Antwort: {instruction}"
+    )
+    try:
+        resp = await S.ai.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=600,
+            system=sys_prompt,
+            messages=[{"role": "user", "content": user_msg}],
+        )
+        return resp.content[0].text.strip()
+    except Exception as e:
+        log.warning(f"_generate_draft_body failed: {type(e).__name__}: {e}")
+        return ""
+
+
+async def _revise_draft_body(old_body: str, instruction: str) -> str:
+    """Ueberarbeite den bestehenden Entwurf basierend auf einer
+    konkreten Aenderungs-Anweisung. Liefert reinen Mail-Text."""
+    sys_prompt = (
+        "Du bist Jarvis. Ueberarbeite den folgenden E-Mail-Entwurf gemaess "
+        "der Anweisung. Behalte Anrede, Schluss und Catrin als Absenderin. "
+        "Behalte den professionellen, knappen Ton. NUR der ueberarbeitete "
+        "Mail-Text, keine Erklaerung und kein 'Hier der ueberarbeitete Entwurf:'."
+    )
+    user_msg = (
+        f"Aktueller Entwurf:\n{old_body}\n\n"
+        f"---\n"
+        f"Anweisung: {instruction}"
+    )
+    try:
+        resp = await S.ai.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=600,
+            system=sys_prompt,
+            messages=[{"role": "user", "content": user_msg}],
+        )
+        return resp.content[0].text.strip()
+    except Exception as e:
+        log.warning(f"_revise_draft_body failed: {type(e).__name__}: {e}")
+        return ""
+
+
 # Sentinels returned by tool helpers when there's nothing to report.
 # Format-strings (NOT f-strings) so the address is randomized at use-
 # time via empty_reply() — module-level f-strings would freeze it.
@@ -228,6 +289,95 @@ async def execute_action(action: dict) -> str:
         session_state.clear_active_mail("default")
         return ("Erledigt — Mail ist als gelesen markiert."
                 if ok else "Markierung fehlgeschlagen, ist aber im Auge behalten.")
+
+    elif t == "DRAFT_REPLY":
+        # Initialer Antwort-Entwurf zur aktiven Mail. Payload ist
+        # Catrins Anweisung was inhaltlich rein soll (z.B. "Termin
+        # verschiebt sich auf Donnerstag 14 Uhr").
+        active = session_state.get("default").active_mail
+        if not active:
+            return f"Keine Mail aktiv, {pick_address()}."
+        instruction = p.strip()
+        if not instruction:
+            return f"Was soll ich antworten, {pick_address()}?"
+        mail_data = await mail_actions.read_mail_body(active.account, active.uid)
+        if "error" in mail_data:
+            return f"Mail konnte nicht geladen werden: {mail_data['error']}"
+        draft_body = await _generate_draft_body(mail_data, instruction)
+        if not draft_body:
+            return "Konnte den Entwurf nicht erstellen."
+        # Ablage im Pending-Slot.
+        acc = mail_actions._account_by_name(active.account)
+        from_addr = (acc or {}).get("user", "")
+        to_addr = active.sender or mail_data.get("sender", "")
+        subject = active.subject or mail_data.get("subject", "")
+        session_state.set_pending_draft("default", session_state.PendingDraft(
+            account=active.account,
+            to=to_addr,
+            subject=subject if subject.lower().startswith("re:") else f"Re: {subject}",
+            body=draft_body,
+            in_reply_to=active.message_id,
+            references=active.references,
+        ))
+        return (
+            f"Mein Vorschlag:\n\n{draft_body}\n\n"
+            f"Soll ich das so freigeben?"
+        )
+
+    elif t == "DRAFT_REVISE":
+        # Aenderungs-Anweisung auf den aktiven Pending-Draft anwenden.
+        # Payload = Catrins Aenderungs-Anweisung.
+        pending = session_state.get("default").pending_draft
+        if not pending:
+            return f"Es liegt kein Entwurf zur Ueberarbeitung vor, {pick_address()}."
+        instruction = p.strip()
+        if not instruction:
+            return "Welche Aenderung soll ich vornehmen?"
+        new_body = await _revise_draft_body(pending.body, instruction)
+        if not new_body:
+            return "Konnte den Entwurf nicht ueberarbeiten."
+        pending.body = new_body
+        session_state.set_pending_draft("default", pending)
+        return (
+            f"Neuer Vorschlag:\n\n{new_body}\n\n"
+            f"Soll ich das so freigeben?"
+        )
+
+    elif t == "DRAFT_APPROVE":
+        # IMAP APPEND in Drafts + Original-Mail markieren + State leeren.
+        pending = session_state.get("default").pending_draft
+        if not pending:
+            return f"Es liegt kein Entwurf zum Freigeben vor, {pick_address()}."
+        acc = mail_actions._account_by_name(pending.account)
+        from_addr = (acc or {}).get("user", "")
+        msg_bytes = mail_actions.build_reply_message(
+            from_addr=from_addr,
+            to_addr=pending.to,
+            subject=pending.subject,
+            body=pending.body,
+            in_reply_to=pending.in_reply_to,
+            references=pending.references,
+        )
+        ok, folder = await mail_actions.append_to_drafts(pending.account, msg_bytes)
+        if not ok:
+            return f"Konnte den Entwurf nicht ablegen: {folder}"
+        # Original-Mail markieren falls noch aktiv.
+        active = session_state.get("default").active_mail
+        if active:
+            await mail_actions.mark_mail_read(active.account, active.uid)
+            session_state.clear_active_mail("default")
+        session_state.clear_pending_draft("default")
+        return (
+            f"Entwurf liegt im {folder}-Ordner deines {pending.account}-Kontos. "
+            f"Du kannst ihn jetzt aus Apple Mail senden."
+        )
+
+    elif t == "DRAFT_CANCEL":
+        pending = session_state.get("default").pending_draft
+        session_state.clear_pending_draft("default")
+        if not pending:
+            return "Kein Entwurf zum Verwerfen."
+        return f"Vergessen, {pick_address()}."
 
     elif t == "MAIL_TO_TASK":
         # Aufgabe aus aktueller Mail generieren + in Todoist-Inbox

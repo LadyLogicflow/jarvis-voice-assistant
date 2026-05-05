@@ -6,16 +6,20 @@ mail_monitor.IDLE-Loop laufen — pro Aufruf eine eigene Connection,
 die nach Ende sofort geschlossen wird. Vermeidet das Teilen von State
 mit dem Polling-Loop.
 
-Aktionen in dieser Stufe:
-- read_mail_body(account, uid)       -> Body-Text + Header-Felder
-- mark_mail_read(account, uid)       -> setzt IMAP \\Seen-Flag
+Aktionen:
+- read_mail_body(account, uid)        -> Body-Text + Header-Felder
+- mark_mail_read(account, uid)        -> setzt IMAP \\Seen-Flag
+- build_reply_message(...)            -> RFC822-Bytes fuer IMAP APPEND
+- append_to_drafts(account, bytes)    -> Entwurf in Drafts-Ordner ablegen
 """
 
 from __future__ import annotations
 
 import email
 import email.header
+import email.utils
 import re
+from email.message import EmailMessage
 from email.utils import parseaddr
 
 import settings as S
@@ -166,6 +170,92 @@ async def read_mail_body(account_name: str, uid: int) -> dict:
         log.warning(f"read_mail_body[{account_name}] uid={uid}: "
                     f"{type(e).__name__}: {e}")
         return {"error": f"{type(e).__name__}: {e}"}
+    finally:
+        if client is not None:
+            try:
+                await client.logout()
+            except Exception:
+                pass
+
+
+# ---------------------------------------------------------------------------
+# Drafts: build RFC822 + IMAP APPEND
+# ---------------------------------------------------------------------------
+DRAFTS_FOLDER_GUESSES = (
+    "Drafts",
+    "Entwürfe",  # Entwürfe
+    "Entwuerfe",
+    "INBOX.Drafts",
+    "INBOX.Entwürfe",
+)
+
+
+def build_reply_message(
+    from_addr: str,
+    to_addr: str,
+    subject: str,
+    body: str,
+    in_reply_to: str = "",
+    references: str = "",
+) -> bytes:
+    """Construct an RFC822 reply ready for IMAP APPEND.
+
+    Adds Re: prefix if missing, In-Reply-To + References headers so the
+    reply threads correctly in Apple Mail / Outlook / etc.
+    """
+    msg = EmailMessage()
+    msg["From"] = from_addr or ""
+    msg["To"] = to_addr or ""
+    if subject and not subject.lower().startswith("re:"):
+        subject = f"Re: {subject}"
+    msg["Subject"] = subject or "Re:"
+    msg["Date"] = email.utils.formatdate(localtime=True)
+    msg["Message-ID"] = email.utils.make_msgid()
+    if in_reply_to:
+        msg["In-Reply-To"] = in_reply_to
+        if references:
+            msg["References"] = f"{references} {in_reply_to}"
+        else:
+            msg["References"] = in_reply_to
+    elif references:
+        msg["References"] = references
+    msg.set_content(body or "")
+    return msg.as_bytes()
+
+
+async def append_to_drafts(account_name: str, msg_bytes: bytes) -> tuple[bool, str]:
+    """Try to APPEND a message to the Drafts folder. Tries common
+    folder names (Drafts / Entwürfe / INBOX.Drafts...) until one
+    accepts the APPEND. Returns (ok, folder_or_error)."""
+    acc = _account_by_name(account_name)
+    if not acc:
+        return False, f"Konto {account_name!r} nicht konfiguriert"
+    if not acc["password"]:
+        return False, f"Anmeldung fuer {account_name!r} fehlt in .env"
+
+    client = None
+    try:
+        client = await _connect(acc)
+        last_err = "kein Drafts-Folder gefunden"
+        for folder in DRAFTS_FOLDER_GUESSES:
+            try:
+                resp = await client.append(msg_bytes, mailbox=folder)
+                # aioimaplib's append returns Response(result, lines)
+                result = getattr(resp, "result", None) or (
+                    resp[0] if isinstance(resp, tuple) and resp else None
+                )
+                if result == "OK":
+                    log.info(f"append_to_drafts[{account_name}] -> {folder!r}")
+                    return True, folder
+                last_err = f"folder={folder!r} typ={result}"
+            except Exception as e:
+                last_err = f"folder={folder!r} {type(e).__name__}: {e}"
+                continue
+        log.warning(f"append_to_drafts[{account_name}] failed: {last_err}")
+        return False, last_err
+    except Exception as e:
+        log.warning(f"append_to_drafts[{account_name}]: {type(e).__name__}: {e}")
+        return False, f"{type(e).__name__}: {e}"
     finally:
         if client is not None:
             try:

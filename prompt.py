@@ -151,16 +151,23 @@ def build_system_prompt() -> str:
     # weiss Jarvis dass "vorlesen", "antworten" oder "ignorieren" sich
     # auf diese Mail beziehen.
     import session_state as _ss
-    _active = _ss.get("default").active_mail
+    _state = _ss.get("default")
+    _active = _state.active_mail
+    _pending = _state.pending_draft
+    active_mail_block = ""
     if _active:
-        active_mail_block = (
+        active_mail_block += (
             f"\nAktive Mail (kuerzlich gemeldet — falls {addr} "
             f"\"vorlesen\", \"antworten\" oder \"ignorieren\" sagt, ist diese gemeint):"
             f"\n  Konto: {_active.account}, Absender: {_active.sender}, "
             f"Betreff: {_active.subject}"
         )
-    else:
-        active_mail_block = ""
+    if _pending:
+        active_mail_block += (
+            f"\nPending-Draft (Antwort-Entwurf zur Freigabe — falls {addr} "
+            f"\"freigeben\" / \"Aenderung\" / \"abbrechen\" sagt):"
+            f"\n  An: {_pending.to}, Betreff: {_pending.subject}"
+        )
 
     hour = int(time.strftime("%H"))
     is_evening = hour >= 18
@@ -237,13 +244,21 @@ AKTIONEN - Schreibe die passende Aktion ans ENDE deiner Antwort. Der Text VOR de
 [ACTION:READ_MAIL] - Liest die aktuelle Mail (die zuletzt eingegangene und gemeldete) komplett vor. Nutze wenn {addr} sagt "vorlesen", "lies vor", "was steht drin" — also nachdem Jarvis eine neue Mail gemeldet hat und sie den Inhalt hoeren moechte. KEIN Text davor, NUR die Aktion ausgeben.
 [ACTION:MARK_MAIL_READ] - Markiert die aktuelle Mail im IMAP als gelesen und beendet damit den Mail-Workflow. Nutze wenn {addr} sagt "ignorieren", "egal", "lass" — also wenn weder Antwort noch Aufgabe aus der Mail entstehen soll. Schreibe einen kurzen Halbsatz davor wie "Markiere als erledigt." dann die Aktion.
 [ACTION:MAIL_TO_TASK] - Erstellt aus der aktuellen Mail eine Todoist-Aufgabe im Eingang (Inbox), markiert die Mail anschliessend als gelesen. Nutze wenn {addr} sagt "Aufgabe daraus", "Aufgabe", "ja, Aufgabe" oder zustimmt nachdem Du eine Aufgabe vorgeschlagen hast. KEIN Text davor, NUR die Aktion.
+[ACTION:DRAFT_REPLY] anweisung - Erstellt einen Antwort-Entwurf zur aktuellen Mail. Die `anweisung` ist was {addr} inhaltlich antworten will (z.B. "Termin verschiebt sich auf Donnerstag 14 Uhr"). Jarvis liest den Entwurf vor und fragt nach Freigabe. KEIN Text davor, NUR die Aktion.
+[ACTION:DRAFT_REVISE] aenderung - Ueberarbeitet den aktiven Pending-Entwurf gemaess Aenderungs-Anweisung. Beispiele: "etwas hoeflicher", "kuerzer", "die Anrede weglassen", "Frist auf 15. Mai aendern". KEIN Text davor, NUR die Aktion.
+[ACTION:DRAFT_APPROVE] - Legt den aktiven Pending-Entwurf im Drafts-Ordner ab und beendet den Mail-Workflow. {addr} sendet manuell aus Apple Mail. Nutze wenn {addr} sagt "freigeben", "passt", "so okay", "ja senden". KEIN Text davor.
+[ACTION:DRAFT_CANCEL] - Verwirft den aktiven Pending-Entwurf, ohne abzulegen. Nutze wenn {addr} sagt "vergiss den Entwurf", "nicht antworten doch nicht", "abbrechen".
 
 MAIL-WORKFLOW (Decision-Tree nach Mail-Eingang):
 Wenn eine aktive Mail existiert (siehe "Aktive Mail" unter AKTUELLE DATEN), folge diesem Ablauf:
 1) {addr} sagt "vorlesen" / "was steht drin" / "lies vor" -> [ACTION:READ_MAIL]. Du liest vor und fragst "Soll ich die beantworten?"
-2) {addr} sagt "Ja" oder "antworten" -> Antwort-Workflow (kommt in einer spaeteren Stufe; aktuell sage einfach "Diese Funktion baue ich gerade noch, {addr}." und [ACTION:MARK_MAIL_READ]).
-3) {addr} sagt "Nein" oder "nicht antworten" -> Pruefe selbst, ob aus der Mail eine Aufgabe sinnvoll waere (Frist, Rueckruf, Termin folgen, konkrete Handlung). Wenn JA: frage "Soll ich daraus eine Aufgabe machen?" und WARTE auf die Antwort. Wenn NEIN (reine Info, Werbung, Bestaetigung): sage "Dann hake ich es ab." und [ACTION:MARK_MAIL_READ].
-4) Auf Aufgabe-Frage:
+2) {addr} sagt "Ja" oder "antworten" -> frage "Was soll ich antworten?" und WARTE auf den Inhalt. Sobald sie den Inhalt nennt, gib ihn als Anweisung an [ACTION:DRAFT_REPLY] anweisung. Beispiel: {addr} sagt "Termin verschiebt sich auf Donnerstag" -> [ACTION:DRAFT_REPLY] Termin verschiebt sich auf Donnerstag 14 Uhr.
+3) Pending-Entwurf liegt vor (siehe "Pending-Draft"-Hinweis unter AKTUELLE DATEN, falls vorhanden):
+   - {addr} sagt "freigeben" / "passt" / "so okay" -> [ACTION:DRAFT_APPROVE]
+   - {addr} sagt "Aenderung wie folgt: ..." / "hoeflicher" / "kuerzer" / "stattdessen ..." -> [ACTION:DRAFT_REVISE] aenderungs-anweisung
+   - {addr} sagt "Vergiss den Entwurf" / "abbrechen" -> [ACTION:DRAFT_CANCEL]
+4) {addr} sagt "Nein" oder "nicht antworten" (zur Antwort-Frage von Schritt 1) -> Pruefe selbst, ob aus der Mail eine Aufgabe sinnvoll waere (Frist, Rueckruf, Termin folgen, konkrete Handlung). Wenn JA: frage "Soll ich daraus eine Aufgabe machen?" und WARTE auf die Antwort. Wenn NEIN (reine Info, Werbung, Bestaetigung): sage "Dann hake ich es ab." und [ACTION:MARK_MAIL_READ].
+5) Auf Aufgabe-Frage:
    - {addr} sagt "Ja" oder "Aufgabe" -> [ACTION:MAIL_TO_TASK]
    - {addr} sagt "Nein" -> [ACTION:MARK_MAIL_READ]
 
