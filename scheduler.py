@@ -182,31 +182,83 @@ async def refresh_today_events() -> None:
         S.TODAY_EVENTS = ""
 
 
+def trim_to_complete_sentences(text: str) -> str:
+    """Defense-in-depth: wenn der LLM-Output mitten im Satz endet,
+    schneide bis zum letzten vollstaendigen Satz. Verhindert
+    'abgeschnittene Nachrichten'-Symptom unabhaengig von max_tokens."""
+    text = text.strip()
+    if not text:
+        return text
+    if text[-1] in ".!?":
+        return text
+    # Find last sentence-ender; if there's none, return as-is
+    last_dot = max(text.rfind("."), text.rfind("!"), text.rfind("?"))
+    if last_dot < len(text) // 2:
+        # Less than half is a complete sentence — keep everything,
+        # the result is already mostly fragmentary
+        return text
+    return text[: last_dot + 1].strip()
+
+
 async def refresh_politik_brief() -> None:
-    """Fetch politik news (Tagesschau Inland) and have Claude condense
-    them into 2 sentences. Cached per day like the Steuer-Brief."""
+    """Fetch Inland + Wirtschaft news (Tagesschau) and have Claude
+    pick max 3 — eine pro Thema, ein aussagefaehiger Satz pro Eintrag.
+    Optional eine 4. positive Goodnews wenn die Headlines was Konkret-
+    Erfreuliches hergeben.
+
+    Cached per day like the Steuer-Brief."""
     today = datetime.date.today().isoformat()
     if S.POLITIK_BRIEF and S.POLITIK_BRIEF_DATE == today:
         return
     try:
-        raw = await browser_tools.fetch_news(S.POLITIK_NEWS_URL, S.POLITIK_NEWS_NAME)
+        # Inland + Wirtschaft parallel laden
+        inland_task = browser_tools.fetch_news(
+            S.POLITIK_NEWS_URL, S.POLITIK_NEWS_NAME
+        )
+        wirtschaft_task = browser_tools.fetch_news(
+            "https://www.tagesschau.de/wirtschaft/index~rss2.xml",
+            "Tagesschau Wirtschaft",
+        )
+        inland_raw, wirtschaft_raw = await asyncio.gather(
+            inland_task, wirtschaft_task, return_exceptions=True
+        )
+        if isinstance(inland_raw, Exception):
+            inland_raw = ""
+        if isinstance(wirtschaft_raw, Exception):
+            wirtschaft_raw = ""
+        combined = (
+            f"=== POLITIK / INLAND ===\n{inland_raw[:2500]}\n\n"
+            f"=== WIRTSCHAFT ===\n{wirtschaft_raw[:2500]}"
+        )
         resp = await S.ai.messages.create(
             model="claude-haiku-4-5-20251001",
-            max_tokens=400,
+            max_tokens=600,
             system=(
-                f"Du bist Jarvis. Fasse die folgenden Politik-Schlagzeilen in MAXIMAL 2 "
-                f"Saetzen zusammen — wie ein Butler, der die Zeitung ueberflogen hat. "
-                f"Nur 1-2 wirklich relevante Themen. "
-                f"WICHTIG: KEINE Begruessung wie 'Guten Morgen' oder 'Guten Tag', KEINE "
-                f"direkte Anrede. Schreibe NUR die Sachzusammenfassung. Dieser Text wird "
-                f"spaeter in das Tages-Briefing eingebettet, das eine eigene Begruessung "
-                f"hat. Keine Tags in eckigen Klammern."
+                "Du bist Jarvis. Aus den folgenden Schlagzeilen aus Politik und "
+                "Wirtschaft waehle die DREI WICHTIGSTEN aus — Mix aus beiden "
+                "Bereichen, abhaengig davon was der Tag hergibt.\n\n"
+                "Format STRENG:\n"
+                "- Genau 3 Nachrichten, je 1 vollstaendiger aussagefaehiger "
+                "Satz (Subjekt + Praedikat + Objekt, mit Punkt am Ende).\n"
+                "- KEINE Aufzaehlung mit Bulletpoints, KEINE Nummerierung. "
+                "Schreibe die 3 Saetze einfach hintereinander.\n"
+                "- Wenn EINE der vorhandenen Headlines klar positiv / "
+                "konstruktiv / loesungsorientiert ist (z.B. erfolgreicher "
+                "Abschluss, Fortschritt, Hilfsaktion, Erfolg im Sport, "
+                "wissenschaftlicher Durchbruch) — bring sie als VIERTEN Satz, "
+                "ebenfalls in einem vollstaendigen Satz mit Punkt. "
+                "Wenn nichts Positives drin ist: KEINE 4. Meldung erfinden, "
+                "sondern bei 3 Saetzen aufhoeren.\n\n"
+                "WICHTIG: Beende JEDEN Satz mit einem Punkt. Brich KEINEN "
+                "Satz ab. Lieber kuerzer formulieren als unfertige Saetze. "
+                "KEINE Begruessung. KEINE direkte Anrede. KEINE Tags."
             ),
-            messages=[{"role": "user", "content": raw[:3000]}],
+            messages=[{"role": "user", "content": combined}],
         )
-        S.POLITIK_BRIEF = resp.content[0].text.strip()
+        out = trim_to_complete_sentences(resp.content[0].text.strip())
+        S.POLITIK_BRIEF = out
         S.POLITIK_BRIEF_DATE = today
-        log.info(f"Politik-Brief: {S.POLITIK_BRIEF[:80]}")
+        log.info(f"Politik-Brief: {S.POLITIK_BRIEF[:120]}")
     except Exception as e:
         log.warning(f"refresh_politik_brief failed: {type(e).__name__}: {e}")
         S.POLITIK_BRIEF = ""
