@@ -204,6 +204,15 @@ def build_system_prompt() -> str:
             f"\"freigeben\" / \"Aenderung\" / \"abbrechen\" sagt):"
             f"\n  An: {_pending.to}, Betreff: {_pending.subject}"
         )
+    _pcal = _state.pending_calendar
+    if _pcal:
+        active_mail_block += (
+            f"\nPending-Termin-Einladung (in der aktiven Mail erkannt):"
+            f"\n  Titel: {_pcal.summary}, Wann: {_pcal.when_human or _pcal.dtstart}"
+            + (f", Ort: {_pcal.location}" if _pcal.location else "") +
+            f"\n  Wenn {addr} \"eintragen\" / \"annehmen\" / \"ja\" sagt -> [ACTION:ACCEPT_CALENDAR_INVITE]"
+            f"\n  Wenn {addr} \"ablehnen\" / \"nein\" / \"nicht eintragen\" sagt -> [ACTION:DECLINE_CALENDAR_INVITE]"
+        )
 
     hour = int(time.strftime("%H"))
     is_evening = hour >= 18
@@ -285,6 +294,8 @@ AKTIONEN - Schreibe die passende Aktion ans ENDE deiner Antwort. Der Text VOR de
 [ACTION:DRAFT_REVISE] aenderung - Ueberarbeitet den aktiven Pending-Entwurf gemaess Aenderungs-Anweisung. Beispiele: "etwas hoeflicher", "kuerzer", "die Anrede weglassen", "Frist auf 15. Mai aendern". KEIN Text davor, NUR die Aktion.
 [ACTION:DRAFT_APPROVE] - Legt den aktiven Pending-Entwurf im Drafts-Ordner ab und beendet den Mail-Workflow. {addr} sendet manuell aus Apple Mail. Nutze wenn {addr} sagt "freigeben", "passt", "so okay", "ja senden". KEIN Text davor.
 [ACTION:DRAFT_CANCEL] - Verwirft den aktiven Pending-Entwurf, ohne abzulegen. Nutze wenn {addr} sagt "vergiss den Entwurf", "nicht antworten doch nicht", "abbrechen".
+[ACTION:ACCEPT_CALENDAR_INVITE] - Legt den vorgeschlagenen Kalender-Termin (aus einer Mail-Einladung, siehe Pending-Termin-Einladung unter AKTUELLE DATEN) im Google Kalender an, markiert die Mail als gelesen. Nutze wenn {addr} sagt "eintragen", "ja eintragen", "annehmen". KEIN Text davor.
+[ACTION:DECLINE_CALENDAR_INVITE] - Verwirft die vorgeschlagene Kalender-Einladung, markiert die Mail als gelesen. Nutze wenn {addr} sagt "ablehnen", "nein nicht eintragen", "lass den Termin".
 
 MAIL-WORKFLOW (Decision-Tree nach Mail-Eingang):
 Wenn eine aktive Mail existiert (siehe "Aktive Mail" unter AKTUELLE DATEN), reagiere auf folgende Befehle — {addr} kann SOFORT entscheiden, OHNE erst "vorlesen" zu sagen.

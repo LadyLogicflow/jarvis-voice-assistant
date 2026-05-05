@@ -61,11 +61,25 @@ class PendingDraft:
 
 
 @dataclass
+class PendingCalendar:
+    """Vorgeschlagener Kalender-Eintrag aus einer Mail-Einladung.
+    Catrin bestaetigt mit 'eintragen' (-> Google Calendar) oder
+    lehnt mit 'ablehnen' ab. Bezieht sich auf die aktive Mail."""
+    summary: str
+    dtstart: str = ""           # ICS rohes DTSTART
+    dtend: str = ""             # ICS rohes DTEND
+    when_human: str = ""        # bereits formatiert: "7. Mai 2026 um 14:00"
+    location: str = ""
+    organizer: str = ""
+
+
+@dataclass
 class SessionState:
     """Alles was eine Session an strukturiertem State haelt. Erweiterbar
     fuer kuenftige Workflows (active_call, pending_appointment, ...)."""
     active_mail: Optional[MailRef] = None
     pending_draft: Optional[PendingDraft] = None
+    pending_calendar: Optional[PendingCalendar] = None
     recent_mails: list[MailRef] = field(default_factory=list)
 
 
@@ -98,6 +112,7 @@ def _serialize(state: SessionState) -> dict:
     return {
         "active_mail": asdict(state.active_mail) if state.active_mail else None,
         "pending_draft": asdict(state.pending_draft) if state.pending_draft else None,
+        "pending_calendar": asdict(state.pending_calendar) if state.pending_calendar else None,
         "recent_mails": [asdict(m) for m in state.recent_mails],
     }
 
@@ -105,10 +120,12 @@ def _serialize(state: SessionState) -> dict:
 def _deserialize(raw: dict) -> SessionState:
     am = raw.get("active_mail")
     pd = raw.get("pending_draft")
+    pc = raw.get("pending_calendar")
     rm = raw.get("recent_mails") or []
     return SessionState(
         active_mail=MailRef(**am) if am else None,
         pending_draft=PendingDraft(**pd) if pd else None,
+        pending_calendar=PendingCalendar(**pc) if pc else None,
         recent_mails=[MailRef(**m) for m in rm if isinstance(m, dict)],
     )
 
@@ -201,6 +218,18 @@ def set_pending_draft(session_id: str, draft: PendingDraft) -> None:
 def clear_pending_draft(session_id: str) -> None:
     state = get(session_id)
     state.pending_draft = None
+    _save(session_id)
+
+
+def set_pending_calendar(session_id: str, cal: PendingCalendar) -> None:
+    state = get(session_id)
+    state.pending_calendar = cal
+    _save(session_id)
+
+
+def clear_pending_calendar(session_id: str) -> None:
+    state = get(session_id)
+    state.pending_calendar = None
     _save(session_id)
 
 
