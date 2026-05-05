@@ -27,6 +27,24 @@ function cancelHide() {
     if (_hideTimer) { clearTimeout(_hideTimer); _hideTimer = null; }
 }
 
+// Follow-up window: für FOLLOW_UP_WINDOW_MS nach Jarvis' letztem
+// Audio-Output akzeptieren wir Sprachbefehle OHNE "Jarvis"-Wake-Word
+// — Catrin kann fluessig auf eine Frage antworten, ohne jedesmal
+// "Jarvis" voranzustellen. Nach Ablauf wird das Wake-Word wieder
+// Pflicht. Wenn Jarvis erneut spricht (audio kommt), startet das
+// Fenster nach Ablauf des neuen Audio neu.
+const FOLLOW_UP_WINDOW_MS = 30000;
+let followUpUntil = 0;
+function startFollowUpWindow() {
+    followUpUntil = Date.now() + FOLLOW_UP_WINDOW_MS;
+}
+function endFollowUpWindow() {
+    followUpUntil = 0;
+}
+function inFollowUpWindow() {
+    return Date.now() < followUpUntil;
+}
+
 // Begrüßungs-Debounce via sessionStorage (überlebt Seitenneuladen durch Fensterresize)
 const GREET_COOLDOWN = 90000; // 90 Sekunden
 function shouldGreet() {
@@ -139,12 +157,18 @@ function playNext() {
         // talking before then, the recognition handler cancels the timer
         // and Jarvis stays visible for the follow-up.
         scheduleHide();
+        // Open the follow-up window — Catrin can answer the next 30s
+        // without saying "Jarvis" first.
+        startFollowUpWindow();
         setTimeout(startListening, 500);
         return;
     }
     isPlaying = true;
     // New audio means there's interaction happening — keep window visible.
     cancelHide();
+    // Pause the follow-up window while Jarvis speaks; it will restart
+    // when his current audio finishes.
+    endFollowUpWindow();
     setOrbState('speaking');
     status.textContent = '';
     if (isListening) {
@@ -213,9 +237,18 @@ if (SPEECH_AVAILABLE) {
                 return;
             }
 
-            // Otherwise: only act on commands that start with "Jarvis".
-            if (lower.startsWith('jarvis')) {
-                const command = text.replace(/^jarvis[,\s]*/i, '').trim() || 'Jarvis bereit';
+            // Wake-Word "Jarvis" ist Pflicht — AUSSER wir sind im
+            // Follow-Up-Fenster (30 s nach Jarvis' letzter Antwort).
+            // Dann akzeptiert Jarvis auch Befehle ohne Praefix, damit
+            // Catrin fluessig antworten kann.
+            const startsWithJarvis = lower.startsWith('jarvis');
+            if (startsWithJarvis || inFollowUpWindow()) {
+                const command = startsWithJarvis
+                    ? (text.replace(/^jarvis[,\s]*/i, '').trim() || 'Jarvis bereit')
+                    : text;
+                // Sobald wir den Befehl absenden, schliessen wir das
+                // Fenster — Jarvis' naechste Antwort startet ein neues.
+                endFollowUpWindow();
                 addTranscript('user', command);
                 setOrbState('thinking');
                 status.textContent = 'Jarvis denkt nach...';
