@@ -21,6 +21,7 @@ import os
 import re
 from email.utils import parseaddr
 
+import session_state
 import settings as S
 import telegram_bot
 
@@ -198,6 +199,15 @@ async def _process_new_uids(account: dict, client, uids: list[int]) -> None:
                      f"subject={subject!r} -> {category}")
 
             if category in S.MAIL_MONITOR_FORWARD:
+                # Egal ob's geforwarded wird oder nicht: in den Session-
+                # State, damit Catrin gleich darauf referenzieren kann
+                # ("vorlesen", "antworten", "Aufgabe daraus").
+                session_state.broadcast_active_mail(session_state.MailRef(
+                    account=name, uid=uid, sender=sender, subject=subject,
+                    date=msg.get("Date", ""),
+                    message_id=msg.get("Message-ID", ""),
+                    references=msg.get("References", ""),
+                ))
                 if S.is_quiet_hours():
                     log.info(f"mail_monitor[{name}] uid={uid}: quiet hours, suppressed")
                 else:

@@ -50,6 +50,7 @@ from scheduler import (
     refresh_steuer_recent,
 )
 from mail_monitor import mail_monitor_main, register_mail_alert_handler
+import session_state
 from telegram_bot import telegram_bot_main
 from tts import speak
 
@@ -74,6 +75,7 @@ async def _lifespan(_app):  # type: ignore[no-untyped-def]  # AsyncGenerator
     the proactive-briefs task. Shutdown: cancel both and close the
     shared httpx client."""
     await refresh_data()
+    session_state.load_all()
     scheduler.register_proactive_handler(_broadcast_proactive)
     register_mail_alert_handler(_broadcast_proactive)
     task_brief = asyncio.create_task(morning_brief_scheduler())
