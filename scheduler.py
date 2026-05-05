@@ -258,15 +258,26 @@ async def refresh_steuer_brief() -> None:
 
 
 async def morning_brief_scheduler() -> None:
-    """Long-running task: fetch the morning brief once per day at
-    `S.MORNING_HOUR`."""
+    """Long-running task: fetch the morning brief once per day at or
+    after `S.MORNING_HOUR`. Refreshes BOTH the Steuer-Brief and the
+    today's-tasks/events/politik caches so the data is hot when Catrin
+    activates Jarvis in the morning.
+
+    Uses '>=' on the hour (not '=='): if the Mac was asleep at exactly
+    7:00 and the loop wakes up at 7:05, the brief still fires today.
+    """
     triggered_today = ""
     while True:
         now = datetime.datetime.now()
         today = datetime.date.today().isoformat()
-        if now.hour == S.MORNING_HOUR and triggered_today != today:
+        if now.hour >= S.MORNING_HOUR and triggered_today != today:
             triggered_today = today
-            await refresh_steuer_brief()
+            try:
+                await refresh_steuer_brief()
+                await refresh_morning_brief_data()
+            except Exception as e:
+                log.warning(f"morning_brief_scheduler: refresh failed: "
+                            f"{type(e).__name__}: {e}")
         await asyncio.sleep(60)
 
 

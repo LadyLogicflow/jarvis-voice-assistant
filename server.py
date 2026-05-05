@@ -374,4 +374,7 @@ if __name__ == "__main__":
     log.info("J.A.R.V.I.S. V2 Server")
     log.info(f"http://localhost:{S.SERVER_PORT}")
     log.info("=" * 50)
-    uvicorn.run(app, host="0.0.0.0", port=S.SERVER_PORT)
+    # Bind to loopback only. /ws is unauthenticated and would otherwise
+    # be reachable by anyone on the same Wi-Fi (hotel, café, coworking).
+    # Telegram covers the remote-access use case.
+    uvicorn.run(app, host="127.0.0.1", port=S.SERVER_PORT)
