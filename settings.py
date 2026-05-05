@@ -121,6 +121,11 @@ TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
 TELEGRAM_CHAT_ID = config.get("telegram_chat_id", "")
 TELEGRAM_QUIET_START = config.get("telegram_quiet_start", "21:00")
 TELEGRAM_QUIET_END = config.get("telegram_quiet_end", "07:00")
+# Mac UI quiet hours — typically eine Stunde laenger erreichbar als
+# Telegram, damit Catrin am Schreibtisch arbeiten kann ohne dass das
+# Handy schon nervt.
+MAC_QUIET_START = config.get("mac_quiet_start", "22:00")
+MAC_QUIET_END = config.get("mac_quiet_end", "07:00")
 WHISPER_MODEL = config.get("whisper_model", "base")  # tiny | base | small | medium | large
 
 # Mail backend ("applescript" = macOS Mail.app | "imap" = cross-platform).
@@ -181,20 +186,35 @@ if not _raw_accounts and IMAP_HOST and IMAP_USER and IMAP_PASSWORD:
 MAIL_MONITOR_ACCOUNTS = [_normalize_account(a) for a in _raw_accounts]
 
 
-def is_quiet_hours(now=None) -> bool:
-    """True when current time is within TELEGRAM_QUIET_START..END (wraps
-    midnight). Shared by telegram_bot.py and mail_monitor.py."""
+def _in_window(start: str, end: str, now=None) -> bool:
+    """True when current time is within start..end (HH:MM, wraps
+    midnight)."""
     import datetime as _dt
     now = now or _dt.datetime.now()
     h, m = now.hour, now.minute
-    s_h, s_m = (int(x) for x in TELEGRAM_QUIET_START.split(":"))
-    e_h, e_m = (int(x) for x in TELEGRAM_QUIET_END.split(":"))
+    s_h, s_m = (int(x) for x in start.split(":"))
+    e_h, e_m = (int(x) for x in end.split(":"))
     cur = h * 60 + m
     s = s_h * 60 + s_m
     e = e_h * 60 + e_m
     if s < e:
         return s <= cur < e
     return cur >= s or cur < e
+
+
+def is_quiet_hours(now=None) -> bool:
+    """Telegram quiet hours — applies to Telegram-bot pushes and the
+    mail-monitor's voice-note channel. Shared by telegram_bot.py and
+    mail_monitor.py."""
+    return _in_window(TELEGRAM_QUIET_START, TELEGRAM_QUIET_END, now)
+
+
+def is_mac_quiet_hours(now=None) -> bool:
+    """Mac-UI quiet hours — applies to the spoken alerts that go to the
+    Web-UI via _broadcast_proactive. Defaults eine Stunde spaeter als
+    Telegram, damit Catrin am Mac noch arbeiten kann wenn Telegram
+    schon stumm ist."""
+    return _in_window(MAC_QUIET_START, MAC_QUIET_END, now)
 
 PERSIST_HISTORY = bool(config.get("persist_conversations", True))
 HISTORY_PATH = os.path.join(os.path.dirname(__file__), ".jarvis_history.json")
