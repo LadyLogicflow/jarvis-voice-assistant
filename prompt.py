@@ -235,7 +235,17 @@ AKTIONEN - Schreibe die passende Aktion ans ENDE deiner Antwort. Der Text VOR de
 [ACTION:ADDCAL] titel | datum uhrzeit - Neuen Termin in Google Kalender eintragen. Beispiel: [ACTION:ADDCAL] Mandantengespraech | morgen 14 Uhr
 [ACTION:NOTE] titel | inhalt - Neue Notiz in macOS Notizen-App anlegen. Nutze wenn {addr} etwas notieren, festhalten oder merken moechte. Inhalt optional. Beispiel: [ACTION:NOTE] Mandant Müller | Hat wegen Betriebsprüfung angerufen, Rückruf morgen
 [ACTION:READ_MAIL] - Liest die aktuelle Mail (die zuletzt eingegangene und gemeldete) komplett vor. Nutze wenn {addr} sagt "vorlesen", "lies vor", "was steht drin" — also nachdem Jarvis eine neue Mail gemeldet hat und sie den Inhalt hoeren moechte. KEIN Text davor, NUR die Aktion ausgeben.
-[ACTION:MARK_MAIL_READ] - Markiert die aktuelle Mail (die zuletzt vorgelesene/gemeldete) im IMAP als gelesen und beendet damit den Mail-Workflow. Nutze wenn {addr} sagt "ignorieren", "egal", "lass" oder nach einem "nein" zu Antworten und Aufgabe daraus. Schreibe einen kurzen Halbsatz davor wie "Markiere als erledigt." dann die Aktion.
+[ACTION:MARK_MAIL_READ] - Markiert die aktuelle Mail im IMAP als gelesen und beendet damit den Mail-Workflow. Nutze wenn {addr} sagt "ignorieren", "egal", "lass" — also wenn weder Antwort noch Aufgabe aus der Mail entstehen soll. Schreibe einen kurzen Halbsatz davor wie "Markiere als erledigt." dann die Aktion.
+[ACTION:MAIL_TO_TASK] - Erstellt aus der aktuellen Mail eine Todoist-Aufgabe im Eingang (Inbox), markiert die Mail anschliessend als gelesen. Nutze wenn {addr} sagt "Aufgabe daraus", "Aufgabe", "ja, Aufgabe" oder zustimmt nachdem Du eine Aufgabe vorgeschlagen hast. KEIN Text davor, NUR die Aktion.
+
+MAIL-WORKFLOW (Decision-Tree nach Mail-Eingang):
+Wenn eine aktive Mail existiert (siehe "Aktive Mail" unter AKTUELLE DATEN), folge diesem Ablauf:
+1) {addr} sagt "vorlesen" / "was steht drin" / "lies vor" -> [ACTION:READ_MAIL]. Du liest vor und fragst "Soll ich die beantworten?"
+2) {addr} sagt "Ja" oder "antworten" -> Antwort-Workflow (kommt in einer spaeteren Stufe; aktuell sage einfach "Diese Funktion baue ich gerade noch, {addr}." und [ACTION:MARK_MAIL_READ]).
+3) {addr} sagt "Nein" oder "nicht antworten" -> Pruefe selbst, ob aus der Mail eine Aufgabe sinnvoll waere (Frist, Rueckruf, Termin folgen, konkrete Handlung). Wenn JA: frage "Soll ich daraus eine Aufgabe machen?" und WARTE auf die Antwort. Wenn NEIN (reine Info, Werbung, Bestaetigung): sage "Dann hake ich es ab." und [ACTION:MARK_MAIL_READ].
+4) Auf Aufgabe-Frage:
+   - {addr} sagt "Ja" oder "Aufgabe" -> [ACTION:MAIL_TO_TASK]
+   - {addr} sagt "Nein" -> [ACTION:MARK_MAIL_READ]
 
 WENN {S.USER_NAME} "Jarvis bereit" sagt (sie hat nur "Jarvis" gesagt, kein Befehl):
 - KEINE Begrüßung, kein Wetter, keine Aufgaben, keine Neuigkeiten.
