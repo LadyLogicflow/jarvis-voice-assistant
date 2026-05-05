@@ -490,6 +490,38 @@ async def execute_action(action: dict) -> str:
             return "Kein Entwurf zum Verwerfen."
         return f"Vergessen, {pick_address()}."
 
+    elif t == "ACCEPT_CALENDAR_INVITE":
+        # Vorgeschlagenen Kalender-Eintrag anlegen + Mail markieren.
+        state = session_state.get("default")
+        cal = state.pending_calendar
+        active = state.active_mail
+        if not cal:
+            return f"Es liegt keine Termin-Einladung zur Annahme vor, {pick_address()}."
+        title = cal.summary or "Termin"
+        when = cal.when_human or cal.dtstart
+        if not when:
+            return "Termin hat keine erkennbare Zeit — bitte manuell anlegen."
+        try:
+            result = await google_calendar_tools.add_event(title, when)
+        except Exception as e:
+            log.warning(f"ACCEPT_CALENDAR_INVITE failed: {type(e).__name__}: {e}")
+            return f"Termin konnte nicht angelegt werden: {type(e).__name__}"
+        # Mail markieren + State leeren
+        if active:
+            await mail_actions.mark_mail_read(active.account, active.uid)
+            session_state.clear_active_mail("default")
+        session_state.clear_pending_calendar("default")
+        return f"Termin '{title}' am {when} angelegt. Mail abgehakt."
+
+    elif t == "DECLINE_CALENDAR_INVITE":
+        state = session_state.get("default")
+        active = state.active_mail
+        session_state.clear_pending_calendar("default")
+        if active:
+            await mail_actions.mark_mail_read(active.account, active.uid)
+            session_state.clear_active_mail("default")
+        return "Einladung abgelehnt, Mail markiert."
+
     elif t == "MAIL_TO_TASK":
         # Aufgabe aus aktueller Mail generieren + in Todoist-Inbox
         # ablegen + Mail markieren. Benutzt active_mail aus session_state.

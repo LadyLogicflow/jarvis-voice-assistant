@@ -198,6 +198,58 @@ async def _process_new_uids(account: dict, client, uids: list[int]) -> None:
             log.info(f"mail_monitor[{name}] uid={uid} sender={sender!r} "
                      f"subject={subject!r} -> {category}")
 
+            # Kalender-Einladung erkannt? (Stage 5)
+            ics_invite = mail_actions.extract_calendar_invite(msg)
+            if ics_invite:
+                when_human = mail_actions.format_calendar_when(ics_invite.get("dtstart", ""))
+                log.info(f"mail_monitor[{name}] uid={uid}: calendar invite "
+                         f"summary={ics_invite.get('summary')!r} when={when_human}")
+                # active_mail + pending_calendar setzen, ohne Auto-Triage,
+                # damit Catrin entscheidet.
+                session_state.broadcast_active_mail(session_state.MailRef(
+                    account=name, uid=uid, sender=sender, subject=subject,
+                    date=msg.get("Date", ""),
+                    message_id=msg.get("Message-ID", ""),
+                    references=msg.get("References", ""),
+                ))
+                session_state.set_pending_calendar(
+                    "default",
+                    session_state.PendingCalendar(
+                        summary=ics_invite.get("summary", subject),
+                        dtstart=ics_invite.get("dtstart", ""),
+                        dtend=ics_invite.get("dtend", ""),
+                        when_human=when_human,
+                        location=ics_invite.get("location", ""),
+                        organizer=ics_invite.get("organizer", ""),
+                    ),
+                )
+                tg_quiet = S.is_quiet_hours()
+                mac_quiet = S.is_mac_quiet_hours()
+                spoken = (
+                    f"Eine Termin-Einladung von {sender}, "
+                    f"{ics_invite.get('summary', subject)}"
+                    + (f", am {when_human}" if when_human else "")
+                    + ". Soll ich den Termin eintragen?"
+                )
+                caption = (
+                    f"\U0001F4C5 Termin-Einladung [{name}]\n"
+                    f"Von: {sender}\nBetreff: {subject}\n"
+                    f"Termin: {when_human or ics_invite.get('dtstart', '?')}"
+                )
+                if tg_quiet:
+                    log.info(f"mail_monitor[{name}] uid={uid}: telegram quiet hours, suppressed (calendar)")
+                else:
+                    await telegram_bot.send_user_voice(spoken, caption=caption)
+                if mac_quiet:
+                    log.info(f"mail_monitor[{name}] uid={uid}: mac quiet hours, suppressed (calendar)")
+                elif _mail_alert_handler is not None:
+                    try:
+                        await _mail_alert_handler(spoken)
+                    except Exception as e:
+                        log.warning(f"mail_monitor[{name}] mac alert (cal) failed: "
+                                    f"{type(e).__name__}: {e}")
+                continue
+
             # Auto-Triage zuerst pruefen — Sender-Regeln, Heuristiken
             # (Bounce/Paket/Reise/Newsletter), und werbung_action.
             triage = mail_triage.route(sender, subject, category, msg=msg)

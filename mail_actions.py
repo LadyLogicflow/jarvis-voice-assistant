@@ -264,6 +264,83 @@ async def append_to_drafts(account_name: str, msg_bytes: bytes) -> tuple[bool, s
                 pass
 
 
+def extract_calendar_invite(msg) -> dict | None:
+    """Wenn die Mail einen Kalender-Termin enthaelt (text/calendar oder
+    .ics-Anhang), gib ein dict mit den wichtigen Feldern zurueck.
+
+    Felder: summary, dtstart, dtend, location, description, organizer.
+    Datums-Werte als rohes ICS-Format (z.B. '20260507T140000' oder
+    '20260507T120000Z') — der Aufrufer formatiert weiter."""
+    candidates: list[bytes] = []
+    if msg is None:
+        return None
+    if not msg.is_multipart():
+        if msg.get_content_type() == "text/calendar":
+            payload = msg.get_payload(decode=True)
+            if payload:
+                candidates.append(payload)
+    else:
+        for part in msg.walk():
+            if part.get_content_type() == "text/calendar":
+                payload = part.get_payload(decode=True)
+                if payload:
+                    candidates.append(payload)
+                continue
+            filename = (part.get_filename() or "").lower()
+            if filename.endswith(".ics"):
+                payload = part.get_payload(decode=True)
+                if payload:
+                    candidates.append(payload)
+    if not candidates:
+        return None
+    # Use the first found ICS payload
+    raw = candidates[0]
+    try:
+        text = raw.decode("utf-8", errors="replace")
+    except Exception:
+        return None
+    # RFC 5545 line-folding: lines starting with space/tab continue
+    # the previous logical line.
+    folded: list[str] = []
+    for line in text.splitlines():
+        if line.startswith((" ", "\t")) and folded:
+            folded[-1] += line[1:]
+        else:
+            folded.append(line)
+    info: dict = {}
+    for line in folded:
+        if ":" not in line:
+            continue
+        key_part, val = line.split(":", 1)
+        key = key_part.split(";")[0].upper()
+        if key in ("DTSTART", "DTEND", "SUMMARY", "LOCATION",
+                   "DESCRIPTION", "ORGANIZER"):
+            info[key.lower()] = val.strip()
+    if not (info.get("summary") or info.get("dtstart")):
+        return None
+    return info
+
+
+def format_calendar_when(ics_dt: str) -> str:
+    """ICS DTSTART -> menschenlesbar wie '7. Mai 2026 um 14:00'."""
+    import datetime
+    if not ics_dt:
+        return ""
+    s = ics_dt.rstrip("Z")
+    fmt_candidates = ["%Y%m%dT%H%M%S", "%Y%m%dT%H%M", "%Y%m%d"]
+    for fmt in fmt_candidates:
+        try:
+            dt = datetime.datetime.strptime(s, fmt)
+            months = ["Januar", "Februar", "Maerz", "April", "Mai", "Juni",
+                      "Juli", "August", "September", "Oktober", "November", "Dezember"]
+            if "T" in s:
+                return f"{dt.day}. {months[dt.month-1]} {dt.year} um {dt.strftime('%H:%M')}"
+            return f"{dt.day}. {months[dt.month-1]} {dt.year}"
+        except ValueError:
+            continue
+    return ics_dt
+
+
 async def move_mail(account_name: str, uid: int, target_folder: str) -> bool:
     """Move a UID to a different folder via IMAP UID MOVE (RFC 6851).
     Falls back to UID COPY + UID STORE +FLAGS \\Deleted + EXPUNGE on
