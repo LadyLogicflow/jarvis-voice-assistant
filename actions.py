@@ -26,6 +26,7 @@ import imap_mail_tools
 import mail_actions
 import mail_tools
 import notes_tools
+from prompt import pick_address
 import screen_capture
 import session_state
 import todoist_tools
@@ -34,13 +35,39 @@ log = S.log
 
 
 # Sentinels returned by tool helpers when there's nothing to report.
-# `process_message` in server.py uses this dict to speak a hardcoded
-# butler line (no extra LLM round-trip needed).
-EMPTY_REPLIES = {
-    "KEINE_MAILS":   f"Ihr Posteingang ist leer, {S.USER_ADDRESS}. Eine seltene Erscheinung.",
-    "KEINE_TERMINE": f"Ihr Kalender ist die naechsten Tage frei, {S.USER_ADDRESS}. Erholung in Sicht.",
-    "KEINE_TASKS":   f"Keine offenen Aufgaben, {S.USER_ADDRESS}. Eine angenehme Lage.",
+# Format-strings (NOT f-strings) so the address is randomized at use-
+# time via empty_reply() — module-level f-strings would freeze it.
+_EMPTY_REPLY_TEMPLATES = {
+    "KEINE_MAILS":   "Ihr Posteingang ist leer, {addr}. Eine seltene Erscheinung.",
+    "KEINE_TERMINE": "Ihr Kalender ist die naechsten Tage frei, {addr}. Erholung in Sicht.",
+    "KEINE_TASKS":   "Keine offenen Aufgaben, {addr}. Eine angenehme Lage.",
 }
+
+
+# Sentinel keys (used by callers to detect empty results before they
+# call empty_reply()).
+EMPTY_REPLY_KEYS = frozenset(_EMPTY_REPLY_TEMPLATES)
+
+
+def empty_reply(sentinel: str) -> str:
+    """Render an empty-reply sentinel into spoken text with a freshly
+    chosen address."""
+    template = _EMPTY_REPLY_TEMPLATES.get(sentinel)
+    if template is None:
+        return ""
+    return template.format(addr=pick_address())
+
+
+# Backwards-compat shim: existing callers do `if action_result in
+# EMPTY_REPLIES: msg = EMPTY_REPLIES[action_result]`. Wrap as a
+# membership-checkable proxy that resolves on lookup.
+class _EmptyRepliesProxy:
+    def __contains__(self, key: object) -> bool:
+        return isinstance(key, str) and key in _EMPTY_REPLY_TEMPLATES
+    def __getitem__(self, key: str) -> str:
+        return empty_reply(key)
+
+EMPTY_REPLIES = _EmptyRepliesProxy()
 
 
 async def execute_action(action: dict) -> str:
@@ -64,7 +91,7 @@ async def execute_action(action: dict) -> str:
     elif t == "OPEN":
         result = await browser_tools.open_url(p)
         if not result.get("success"):
-            return f"Diese URL kann ich nicht oeffnen, {S.USER_ADDRESS}. Nur http- und https-Adressen sind erlaubt."
+            return f"Diese URL kann ich nicht oeffnen, {pick_address()}. Nur http- und https-Adressen sind erlaubt."
         return f"Geoeffnet: {p}"
 
     elif t == "SCREEN":
@@ -171,7 +198,7 @@ async def execute_action(action: dict) -> str:
         elif active:
             acc_name, uid_int = active.account, active.uid
         else:
-            return f"Es liegt gerade keine Mail zur Diskussion vor, {S.USER_ADDRESS}."
+            return f"Es liegt gerade keine Mail zur Diskussion vor, {pick_address()}."
         result = await mail_actions.read_mail_body(acc_name, uid_int)
         if "error" in result:
             return f"Mail konnte nicht geladen werden: {result['error']}"

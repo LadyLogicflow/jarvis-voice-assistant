@@ -147,7 +147,7 @@ async def _ask_claude(user_text: str) -> str:
         # OPEN / SCREEN don't help when she's on the phone.
         return (
             f"{spoken_text} Diese Aktion ({a_type}) macht ueber Telegram keinen "
-            f"Sinn, {S.USER_ADDRESS} — versuch's am Mac."
+            f"Sinn, {pick_address()} — versuch's am Mac."
         ).strip()
 
     try:
@@ -155,7 +155,7 @@ async def _ask_claude(user_text: str) -> str:
         log.info(f"Telegram action result: '{str(action_result)[:120]}'")
     except Exception as e:
         log.warning(f"Telegram action failed: {type(e).__name__}: {e}")
-        return f"{spoken_text} Die Aktion ist fehlgeschlagen, {S.USER_ADDRESS}."
+        return f"{spoken_text} Die Aktion ist fehlgeschlagen, {pick_address()}."
 
     # Empty-result sentinels.
     if isinstance(action_result, str) and action_result in EMPTY_REPLIES:
@@ -204,7 +204,7 @@ async def _handle_message(update, context, *, source_text: str | None = None) ->
         return
     if is_quiet_hours():
         await update.message.reply_text(
-            f"Schlafenszeit, {S.USER_ADDRESS}. Ich melde mich morgen ab "
+            f"Schlafenszeit, {pick_address()}. Ich melde mich morgen ab "
             f"{S.TELEGRAM_QUIET_END} Uhr wieder."
         )
         return
