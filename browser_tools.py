@@ -87,11 +87,13 @@ async def _get_browser():  # type: ignore[no-untyped-def]  # playwright BrowserC
 
 async def search_and_read(query: str) -> dict:
     """Search DuckDuckGo in visible browser, click first result, read the page."""
+    from urllib.parse import quote
     ctx = await _get_browser()
     page = await ctx.new_page()
     try:
-        # DuckDuckGo search (no cookie banner, no reCAPTCHA)
-        search_url = f"https://duckduckgo.com/?q={query}"
+        # DuckDuckGo search (no cookie banner, no reCAPTCHA). quote() so
+        # multi-word voice queries with &/?/# don't get truncated.
+        search_url = f"https://duckduckgo.com/?q={quote(query, safe='')}"
         await page.goto(search_url, timeout=15000)
         _bring_chromium_to_front()
         await page.wait_for_timeout(2000)
@@ -123,7 +125,12 @@ async def search_and_read(query: str) -> dict:
     except Exception as e:
         return {"error": str(e), "url": query}
     finally:
-        pass
+        # Without close(), every SEARCH leaks a Chromium tab — Catrin's
+        # Mac fills up after a normal day's use.
+        try:
+            await page.close()
+        except Exception:
+            pass
 
 
 async def visit(url: str, max_chars: int = 5000) -> dict:
