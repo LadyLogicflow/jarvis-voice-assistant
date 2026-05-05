@@ -21,6 +21,8 @@ import os
 import re
 from email.utils import parseaddr
 
+import mail_actions
+import mail_triage
 import session_state
 import settings as S
 import telegram_bot
@@ -195,6 +197,30 @@ async def _process_new_uids(account: dict, client, uids: list[int]) -> None:
             category = await _classify(sender, subject, "")
             log.info(f"mail_monitor[{name}] uid={uid} sender={sender!r} "
                      f"subject={subject!r} -> {category}")
+
+            # Auto-Triage zuerst pruefen — Sender-Regeln, Heuristiken
+            # (Bounce/Paket/Reise/Newsletter), und werbung_action.
+            triage = mail_triage.route(sender, subject, category, msg=msg)
+            if triage["action"] != "none":
+                log.info(f"mail_monitor[{name}] uid={uid}: triage -> {triage}")
+                if triage["action"] == "mark_read":
+                    await mail_actions.mark_mail_read(name, uid)
+                elif triage["action"] == "move":
+                    folder = triage.get("folder", "Junk")
+                    await mail_actions.move_mail(name, uid, folder)
+                elif triage["action"] == "forward":
+                    to_addr = triage.get("to", "")
+                    if to_addr:
+                        ok = await mail_actions.forward_mail(name, uid, to_addr)
+                        log.info(f"mail_monitor[{name}] uid={uid}: forward -> {to_addr}: {ok}")
+                        # After forwarding: also archive
+                        and_then = triage.get("and_then", "mark_read")
+                        if and_then == "move":
+                            await mail_actions.move_mail(name, uid, triage.get("folder", "Junk"))
+                        else:
+                            await mail_actions.mark_mail_read(name, uid)
+                # Triage handled it — skip the normal forward/notify path
+                continue
 
             if category in S.MAIL_MONITOR_FORWARD:
                 # Egal ob's geforwarded wird oder nicht: in den Session-

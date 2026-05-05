@@ -1,0 +1,47 @@
+{
+  "_comment": "Auto-Triage-Regeln fuer den mail_monitor. Datei wird bei jeder eingehenden Mail frisch eingelesen — Aenderungen wirken ohne Server-Restart. Diese Datei ist gitignored; pflege sie selbst nach Bedarf.",
+
+  "_comment_actions": "Verfuegbare Aktionen: 'mark_read' (nur als gelesen markieren), 'move' (verschieben + gelesen markieren — braucht 'folder'), 'forward' (auto-forward + gelesen — braucht 'to'; nutzt SMTP, sendet wirklich). Optional 'forward_only_with_attachment': true — nur wenn die Mail einen Anhang hat.",
+
+  "rules": [
+    {
+      "from_contains": "no-reply@coolblue.de",
+      "action": "move",
+      "folder": "Gelesen_automatisch"
+    },
+    {
+      "from_contains": "essberger@dihag.com",
+      "action": "mark_read"
+    },
+    {
+      "from_contains": "no-reply@amazon.de",
+      "action": "move",
+      "folder": "Amazon"
+    },
+    {
+      "from_contains": "noreply@mail.cloud.scansnap.com",
+      "action": "move",
+      "folder": "Gelesen_automatisch"
+    },
+    {
+      "from_contains": "patient@hellomed.com",
+      "action": "forward",
+      "to": "lohnsteuerhilfevereinhiloevberatungsstellewuppertalbarmen@getmyinvoices.net",
+      "forward_only_with_attachment": true,
+      "fallback_action": "move",
+      "fallback_folder": "Gelesen_automatisch"
+    }
+  ],
+
+  "_comment_categories": "Klassifikator-basierte Aktionen. werbung_action wird ausgefuehrt wenn der Klassifikator die Mail als 'werbung' einstuft UND keine spezifische Sender-Regel oben gegriffen hat.",
+  "werbung_action": "move",
+  "werbung_folder": "Werbung",
+
+  "_comment_heuristics": "Vordefinierte Pattern-Erkennung. Greifen unabhaengig vom Klassifikator wenn die Heuristik anschlaegt.",
+  "heuristics": {
+    "bounce_to_junk": true,
+    "package_to_dhl_folder": "DHL",
+    "travel_to_reise_folder": "Reise",
+    "newsletter_to_werbung_folder": "Werbung"
+  }
+}

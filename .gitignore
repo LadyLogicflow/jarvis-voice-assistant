@@ -9,6 +9,8 @@ token.json
 !.env.example
 business_context.md
 !business_context.example.md
+mail_triage_rules.json
+!mail_triage_rules.example.json
 
 # Python
 __pycache__/

@@ -264,6 +264,127 @@ async def append_to_drafts(account_name: str, msg_bytes: bytes) -> tuple[bool, s
                 pass
 
 
+async def move_mail(account_name: str, uid: int, target_folder: str) -> bool:
+    """Move a UID to a different folder via IMAP UID MOVE (RFC 6851).
+    Falls back to UID COPY + UID STORE +FLAGS \\Deleted + EXPUNGE on
+    servers without MOVE. Returns True on success.
+
+    Apple iCloud supports UID MOVE so the fallback is rarely hit."""
+    acc = _account_by_name(account_name)
+    if not acc or not acc["password"]:
+        return False
+    client = None
+    try:
+        client = await _connect(acc)
+        # Try MOVE first
+        try:
+            typ, data = await client.uid("move", str(uid), target_folder)
+            if typ == "OK":
+                log.info(f"move_mail[{account_name}] uid={uid} -> {target_folder!r}")
+                return True
+            log.info(f"move_mail[{account_name}] uid={uid} MOVE returned {typ}, "
+                     f"trying COPY+DELETE fallback")
+        except Exception as e:
+            log.info(f"move_mail[{account_name}] MOVE not supported ({e}), "
+                     f"trying COPY+DELETE fallback")
+        # Fallback: COPY + STORE \\Deleted + EXPUNGE
+        typ, data = await client.uid("copy", str(uid), target_folder)
+        if typ != "OK":
+            log.warning(f"move_mail[{account_name}] uid={uid} COPY failed: typ={typ}")
+            return False
+        await client.uid("store", str(uid), "+FLAGS", "(\\Deleted)")
+        await client.expunge()
+        log.info(f"move_mail[{account_name}] uid={uid} -> {target_folder!r} (via copy+delete)")
+        return True
+    except Exception as e:
+        log.warning(f"move_mail[{account_name}] uid={uid}: {type(e).__name__}: {e}")
+        return False
+    finally:
+        if client is not None:
+            try:
+                await client.logout()
+            except Exception:
+                pass
+
+
+async def forward_mail(account_name: str, uid: int, to_addr: str) -> bool:
+    """Forward a mail (with all attachments) to a different address by
+    fetching the original RFC822, wrapping in a forward header, and
+    sending via SMTP. Returns True on success.
+
+    Note: this actually sends — the only place in the code where
+    Jarvis emits an outgoing message without explicit Catrin-approval.
+    Used by the Hellomed-getmyinvoices auto-forward rule."""
+    import smtplib
+    from email.mime.multipart import MIMEMultipart
+    from email.mime.text import MIMEText
+    acc = _account_by_name(account_name)
+    if not acc or not acc["password"]:
+        return False
+    client = None
+    try:
+        client = await _connect(acc)
+        typ, data = await client.uid("fetch", str(uid), "BODY.PEEK[]")
+        if typ != "OK" or not data:
+            log.warning(f"forward_mail[{account_name}] uid={uid} fetch typ={typ}")
+            return False
+        byte_items = [b for b in data if isinstance(b, (bytes, bytearray))]
+        if not byte_items:
+            return False
+        original_bytes = max(byte_items, key=len)
+    except Exception as e:
+        log.warning(f"forward_mail[{account_name}] fetch failed: "
+                    f"{type(e).__name__}: {e}")
+        return False
+    finally:
+        if client is not None:
+            try:
+                await client.logout()
+            except Exception:
+                pass
+
+    # Build forward message
+    original = email.message_from_bytes(original_bytes)
+    fwd = MIMEMultipart()
+    fwd["From"] = acc["user"]
+    fwd["To"] = to_addr
+    orig_subj = _decode_header(original.get("Subject", ""))
+    fwd["Subject"] = (orig_subj if orig_subj.lower().startswith("fwd:")
+                      else f"Fwd: {orig_subj}")
+    fwd["Date"] = email.utils.formatdate(localtime=True)
+    fwd["Message-ID"] = email.utils.make_msgid()
+    fwd_body = (
+        f"Automatische Weiterleitung durch Jarvis.\n"
+        f"---------- Original ----------\n"
+        f"From: {original.get('From', '')}\n"
+        f"Date: {original.get('Date', '')}\n"
+        f"Subject: {orig_subj}\n"
+    )
+    fwd.attach(MIMEText(fwd_body, "plain", "utf-8"))
+    # Attach the original as message/rfc822 — Apple Mail / Outlook
+    # render this as a forwarded mail with all attachments preserved.
+    from email.mime.message import MIMEMessage
+    fwd.attach(MIMEMessage(original))
+
+    # Send via SMTP. Server is the same hostname as IMAP for most providers.
+    smtp_host = acc.get("smtp_host", acc["host"])
+    smtp_port = int(acc.get("smtp_port", 587))
+    try:
+        loop = __import__("asyncio").get_event_loop()
+        def _send():
+            with smtplib.SMTP(smtp_host, smtp_port, timeout=30) as s:
+                s.starttls()
+                s.login(acc["user"], acc["password"])
+                s.send_message(fwd)
+        await loop.run_in_executor(None, _send)
+        log.info(f"forward_mail[{account_name}] uid={uid} -> {to_addr}")
+        return True
+    except Exception as e:
+        log.warning(f"forward_mail[{account_name}] SMTP failed: "
+                    f"{type(e).__name__}: {e}")
+        return False
+
+
 async def mark_mail_read(account_name: str, uid: int) -> bool:
     """Set the \\Seen flag on a UID via UID STORE +FLAGS. Returns True
     on success, False on any failure (logged)."""
