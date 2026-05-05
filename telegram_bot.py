@@ -93,25 +93,29 @@ async def _summarize_action(action_type: str, action_result: str) -> str:
     sentences — same shape as server.process_message does for the
     WebSocket flow."""
     addr = pick_address()
+    no_greeting = (
+        "KEINE Begruessung wie 'Guten Tag' oder 'Guten Morgen' — "
+        "der Text folgt schon einer Eroeffnung."
+    )
     if action_type == "MAIL":
         sys_prompt = (
             f"Du bist Jarvis, der britisch-hoefliche KI-Butler. "
             f"Gib eine KURZE ueberblickende Info zu den ungelesenen E-Mails — "
             f"maximal 2 Saetze. Nenne nur die Anzahl, wer geschrieben hat und "
             f"ob etwas Dringendes dabei ist. Sprich {addr} an. "
-            f"KEINE Tags in eckigen Klammern."
+            f"{no_greeting} KEINE Tags in eckigen Klammern."
         )
     elif action_type == "NEWS":
         sys_prompt = (
             f"Du bist Jarvis. Fasse die Nachrichten in maximal 2-3 praegnanten "
             f"Saetzen zusammen. Sprich {addr} an. "
-            f"KEINE Tags in eckigen Klammern."
+            f"{no_greeting} KEINE Tags in eckigen Klammern."
         )
     else:
         sys_prompt = (
             f"Du bist Jarvis. Fasse die folgenden Informationen KURZ auf "
             f"Deutsch zusammen, maximal 2-3 Saetze, im Jarvis-Stil. "
-            f"Sprich {addr} an. KEINE Tags in eckigen Klammern. "
+            f"Sprich {addr} an. {no_greeting} KEINE Tags in eckigen Klammern. "
             f"KEINE ACTION-Tags."
         )
     resp = await S.ai.messages.create(
