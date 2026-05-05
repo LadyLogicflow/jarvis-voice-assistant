@@ -157,7 +157,9 @@ async def refresh_today_tasks() -> None:
 
 
 async def refresh_today_events() -> None:
-    """Fetch Google Calendar events for today only."""
+    """Fetch Google Calendar events for today only. The lines are
+    stored raw — prompt.build_system_prompt() annotates them with
+    fresh time deltas at each prompt build so they're always current."""
     try:
         # get_events returns events for the next N days; we filter today
         # ourselves so we don't have to widen the API.

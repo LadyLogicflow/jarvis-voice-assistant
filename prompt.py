@@ -125,16 +125,52 @@ def build_system_prompt() -> str:
 
     today_events_block = ""
     if S.TODAY_EVENTS:
-        today_events_block = f"\nHeutige Termine:\n{S.TODAY_EVENTS}"
+        # Annotate each event line with a fresh "(in Xh Ymin)" hint
+        # based on now — Claude gets the time-math wrong otherwise.
+        _now_dt = datetime.datetime.now()
+        annotated_events: list[str] = []
+        for line in S.TODAY_EVENTS.splitlines():
+            m = re.search(r"(\d{2}):(\d{2})", line)
+            if not m:
+                annotated_events.append(line)
+                continue
+            h, mi = int(m.group(1)), int(m.group(2))
+            event_dt = _now_dt.replace(hour=h, minute=mi, second=0, microsecond=0)
+            delta_min = int((event_dt - _now_dt).total_seconds() // 60)
+            if delta_min < -5:
+                hint = "(vorbei)"
+            elif delta_min < 60:
+                m_word = "Minute" if delta_min == 1 else "Minuten"
+                hint = f"(in {max(0, delta_min)} {m_word})"
+            else:
+                hours = delta_min // 60
+                mins = delta_min % 60
+                h_word = "Stunde" if hours == 1 else "Stunden"
+                if mins == 0:
+                    hint = f"(in {hours} {h_word})"
+                else:
+                    m_word = "Minute" if mins == 1 else "Minuten"
+                    hint = f"(in {hours} {h_word} {mins} {m_word})"
+            annotated_events.append(re.sub(r"(\d{2}:\d{2})", rf"\1 {hint}", line, count=1))
+        today_events_block = f"\nHeutige Termine:\n" + "\n".join(annotated_events)
 
     # German weekday + long date for the morning brief.
     _WEEKDAYS = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"]
     _MONTHS = ["Januar", "Februar", "Maerz", "April", "Mai", "Juni",
                "Juli", "August", "September", "Oktober", "November", "Dezember"]
-    today_obj = datetime.date.today()
+    now_dt = datetime.datetime.now()
+    today_obj = now_dt.date()
+    # Wir liefern das Datum + die EXAKTE Uhrzeit + den Wochentag als
+    # eine harte Tatsache, so dass Claude keine eigenen Annahmen
+    # treffen kann (Trainings-Cutoff-Bias).
     date_block = (
+        f"\n!!! AKTUELLE ZEIT-INFORMATION — VERWENDE NUR DIESE WERTE, "
+        f"NIEMALS EIGENE ANNAHMEN !!!"
         f"\nHeute: {_WEEKDAYS[today_obj.weekday()]}, "
         f"{today_obj.day}. {_MONTHS[today_obj.month - 1]} {today_obj.year}."
+        f"\nUhrzeit jetzt: {now_dt.strftime('%H:%M')} ({now_dt.strftime('%H')} Uhr "
+        f"{now_dt.strftime('%M')} Minuten)."
+        f"\nFuer Zeit-Differenz-Rechnungen IMMER von DIESER Uhrzeit ausgehen."
     )
 
     address_pool_block = (
