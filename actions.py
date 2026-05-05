@@ -229,4 +229,53 @@ async def execute_action(action: dict) -> str:
         return ("Erledigt — Mail ist als gelesen markiert."
                 if ok else "Markierung fehlgeschlagen, ist aber im Auge behalten.")
 
+    elif t == "MAIL_TO_TASK":
+        # Aufgabe aus aktueller Mail generieren + in Todoist-Inbox
+        # ablegen + Mail markieren. Benutzt active_mail aus session_state.
+        active = session_state.get("default").active_mail
+        if not active:
+            return f"Keine Mail aktiv, {pick_address()}."
+        if not S.TODOIST_TOKEN or S.TODOIST_TOKEN == "YOUR_TODOIST_API_TOKEN":
+            return "Todoist API-Token nicht konfiguriert."
+        # Body holen damit der Aufgaben-Generator Kontext hat.
+        mail_data = await mail_actions.read_mail_body(active.account, active.uid)
+        if "error" in mail_data:
+            return f"Mail konnte nicht geladen werden: {mail_data['error']}"
+        # Claude formuliert eine praegnante Aufgaben-Beschreibung.
+        gen_prompt = (
+            "Du bist Jarvis. Erstelle aus der folgenden Mail eine PRAEGNANTE, "
+            "AKTIONALE Aufgabenbeschreibung in der Imperativform — maximal 80 "
+            "Zeichen. Beispiele: 'Rueckruf bei Mueller', 'Frist Steuererklaerung "
+            "bis 31.5. pruefen', 'Vertrag Anlage A unterzeichnen'. "
+            "Antworte NUR mit dem Aufgabentext, KEINE Begruessung, KEINE Erklaerung, "
+            "KEINE Anfuehrungszeichen, KEINE Tags."
+        )
+        user_msg = (
+            f"Absender: {mail_data['sender']}\n"
+            f"Betreff: {mail_data['subject']}\n"
+            f"Inhalt: {mail_data['text'][:600]}"
+        )
+        try:
+            resp = await S.ai.messages.create(
+                model="claude-haiku-4-5-20251001",
+                max_tokens=80,
+                system=gen_prompt,
+                messages=[{"role": "user", "content": user_msg}],
+            )
+            task_text = resp.content[0].text.strip().strip('"\'').strip()
+        except Exception as e:
+            log.warning(f"MAIL_TO_TASK Claude error: {type(e).__name__}: {e}")
+            # Fallback: Subject-only.
+            task_text = (mail_data['subject'] or "Mail-Aufgabe")[:80]
+        if not task_text:
+            task_text = (mail_data['subject'] or "Mail-Aufgabe")[:80]
+        # In Todoist-Inbox (kein project_id) ablegen.
+        result = await todoist_tools.add_task(S.TODOIST_TOKEN, task_text)
+        # Mail markieren + State clearen.
+        await mail_actions.mark_mail_read(active.account, active.uid)
+        session_state.clear_active_mail("default")
+        if result.startswith("Aufgabe angelegt"):
+            return f"Aufgabe im Eingang angelegt: {task_text}. Mail ist abgehakt."
+        return f"Aufgabe vermerkt — {result}"
+
     return ""
