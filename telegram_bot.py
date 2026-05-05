@@ -275,6 +275,34 @@ async def send_user_text(text: str) -> bool:
         return False
 
 
+async def send_user_voice(spoken_text: str, caption: str | None = None) -> bool:
+    """Push a spoken voice-note (ElevenLabs TTS) plus optional text
+    caption to Catrin's Telegram chat. Falls back to text if the TTS
+    pipeline returns nothing. Quiet-hours aware."""
+    if not S.TELEGRAM_BOT_TOKEN or not S.TELEGRAM_CHAT_ID:
+        return False
+    if _app is None:
+        log.warning("send_user_voice: bot not yet running")
+        return False
+    if S.is_quiet_hours():
+        log.info(f"send_user_voice suppressed by quiet hours: {spoken_text[:60]!r}")
+        return False
+    try:
+        audio = await _tts_full(spoken_text)
+        if not audio:
+            log.info("send_user_voice: TTS empty, falling back to text")
+            return await send_user_text(caption or spoken_text)
+        await _app.bot.send_voice(
+            chat_id=S.TELEGRAM_CHAT_ID,
+            voice=io.BytesIO(audio),
+            caption=caption,
+        )
+        return True
+    except Exception as e:
+        log.warning(f"send_user_voice failed: {type(e).__name__}: {e}")
+        return False
+
+
 async def telegram_bot_main() -> None:
     """Long-running task: starts the Telegram bot loop. Spawned by
     server.lifespan when TELEGRAM_BOT_TOKEN is configured."""
