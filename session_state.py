@@ -219,16 +219,15 @@ def find_recent_mail(session_id: str, query: str) -> Optional[MailRef]:
 
 
 def broadcast_active_mail(mail: MailRef) -> None:
-    """Setzt active_mail in JEDER bekannten Session — verwendet von
-    mail_monitor wenn eine forwarded Mail reinkommt, damit egal ob
-    Catrin am Mac oder via Telegram fragt, der Decision-Tree die Mail
-    findet. Sessions ohne offenen WebSocket existieren trotzdem im
-    Store (durch persistierte States)."""
-    sessions = all_sessions()
-    if not sessions:
-        # Noch keine Session bekannt — wir legen einen 'default' State
-        # an, damit die naechste Session-Verbindung die Mail noch sieht.
-        set_active_mail("default", mail)
-        return
+    """Setzt active_mail in JEDER bekannten Session plus dem festen
+    'default'-Slot. 'default' ist der Fallback den die Actions lesen
+    (siehe actions.READ_MAIL / MARK_MAIL_READ und prompt.py).
+
+    Ohne 'default' im Set wuerde nach einem Restart, der persistierte
+    Sessions wiederherstellt, broadcast nur in die alten Sessions
+    schreiben — die Actions saehen dann keine aktive Mail bis irgendwer
+    'default' explizit anlegt."""
+    sessions = set(all_sessions())
+    sessions.add("default")
     for sid in sessions:
         set_active_mail(sid, mail)

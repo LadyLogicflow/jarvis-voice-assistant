@@ -153,7 +153,9 @@ async def execute_action(action: dict) -> str:
     elif t == "READ_MAIL":
         # Vorlesen der aktuellen Mail (active_mail aus session_state).
         # Optional payload: "account|uid" um eine andere als die aktive
-        # Mail zu adressieren. Default: die aktive Mail aus 'default'.
+        # Mail zu adressieren. Default: 'default'-Slot — den schreibt
+        # mail_monitor.broadcast_active_mail immer mit, unabhaengig
+        # davon ob WebSocket-Sessions registriert sind.
         active = session_state.get("default").active_mail
         if p and "|" in p:
             acc_name, uid_str = p.split("|", 1)
