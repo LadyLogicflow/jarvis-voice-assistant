@@ -23,7 +23,7 @@ from typing import Optional
 
 from actions import EMPTY_REPLIES, execute_action
 import settings as S
-from prompt import extract_action, get_system_prompt
+from prompt import extract_action, get_system_prompt, pick_address
 from tts import _split_text, _tts_one, normalize_for_tts
 
 log = S.log
@@ -92,25 +92,26 @@ async def _summarize_action(action_type: str, action_result: str) -> str:
     """Ask Claude to condense the raw tool output into 2-3 spoken
     sentences — same shape as server.process_message does for the
     WebSocket flow."""
+    addr = pick_address()
     if action_type == "MAIL":
         sys_prompt = (
             f"Du bist Jarvis, der britisch-hoefliche KI-Butler. "
             f"Gib eine KURZE ueberblickende Info zu den ungelesenen E-Mails — "
             f"maximal 2 Saetze. Nenne nur die Anzahl, wer geschrieben hat und "
-            f"ob etwas Dringendes dabei ist. Sprich {S.USER_ADDRESS} an. "
+            f"ob etwas Dringendes dabei ist. Sprich {addr} an. "
             f"KEINE Tags in eckigen Klammern."
         )
     elif action_type == "NEWS":
         sys_prompt = (
             f"Du bist Jarvis. Fasse die Nachrichten in maximal 2-3 praegnanten "
-            f"Saetzen zusammen. Sprich {S.USER_ADDRESS} an. "
+            f"Saetzen zusammen. Sprich {addr} an. "
             f"KEINE Tags in eckigen Klammern."
         )
     else:
         sys_prompt = (
             f"Du bist Jarvis. Fasse die folgenden Informationen KURZ auf "
             f"Deutsch zusammen, maximal 2-3 Saetze, im Jarvis-Stil. "
-            f"Sprich {S.USER_ADDRESS} an. KEINE Tags in eckigen Klammern. "
+            f"Sprich {addr} an. KEINE Tags in eckigen Klammern. "
             f"KEINE ACTION-Tags."
         )
     resp = await S.ai.messages.create(
