@@ -206,21 +206,27 @@ async def _process_new_uids(account: dict, client, uids: list[int]) -> None:
                     message_id=msg.get("Message-ID", ""),
                     references=msg.get("References", ""),
                 ))
-                if S.is_quiet_hours():
-                    log.info(f"mail_monitor[{name}] uid={uid}: quiet hours, suppressed")
+                tg_quiet = S.is_quiet_hours()
+                mac_quiet = S.is_mac_quiet_hours()
+                spoken = _format_for_voice(sender, subject)
+                caption = _format_for_telegram(name, sender, subject, category)
+                # Telegram: voice-note + caption, sofern nicht in
+                # Telegram-Quiet-Hours.
+                if tg_quiet:
+                    log.info(f"mail_monitor[{name}] uid={uid}: telegram quiet hours, suppressed")
                 else:
-                    spoken = _format_for_voice(sender, subject)
-                    caption = _format_for_telegram(name, sender, subject, category)
-                    # Telegram: voice-note (mit Text als Caption zum Nachlesen).
                     await telegram_bot.send_user_voice(spoken, caption=caption)
-                    # Mac-Ansage zusaetzlich, falls die Web-UI verbunden
-                    # ist (der Handler im server.py prueft das selbst).
-                    if _mail_alert_handler is not None:
-                        try:
-                            await _mail_alert_handler(spoken)
-                        except Exception as e:
-                            log.warning(f"mail_monitor[{name}] mac alert failed: "
-                                        f"{type(e).__name__}: {e}")
+                # Mac-Ansage zusaetzlich, sofern nicht in Mac-Quiet-
+                # Hours UND eine Web-UI verbunden ist (der Handler
+                # prueft das selbst).
+                if mac_quiet:
+                    log.info(f"mail_monitor[{name}] uid={uid}: mac quiet hours, suppressed")
+                elif _mail_alert_handler is not None:
+                    try:
+                        await _mail_alert_handler(spoken)
+                    except Exception as e:
+                        log.warning(f"mail_monitor[{name}] mac alert failed: "
+                                    f"{type(e).__name__}: {e}")
         except Exception as e:
             log.warning(f"mail_monitor[{name}] uid={uid}: {type(e).__name__}: {e}")
         finally:

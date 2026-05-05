@@ -50,6 +50,9 @@
   "telegram_chat_id": "",
   "telegram_quiet_start": "21:00",
   "telegram_quiet_end": "07:00",
+  "_comment_mac_quiet": "Mac-UI quiet hours — separat von Telegram, damit Catrin am Schreibtisch laenger erreichbar ist. Default: 22:00-07:00 (eine Stunde nach Telegram-Quiet-Start).",
+  "mac_quiet_start": "22:00",
+  "mac_quiet_end": "07:00",
   "whisper_model": "base",
 
   "_comment_mail_monitor": "IMAP IDLE push monitor (issue #48). Multiple accounts in parallel. Each account's password lives in env IMAP_PASSWORD_{NAME_UPPER}. Categories: werbung | info | handlungsbedarf — only the listed ones forward to Telegram. Quiet hours suppress pushes.",
