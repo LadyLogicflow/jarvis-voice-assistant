@@ -7,6 +7,8 @@ token.json
 .env
 .env.*
 !.env.example
+business_context.md
+!business_context.example.md
 
 # Python
 __pycache__/

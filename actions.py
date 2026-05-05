@@ -34,10 +34,38 @@ import todoist_tools
 log = S.log
 
 
-async def _generate_draft_body(mail_data: dict, instruction: str) -> str:
-    """Lass Claude einen Antwort-Entwurf basierend auf Original-Mail +
-    Catrins Anweisung generieren. Liefert reinen Mail-Text (keine
-    Tags, keine Erklaerung)."""
+def _load_business_context() -> str:
+    """Catrins business_context.md als Hintergrund fuer Mail-Antworten.
+
+    Datei liegt im Workspace-Root, gitignored. Wird bei jedem Aufruf
+    frisch gelesen — Catrin kann waehrend der Server laeuft Aenderungen
+    einpflegen. Gibt leeren String zurueck wenn die Datei fehlt."""
+    import os
+    path = os.path.join(os.path.dirname(__file__), "business_context.md")
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return f.read().strip()
+    except FileNotFoundError:
+        return ""
+    except Exception as e:
+        log.warning(f"_load_business_context failed: {type(e).__name__}: {e}")
+        return ""
+
+
+async def _generate_draft_body(mail_data: dict, instruction: str = "") -> str:
+    """Lass Claude einen Antwort-Entwurf basierend auf Original-Mail
+    erstellen. instruction ist optional — wenn leer, schlaegt Jarvis
+    proaktiv eine sinnvolle Antwort vor und nutzt dabei den
+    business_context.md falls vorhanden.
+
+    Liefert reinen Mail-Text (keine Tags, keine Erklaerung)."""
+    business = _load_business_context()
+    business_block = (
+        f"\n\nGESCHAEFTLICHER KONTEXT (nutze diese Hinweise wenn die "
+        f"Original-Mail einen Sachverhalt anspricht der dort beschrieben ist):\n\n"
+        f"{business}\n"
+        if business else ""
+    )
     sys_prompt = (
         f"Du bist Jarvis, der Butler-Assistent von {S.USER_NAME} "
         f"({S.USER_ROLE}). Erstelle eine PROFESSIONELLE deutsche E-Mail-"
@@ -47,14 +75,26 @@ async def _generate_draft_body(mail_data: dict, instruction: str) -> str:
         f"Mail das nahelegt), 1-3 Saetze Inhalt, Gruss-Zeile ('Mit freundlichen "
         f"Gruessen' oder 'Beste Gruesse'), {S.USER_NAME}. KEINE Tags, KEINE "
         f"Erklaerungen davor oder dahinter, NUR der Mail-Text."
+        f"{business_block}"
     )
-    user_msg = (
-        f"Original-Mail von: {mail_data.get('sender', '')}\n"
-        f"Betreff: {mail_data.get('subject', '')}\n"
-        f"Inhalt:\n{(mail_data.get('text', '') or '')[:1500]}\n\n"
-        f"---\n"
-        f"Anweisung von {S.USER_NAME} fuer die Antwort: {instruction}"
-    )
+    if instruction:
+        user_msg = (
+            f"Original-Mail von: {mail_data.get('sender', '')}\n"
+            f"Betreff: {mail_data.get('subject', '')}\n"
+            f"Inhalt:\n{(mail_data.get('text', '') or '')[:1500]}\n\n"
+            f"---\n"
+            f"Konkrete Anweisung von {S.USER_NAME} fuer die Antwort: {instruction}"
+        )
+    else:
+        user_msg = (
+            f"Original-Mail von: {mail_data.get('sender', '')}\n"
+            f"Betreff: {mail_data.get('subject', '')}\n"
+            f"Inhalt:\n{(mail_data.get('text', '') or '')[:1500]}\n\n"
+            f"---\n"
+            f"Schlage proaktiv eine sinnvolle Antwort vor — nutze dazu den "
+            f"GESCHAEFTLICHEN KONTEXT oben falls die Mail einen darin "
+            f"beschriebenen Sachverhalt betrifft."
+        )
     try:
         resp = await S.ai.messages.create(
             model="claude-haiku-4-5-20251001",
@@ -291,15 +331,15 @@ async def execute_action(action: dict) -> str:
                 if ok else "Markierung fehlgeschlagen, ist aber im Auge behalten.")
 
     elif t == "DRAFT_REPLY":
-        # Initialer Antwort-Entwurf zur aktiven Mail. Payload ist
-        # Catrins Anweisung was inhaltlich rein soll (z.B. "Termin
-        # verschiebt sich auf Donnerstag 14 Uhr").
+        # Initialer Antwort-Entwurf zur aktiven Mail. Payload OPTIONAL:
+        # wenn leer, schlaegt Jarvis proaktiv basierend auf
+        # business_context.md eine sinnvolle Antwort vor. Wenn gegeben,
+        # ist's Catrins konkrete Anweisung (z.B. "Termin verschiebt
+        # sich auf Donnerstag 14 Uhr").
         active = session_state.get("default").active_mail
         if not active:
             return f"Keine Mail aktiv, {pick_address()}."
         instruction = p.strip()
-        if not instruction:
-            return f"Was soll ich antworten, {pick_address()}?"
         mail_data = await mail_actions.read_mail_body(active.account, active.uid)
         if "error" in mail_data:
             return f"Mail konnte nicht geladen werden: {mail_data['error']}"
