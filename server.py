@@ -283,11 +283,16 @@ async def process_message(session_id: str, user_text: str, ws: WebSocket) -> Non
     elif action["type"] == "NEWS":
         summary_system = (
             f"Du bist Jarvis, der britisch-hoefliche KI-Butler. "
-            f"Fasse die Nachrichtenlage in maximal 2-3 praegnanten Saetzen zusammen — wie ein Butler der die Zeitung ueberflogen hat. "
-            f"Nenne nur die 2-3 wichtigsten Themen, kein Auflisten einzelner Meldungen. "
-            f"Ton: trocken, informiert, kein Journalistendeutsch. Sprich {addr} an. "
-            f"KEINE Begruessung wie 'Guten Tag' oder 'Guten Morgen' — der Text folgt schon "
-            f"einer Eroeffnung. KEINE Tags in eckigen Klammern."
+            f"Aus den folgenden Schlagzeilen waehle die DREI WICHTIGSTEN — "
+            f"Mix aus Politik und Wirtschaft. "
+            f"Format STRENG: genau 3 Nachrichten, je 1 vollstaendiger "
+            f"aussagefaehiger Satz (Subjekt+Praedikat+Objekt, mit Punkt). "
+            f"KEINE Aufzaehlung mit Bullet, keine Nummerierung. "
+            f"Wenn eine Headline klar positiv/konstruktiv ist (Erfolg, "
+            f"Fortschritt, Loesung), haenge sie als 4. vollstaendigen Satz "
+            f"an. Wenn nichts Positives dabei: bei 3 Saetzen aufhoeren. "
+            f"WICHTIG: jeden Satz mit Punkt beenden, keinen Satz abbrechen. "
+            f"Sprich {addr} an. KEINE Begruessung. KEINE Tags."
         )
     else:
         summary_system = (
@@ -303,6 +308,9 @@ async def process_message(session_id: str, user_text: str, ws: WebSocket) -> Non
         messages=[{"role": "user", "content": f"Fasse zusammen:\n\n{action_result}"}],
     )
     summary, _ = extract_action(summary_resp.content[0].text)
+    # Defense: if the LLM ended mid-sentence, trim back to the last
+    # complete sentence so the user doesn't hear truncated content.
+    summary = scheduler.trim_to_complete_sentences(summary)
     append_message(session_id, "assistant", summary)
     await speak(summary, ws, display=summary)
 
