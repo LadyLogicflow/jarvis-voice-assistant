@@ -194,8 +194,11 @@ async def refresh_politik_brief() -> None:
             system=(
                 f"Du bist Jarvis. Fasse die folgenden Politik-Schlagzeilen in MAXIMAL 2 "
                 f"Saetzen zusammen — wie ein Butler, der die Zeitung ueberflogen hat. "
-                f"Nur 1-2 wirklich relevante Themen. Sprich {pick_address()} an. "
-                f"Keine Tags in eckigen Klammern."
+                f"Nur 1-2 wirklich relevante Themen. "
+                f"WICHTIG: KEINE Begruessung wie 'Guten Morgen' oder 'Guten Tag', KEINE "
+                f"direkte Anrede. Schreibe NUR die Sachzusammenfassung. Dieser Text wird "
+                f"spaeter in das Tages-Briefing eingebettet, das eine eigene Begruessung "
+                f"hat. Keine Tags in eckigen Klammern."
             ),
             messages=[{"role": "user", "content": raw[:3000]}],
         )
@@ -242,11 +245,13 @@ async def refresh_steuer_brief() -> None:
             max_tokens=300,
             system=(
                 f"Du bist Jarvis, der britisch-hoefliche KI-Butler von {S.USER_NAME}. "
-                f"Erstelle einen KURZEN Morgen-Ueberblick ueber neue steuerrechtliche Veroeffentlichungen "
+                f"Erstelle einen KURZEN Ueberblick ueber neue steuerrechtliche Veroeffentlichungen "
                 f"aus BMF-Schreiben, BMF-Pressemitteilungen und BFH-Pressemitteilungen. "
                 f"Maximal 3-4 Saetze. Nenne nur was wirklich NEU und relevant ist. "
                 f"Ton: praezise, trocken, professionell — kein Smalltalk. "
-                f"Sprich {pick_address()} an. KEINE Tags in eckigen Klammern."
+                f"WICHTIG: KEINE Begruessung wie 'Guten Morgen' oder 'Guten Tag', KEINE "
+                f"direkte Anrede. Schreibe NUR die Sachzusammenfassung. Dieser Text wird "
+                f"spaeter zitiert. KEINE Tags in eckigen Klammern."
             ),
             messages=[{"role": "user", "content": f"Neue Veroeffentlichungen heute:\n\n{raw}"}],
         )

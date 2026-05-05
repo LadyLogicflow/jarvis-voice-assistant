@@ -265,19 +265,24 @@ async def process_message(session_id: str, user_text: str, ws: WebSocket) -> Non
             f"Du bist Jarvis, der britisch-hoefliche KI-Butler. "
             f"Gib eine KURZE ueberblickende Info zu den ungelesenen E-Mails — maximal 2 Saetze. "
             f"Lies KEINE einzelnen Mails vor. Nenne nur die Anzahl, wer geschrieben hat und ob etwas Dringendes dabei ist. "
-            f"Ton: trocken, knapp, Butler-Stil. Sprich {addr} an. KEINE Tags in eckigen Klammern."
+            f"Ton: trocken, knapp, Butler-Stil. Sprich {addr} an. "
+            f"KEINE Begruessung wie 'Guten Tag' oder 'Guten Morgen' — der Text folgt schon "
+            f"einer Eroeffnung. KEINE Tags in eckigen Klammern."
         )
     elif action["type"] == "NEWS":
         summary_system = (
             f"Du bist Jarvis, der britisch-hoefliche KI-Butler. "
             f"Fasse die Nachrichtenlage in maximal 2-3 praegnanten Saetzen zusammen — wie ein Butler der die Zeitung ueberflogen hat. "
             f"Nenne nur die 2-3 wichtigsten Themen, kein Auflisten einzelner Meldungen. "
-            f"Ton: trocken, informiert, kein Journalistendeutsch. Sprich {addr} an. KEINE Tags in eckigen Klammern."
+            f"Ton: trocken, informiert, kein Journalistendeutsch. Sprich {addr} an. "
+            f"KEINE Begruessung wie 'Guten Tag' oder 'Guten Morgen' — der Text folgt schon "
+            f"einer Eroeffnung. KEINE Tags in eckigen Klammern."
         )
     else:
         summary_system = (
             f"Du bist Jarvis. Fasse die folgenden Informationen KURZ auf Deutsch zusammen, "
             f"maximal 2-3 Saetze, im Jarvis-Stil. Sprich den Nutzer als {addr} an. "
+            f"KEINE Begruessung wie 'Guten Tag' oder 'Guten Morgen'. "
             f"KEINE Tags in eckigen Klammern. KEINE ACTION-Tags."
         )
     summary_resp = await S.ai.messages.create(
