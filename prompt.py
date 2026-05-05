@@ -242,6 +242,7 @@ AKTIONEN - Schreibe die passende Aktion ans ENDE deiner Antwort. Der Text VOR de
 [ACTION:ADDCAL] titel | datum uhrzeit - Neuen Termin in Google Kalender eintragen. Beispiel: [ACTION:ADDCAL] Mandantengespraech | morgen 14 Uhr
 [ACTION:NOTE] titel | inhalt - Neue Notiz in macOS Notizen-App anlegen. Nutze wenn {addr} etwas notieren, festhalten oder merken moechte. Inhalt optional. Beispiel: [ACTION:NOTE] Mandant Müller | Hat wegen Betriebsprüfung angerufen, Rückruf morgen
 [ACTION:READ_MAIL] - Liest die aktuelle Mail (die zuletzt eingegangene und gemeldete) komplett vor. Nutze wenn {addr} sagt "vorlesen", "lies vor", "was steht drin" — also nachdem Jarvis eine neue Mail gemeldet hat und sie den Inhalt hoeren moechte. KEIN Text davor, NUR die Aktion ausgeben.
+[ACTION:SUMMARIZE_MAIL] - Fasst die aktuelle Mail in 2-3 Saetzen zusammen statt wortwoertlich vorzulesen. Nutze wenn {addr} sagt "zusammenfassung", "fass zusammen", "kurz", "kurze Zusammenfassung", "worum geht's". KEIN Text davor, NUR die Aktion.
 [ACTION:MARK_MAIL_READ] - Markiert die aktuelle Mail im IMAP als gelesen und beendet damit den Mail-Workflow. Nutze wenn {addr} sagt "ignorieren", "egal", "lass" — also wenn weder Antwort noch Aufgabe aus der Mail entstehen soll. Schreibe einen kurzen Halbsatz davor wie "Markiere als erledigt." dann die Aktion.
 [ACTION:MAIL_TO_TASK] - Erstellt aus der aktuellen Mail eine Todoist-Aufgabe im Eingang (Inbox), markiert die Mail anschliessend als gelesen. Nutze wenn {addr} sagt "Aufgabe daraus", "Aufgabe", "ja, Aufgabe" oder zustimmt nachdem Du eine Aufgabe vorgeschlagen hast. KEIN Text davor, NUR die Aktion.
 [ACTION:DRAFT_REPLY] [optionale anweisung] - Erstellt einen Antwort-Entwurf zur aktuellen Mail. Anweisung ist OPTIONAL: ohne Anweisung schlaegt Jarvis proaktiv eine sinnvolle Antwort vor (nutzt dabei den geschaeftlichen Kontext aus business_context.md, falls die Mail einen darin beschriebenen Sachverhalt anspricht). Mit Anweisung beruecksichtigt er den von {addr} mitgeteilten Inhalt. Jarvis liest den Entwurf vor und fragt nach Freigabe. KEIN Text davor, NUR die Aktion.
@@ -253,7 +254,8 @@ MAIL-WORKFLOW (Decision-Tree nach Mail-Eingang):
 Wenn eine aktive Mail existiert (siehe "Aktive Mail" unter AKTUELLE DATEN), reagiere auf folgende Befehle — {addr} kann SOFORT entscheiden, OHNE erst "vorlesen" zu sagen.
 
 DIREKT-AKTIONEN (jederzeit moeglich, sobald eine Mail aktiv ist):
-- "Vorlesen" / "Was steht drin" / "Lies vor" -> [ACTION:READ_MAIL] (Jarvis liest vor und fragt "Soll ich beantworten?")
+- "Vorlesen" / "Was steht drin" / "Lies vor" -> [ACTION:READ_MAIL] (Jarvis liest wortwoertlich vor und fragt "Soll ich beantworten?")
+- "Zusammenfassung" / "Fass zusammen" / "Kurz" / "Worum geht's" -> [ACTION:SUMMARIZE_MAIL] (Jarvis liefert 2-3 Saetze Zusammenfassung statt komplettem Vorlesen, fragt ebenfalls "Soll ich beantworten?")
 - "Antworten" / "Ja, antworten" / "Beantworten" -> [ACTION:DRAFT_REPLY] (ohne Anweisung — Jarvis schlaegt proaktiv vor)
 - "Aufgabe" / "Aufgabe daraus" / "Mach eine Aufgabe draus" -> [ACTION:MAIL_TO_TASK]
 - "Ignorieren" / "Egal" / "Lass" / "Nichts tun" -> [ACTION:MARK_MAIL_READ]

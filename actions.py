@@ -326,6 +326,53 @@ async def execute_action(action: dict) -> str:
             f"Soll ich die beantworten?"
         )
 
+    elif t == "SUMMARIZE_MAIL":
+        # Kurze inhaltliche Zusammenfassung der aktiven Mail (2-3 Saetze)
+        # statt wortwoertlichem Vorlesen. Optional payload "account|uid"
+        # fuer eine andere als die aktive Mail; sonst Default.
+        active = session_state.get("default").active_mail
+        if p and "|" in p:
+            acc_name, uid_str = p.split("|", 1)
+            acc_name, uid_str = acc_name.strip(), uid_str.strip()
+            try:
+                uid_int = int(uid_str)
+            except ValueError:
+                return f"SUMMARIZE_MAIL: ungueltige UID {uid_str!r}"
+        elif active:
+            acc_name, uid_int = active.account, active.uid
+        else:
+            return f"Es liegt gerade keine Mail zur Diskussion vor, {pick_address()}."
+        result = await mail_actions.read_mail_body(acc_name, uid_int)
+        if "error" in result:
+            return f"Mail konnte nicht geladen werden: {result['error']}"
+        body = result.get("text", "") or "(kein lesbarer Textinhalt)"
+        sender = result.get("sender", "")
+        subject = result.get("subject", "")
+        sys_prompt = (
+            "Du bist Jarvis. Fasse die folgende E-Mail in 2-3 knappen, sachlichen "
+            "Saetzen zusammen — was steht drin, was wird verlangt. KEINE Begruessung, "
+            "KEINE direkte Anrede, KEINE eckigen Klammern. NUR die Zusammenfassung."
+        )
+        user_msg = f"Von: {sender}\nBetreff: {subject}\n\n{body}"
+        try:
+            resp = await S.ai.messages.create(
+                model="claude-haiku-4-5-20251001",
+                max_tokens=200,
+                system=sys_prompt,
+                messages=[{"role": "user", "content": user_msg}],
+            )
+            summary = resp.content[0].text.strip()
+        except Exception as e:
+            log.warning(f"SUMMARIZE_MAIL Claude error: {type(e).__name__}: {e}")
+            return f"Zusammenfassung fehlgeschlagen: {type(e).__name__}"
+        if not summary:
+            summary = "Zur Mail liegt keine Zusammenfassung vor."
+        return (
+            f"Mail von {sender}, Betreff: {subject}.\n\n"
+            f"Zusammenfassung: {summary}\n\n"
+            f"Soll ich die beantworten?"
+        )
+
     elif t == "MARK_MAIL_READ":
         # IMAP \Seen setzen + active_mail leeren. Optional payload
         # "account|uid"; Default: die aktive Mail.
