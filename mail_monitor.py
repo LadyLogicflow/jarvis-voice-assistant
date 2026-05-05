@@ -189,12 +189,10 @@ async def _process_new_uids(account: dict, client, uids: list[int]) -> None:
                 preview = raw[:300].decode(errors="replace")
                 log.warning(f"mail_monitor[{name}] uid={uid} empty headers; "
                             f"raw[0:300]={preview!r}")
-            body_preview = msg.get_payload(decode=False) or ""
-            if isinstance(body_preview, list):
-                body_preview = ""
-            body_preview = str(body_preview)
-
-            category = await _classify(sender, subject, body_preview)
+            # We only fetch BODY.PEEK[HEADER] (Apple-strict-parser-friendly),
+            # so the classifier runs on sender + subject only. Empty body
+            # preview by design.
+            category = await _classify(sender, subject, "")
             log.info(f"mail_monitor[{name}] uid={uid} sender={sender!r} "
                      f"subject={subject!r} -> {category}")
 
