@@ -44,17 +44,20 @@ def pick_greeting() -> str:
     'Guten Morgen' regardless of hour. We pick server-side and inject
     the concrete phrase into the prompt so there's no ambiguity.
     """
+    # Butler-Stil: nur foermliche Floskeln. Kein "Hallo", kein
+    # "Morgen" (ohne Guten), kein "Mahlzeit" — alles zu salopp fuer
+    # Jarvis' britischen Butler-Ton.
     hour = datetime.datetime.now().hour
     if hour < 10:
-        pool = ["Einen guten Morgen", "Morgen", "Guten Morgen"]
+        pool = ["Einen guten Morgen", "Guten Morgen"]
     elif hour < 12:
-        pool = ["Guten Tag", "Hallo"]
+        pool = ["Guten Tag", "Einen guten Tag"]
     elif hour < 14:
-        pool = ["Guten Mittag", "Mahlzeit"]
+        pool = ["Guten Mittag", "Einen angenehmen Mittag"]
     elif hour < 18:
-        pool = ["Hallo", "Guten Tag", "Guten Nachmittag"]
+        pool = ["Guten Tag", "Guten Nachmittag", "Einen angenehmen Nachmittag"]
     else:
-        pool = ["Guten Abend", "Hallo"]
+        pool = ["Guten Abend", "Einen guten Abend"]
     return random.choice(pool)
 
 # Action parsing regex used by `extract_action()` and indirectly by
