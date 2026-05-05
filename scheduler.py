@@ -192,7 +192,7 @@ async def refresh_politik_brief() -> None:
         raw = await browser_tools.fetch_news(S.POLITIK_NEWS_URL, S.POLITIK_NEWS_NAME)
         resp = await S.ai.messages.create(
             model="claude-haiku-4-5-20251001",
-            max_tokens=200,
+            max_tokens=400,
             system=(
                 f"Du bist Jarvis. Fasse die folgenden Politik-Schlagzeilen in MAXIMAL 2 "
                 f"Saetzen zusammen — wie ein Butler, der die Zeitung ueberflogen hat. "
@@ -244,7 +244,7 @@ async def refresh_steuer_brief() -> None:
         raw = await steuer_news.fetch_all_sources()
         resp = await S.ai.messages.create(
             model="claude-haiku-4-5-20251001",
-            max_tokens=300,
+            max_tokens=600,
             system=(
                 f"Du bist Jarvis, der britisch-hoefliche KI-Butler von {S.USER_NAME}. "
                 f"Erstelle einen KURZEN Ueberblick ueber neue steuerrechtliche Veroeffentlichungen "
@@ -351,7 +351,7 @@ async def _generate_proactive_message(slot: str) -> str:
     user_msg = f"Aktuelle Tagesdaten:{today_block or ' (keine offenen Punkte)'}"
     resp = await S.ai.messages.create(
         model="claude-haiku-4-5-20251001",
-        max_tokens=200,
+        max_tokens=400,
         system=system_prompt,
         messages=[{"role": "user", "content": user_msg}],
     )

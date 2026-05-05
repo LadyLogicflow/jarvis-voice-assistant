@@ -120,7 +120,7 @@ async def _summarize_action(action_type: str, action_result: str) -> str:
         )
     resp = await S.ai.messages.create(
         model="claude-haiku-4-5-20251001",
-        max_tokens=180,
+        max_tokens=400,
         system=sys_prompt,
         messages=[{"role": "user", "content": f"Fasse zusammen:\n\n{action_result}"}],
     )
@@ -133,7 +133,7 @@ async def _ask_claude(user_text: str) -> str:
     summarization. Returns the final spoken text."""
     response = await S.ai.messages.create(
         model="claude-haiku-4-5-20251001",
-        max_tokens=400,
+        max_tokens=1024,
         system=get_system_prompt(),
         messages=[{"role": "user", "content": user_text}],
     )
@@ -165,8 +165,14 @@ async def _ask_claude(user_text: str) -> str:
     if isinstance(action_result, str) and action_result in EMPTY_REPLIES:
         return EMPTY_REPLIES[action_result]
 
-    # Actions whose result is already user-facing text.
-    if a_type in ("STEUERNEWS", "ADDTASK", "DONETASK", "ADDCAL", "NOTE"):
+    # Actions whose result is already user-facing text. Same passthrough
+    # set as server.process_message — never re-summarize these.
+    if a_type in (
+        "STEUERNEWS", "ADDTASK", "DONETASK", "ADDCAL", "NOTE",
+        "READ_MAIL", "SUMMARIZE_MAIL",
+        "DRAFT_REPLY", "DRAFT_REVISE", "DRAFT_APPROVE", "DRAFT_CANCEL",
+        "MAIL_TO_TASK", "MARK_MAIL_READ",
+    ):
         return action_result
 
     # The rest go through a summarization pass like the WebSocket flow.

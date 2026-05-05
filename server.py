@@ -199,7 +199,7 @@ async def process_message(session_id: str, user_text: str, ws: WebSocket) -> Non
 
     response = await S.ai.messages.create(
         model="claude-haiku-4-5-20251001",
-        max_tokens=400,
+        max_tokens=1024,
         system=get_system_prompt(),
         messages=history,
     )
@@ -252,8 +252,19 @@ async def process_message(session_id: str, user_text: str, ws: WebSocket) -> Non
         await speak(summary, ws, display=summary)
         return
 
-    # These actions return text that's already user-friendly — pass through.
-    if action["type"] in ("STEUERNEWS", "ADDTASK", "DONETASK", "ADDCAL", "NOTE"):
+    # These actions return text that's already user-friendly — pass
+    # through verbatim. Forcing them through the summary pipeline below
+    # would (a) mangle long content like full mail bodies, (b) clip via
+    # max_tokens, (c) waste an LLM round-trip. Mail-decision-tree
+    # actions (READ_MAIL, SUMMARIZE_MAIL, DRAFT_*, MAIL_TO_TASK,
+    # MARK_MAIL_READ) are explicitly user-facing strings and should
+    # never be re-summarized.
+    if action["type"] in (
+        "STEUERNEWS", "ADDTASK", "DONETASK", "ADDCAL", "NOTE",
+        "READ_MAIL", "SUMMARIZE_MAIL",
+        "DRAFT_REPLY", "DRAFT_REVISE", "DRAFT_APPROVE", "DRAFT_CANCEL",
+        "MAIL_TO_TASK", "MARK_MAIL_READ",
+    ):
         append_message(session_id, "assistant", action_result)
         await speak(action_result, ws, display=action_result)
         return
@@ -287,7 +298,7 @@ async def process_message(session_id: str, user_text: str, ws: WebSocket) -> Non
         )
     summary_resp = await S.ai.messages.create(
         model="claude-haiku-4-5-20251001",
-        max_tokens=150,
+        max_tokens=400,
         system=summary_system,
         messages=[{"role": "user", "content": f"Fasse zusammen:\n\n{action_result}"}],
     )
