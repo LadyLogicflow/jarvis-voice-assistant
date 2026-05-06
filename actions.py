@@ -659,6 +659,75 @@ async def execute_action(action: dict) -> str:
             return f"Ich finde nichts zu {query}, {pick_address()}."
         return f"Zu {query} habe ich:\n" + "\n".join(f"- {r}" for r in results[:15])
 
+    elif t == "LOOKUP_CONTACT":
+        # "Was ist die Telefonnummer von X?" / "Wer ist X?".
+        # Sucht in persons_db + Apple Kontakte (Substring auf Name).
+        import contacts
+        import persons_db
+        query = p.strip()
+        if not query:
+            return f"Wen suchst Du, {pick_address()}?"
+        try:
+            apple_hits = await contacts.find_contacts_by_name(query)
+        except Exception as e:
+            log.warning(f"LOOKUP_CONTACT contacts failed: {type(e).__name__}: {e}")
+            apple_hits = []
+        # Merge mit persons_db (Profile haben evtl. Anrede/Funktion + extra Phones)
+        results: list[dict] = []
+        seen_ids: set[str] = set()
+        for prof in persons_db.all_profiles():
+            if query.lower() not in prof.name.lower():
+                continue
+            seen_ids.add(prof.contact_id)
+            results.append({
+                "name": prof.name,
+                "emails": [prof.primary_email] + prof.secondary_emails if prof.primary_email else prof.secondary_emails,
+                "phones": [prof.primary_phone] + prof.secondary_phones if prof.primary_phone else prof.secondary_phones,
+                "anrede": prof.anrede,
+                "funktion": prof.funktion,
+            })
+        for c in apple_hits:
+            if c.id in seen_ids:
+                continue
+            results.append({
+                "name": c.name,
+                "emails": list(c.emails),
+                "phones": list(c.phones),
+                "anrede": "",
+                "funktion": c.organization,
+            })
+        if not results:
+            return f"Ich finde niemanden mit dem Namen {query} in deinen Kontakten."
+        if len(results) > 1:
+            names = "\n".join(f"- {r['name']}" for r in results[:8])
+            return (
+                f"Mehrere Treffer fuer {query}:\n{names}\n"
+                f"Sag praeziser welchen Du meinst."
+            )
+        # Genau ein Treffer
+        r = results[0]
+        bits: list[str] = [r["name"]]
+        if r["funktion"]:
+            bits.append(f"({r['funktion']})")
+        out_parts = [" ".join(bits) + "."]
+        if r["emails"]:
+            email_list = [e for e in r["emails"] if e]
+            if email_list:
+                if len(email_list) == 1:
+                    out_parts.append(f"Mail: {email_list[0]}.")
+                else:
+                    out_parts.append("Mails: " + ", ".join(email_list) + ".")
+        if r["phones"]:
+            phone_list = [pp for pp in r["phones"] if pp]
+            if phone_list:
+                if len(phone_list) == 1:
+                    out_parts.append(f"Telefon: {phone_list[0]}.")
+                else:
+                    out_parts.append("Telefon: " + ", ".join(phone_list) + ".")
+        if r["anrede"]:
+            out_parts.append(f"Bevorzugte Anrede: {r['anrede']}.")
+        return " ".join(out_parts)
+
     elif t == "CONTACTS_INFO":
         # Aggregierte Statistik ueber Apple Kontakte + persons_db.
         # Nutze wenn {addr} fragt "Wie viele Kontakte habe ich?",
