@@ -523,6 +523,86 @@ async def execute_action(action: dict) -> str:
             return "Kein Entwurf zum Verwerfen."
         return f"Vergessen, {pick_address()}."
 
+    elif t == "MEMORIZE":
+        # "Merk dir: ..." — speichert eine Notiz. Detect:
+        # - kind: vorliebe / abneigung / notiz
+        # - person-bezogen ("zu Mueller", "fuer Schmidt", "von Schulz")
+        # - Aufgaben-Charakter (Imperativ + Zeit) -> Vorschlag "als Aufgabe?"
+        import notes_db
+        import persons_db
+        text = p.strip()
+        if not text:
+            return f"Was soll ich mir merken, {pick_address()}?"
+        # Person-Reference detection
+        import re as _re
+        person_id = ""
+        person_name = ""
+        m = _re.search(r"\b(?:zu|fuer|für|von|mit|bei)\s+([A-ZÄÖÜ][\wÄÖÜäöüß-]+(?:\s+[A-ZÄÖÜ][\wÄÖÜäöüß-]+)?)", text)
+        if m:
+            candidate = m.group(1).strip()
+            for prof in persons_db.all_profiles():
+                if candidate.lower() in prof.name.lower():
+                    person_id = prof.contact_id
+                    person_name = prof.name
+                    break
+        # Kind detection
+        lower = text.lower()
+        kind = "notiz"
+        if any(p_ in lower for p_ in ("ich mag", "ich bevorzuge", "ich liebe",
+                                      "ich trinke gerne", "ich esse gerne")):
+            kind = "vorliebe"
+        elif any(p_ in lower for p_ in ("ich hasse", "ich mag nicht", "ich kann nicht",
+                                        "ich vertrage nicht", "ich brauche nicht")):
+            kind = "abneigung"
+        # Aufgaben-Charakter heuristisch erkennen
+        looks_like_task = bool(_re.search(
+            r"\b(morgen|heute|naechste\s+woche|am\s+\w+tag|um\s+\d|bis\s+\w+tag|"
+            r"anrufen|schreiben|abgeben|pruefen|beantworten|erinnern|kuendigen|"
+            r"reservieren|bestellen|ueberweisen)\b",
+            lower,
+        ))
+        # Speichern
+        if person_id:
+            persons_db.add_note(person_id, text)
+            stored_where = f"bei {person_name}"
+        else:
+            notes_db.add(text, kind=kind)
+            stored_where = (
+                "in den Vorlieben" if kind == "vorliebe"
+                else "in den Abneigungen" if kind == "abneigung"
+                else "in den Notizen"
+            )
+        # Antwort + ggf. Aufgaben-Vorschlag
+        if looks_like_task:
+            return (
+                f"Notiert {stored_where}. Das klingt nach einer Aufgabe — "
+                f"soll ich das auch in Todoist anlegen?"
+            )
+        return f"Notiert {stored_where}."
+
+    elif t == "RECALL":
+        # "Was hatte ich zu Mueller offen?" / "Was hatte ich notiert zu X?"
+        import notes_db
+        import persons_db
+        query = p.strip()
+        if not query:
+            return f"Wonach soll ich suchen, {pick_address()}?"
+        results: list[str] = []
+        # Personen-bezogene Notizen (durch persons_db.notes + open_points)
+        for prof in persons_db.all_profiles():
+            if query.lower() not in prof.name.lower():
+                continue
+            for note in prof.notes[-5:]:
+                results.append(f"Notiz zu {prof.name}: {note}")
+            for pt in prof.open_points:
+                results.append(f"Offen mit {prof.name}: {pt}")
+        # Allgemeine Notizen
+        for n in notes_db.find(query):
+            results.append(f"{n.kind.capitalize()}: {n.text}")
+        if not results:
+            return f"Ich finde nichts zu {query}, {pick_address()}."
+        return f"Zu {query} habe ich:\n" + "\n".join(f"- {r}" for r in results[:10])
+
     elif t == "CALL":
         # "rufe X an" — Lookup, eine Nummer -> direkt waehlen, mehrere
         # Nummern -> Liste mit Indizes zurueckgeben, Catrin sagt "die
