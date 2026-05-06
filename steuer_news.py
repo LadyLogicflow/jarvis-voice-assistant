@@ -4,13 +4,53 @@ Jarvis — Steuerrecht News
 - BFH Entscheidungen per RSS
 """
 
+import hashlib
+import json
 import logging
+import os
 import xml.etree.ElementTree as ET
 import httpx
 
 log = logging.getLogger("jarvis")
 import datetime
 from email.utils import parsedate_to_datetime
+
+# Sentinelwert den actions.py erkennt, um Catrin zu fragen ob die
+# bereits gelesenen Meldungen trotzdem vorgelesen werden sollen.
+BEREITS_GELESEN = "BEREITS_GELESEN"
+
+# Pfad fuer die Datei mit den gesehenen Titel-Hashes.
+_SEEN_FILE = os.path.join(os.path.dirname(__file__), ".jarvis_steuer_seen.json")
+
+
+def _title_hash(title: str) -> str:
+    """MD5-Hash eines Titels als kompakter String-Schluessel."""
+    return hashlib.md5(title.encode("utf-8")).hexdigest()
+
+
+def _load_seen_hashes() -> set[str]:
+    """Liest die Liste der bereits gesehenen Titel-Hashes vom Disk."""
+    if not os.path.exists(_SEEN_FILE):
+        return set()
+    try:
+        with open(_SEEN_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if isinstance(data, list):
+            return set(data)
+    except Exception as e:
+        log.warning(f"steuer_news: _load_seen_hashes failed: {e}")
+    return set()
+
+
+def _save_seen_hashes(hashes: set[str]) -> None:
+    """Schreibt die gesehenen Titel-Hashes atomar auf Disk."""
+    try:
+        tmp = _SEEN_FILE + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(sorted(hashes), f, ensure_ascii=False)
+        os.replace(tmp, _SEEN_FILE)
+    except Exception as e:
+        log.warning(f"steuer_news: _save_seen_hashes failed: {e}")
 
 HEADERS = {
     "User-Agent": (
@@ -47,9 +87,16 @@ def _parse_rss_items(xml_text: str) -> list:
     return items
 
 
-async def fetch_all_sources() -> str:
-    """Fetch BFH RSS feeds and return them as text (used by [ACTION:STEUERNEWS])."""
+async def fetch_all_sources(mark_seen: bool = False) -> str:
+    """Fetch BFH RSS feeds and return them as text (used by [ACTION:STEUERNEWS]).
+
+    Gibt ``BEREITS_GELESEN`` zurueck wenn alle aktuellen Titel bereits in der
+    gesehenen-Liste stehen (Issue #75). Wenn ``mark_seen=True`` uebergeben
+    wird (nach dem Vorlesen), werden die Hashes persistiert.
+    """
+    seen = _load_seen_hashes()
     blocks = []
+    current_titles: list[str] = []
     async with httpx.AsyncClient(timeout=20, follow_redirects=True, headers=HEADERS) as client:
         for feed in BFH_FEEDS:
             try:
@@ -58,12 +105,36 @@ async def fetch_all_sources() -> str:
                 items = _parse_rss_items(resp.text)
                 lines = []
                 for title, pub_date in items[:5]:
+                    current_titles.append(title)
                     date_str = pub_date.strftime("%d.%m.%Y") if pub_date else ""
                     lines.append(f"• {title} ({date_str})" if date_str else f"• {title}")
-                blocks.append(f"=== {feed['name']} ===\n" + ("\n".join(lines) or "Keine Einträge."))
+                blocks.append(f"=== {feed['name']} ===\n" + ("\n".join(lines) or "Keine Eintraege."))
             except Exception as e:
                 blocks.append(f"=== {feed['name']} ===\nNicht erreichbar: {e}")
+
+    if not current_titles:
+        return "\n\n".join(blocks)
+
+    current_hashes = {_title_hash(t) for t in current_titles}
+
+    # Alle aktuellen Meldungen bereits gesehen?
+    if current_hashes and current_hashes.issubset(seen):
+        return BEREITS_GELESEN
+
+    if mark_seen:
+        _save_seen_hashes(seen | current_hashes)
+
     return "\n\n".join(blocks)
+
+
+def mark_steuer_news_seen(result_text: str) -> None:
+    """Persistiert die gesehenen Hashes nachtraeglich — aufzurufen
+    nachdem Jarvis die Nachrichten vorgelesen hat (Issue #75)."""
+    # Wir koennen die Titel nicht mehr aus dem formatierten Text
+    # rekonstruieren. Daher beim naechsten fetch_all_sources-Aufruf
+    # mit mark_seen=True persistieren. Diese Funktion ist ein No-op-
+    # Placeholder fuer moegliche kuenftige Erweiterungen.
+    pass
 
 
 async def fetch_recent(days: int = 3) -> str:

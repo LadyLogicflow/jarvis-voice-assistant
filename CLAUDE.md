@@ -25,7 +25,7 @@ Wenn der Nutzer nach dem Setup fragt oder "Richte Jarvis ein" sagt, folge den An
 5. **Playwright Browser**: `python3 -m playwright install chromium`
 
 6. **Mac-Berechtigungen** (manuell vom Nutzer):
-   - **Mikrofon**: Systemeinstellungen → Datenschutz & Sicherheit → Mikrofon → Terminal/iTerm aktivieren (fuer clap-trigger)
+   - **Mikrofon**: Systemeinstellungen → Datenschutz & Sicherheit → Mikrofon → Terminal/iTerm aktivieren (fuer wakeword-trigger)
    - **Bildschirmaufnahme**: Systemeinstellungen → Datenschutz & Sicherheit → Bildschirmaufnahme → Terminal/iTerm aktivieren (fuer screen_capture)
    - **Bedienungshilfen**: Systemeinstellungen → Datenschutz & Sicherheit → Bedienungshilfen → Terminal aktivieren (fuer Fenster-Anordnung via AppleScript)
 
@@ -75,7 +75,6 @@ Google Calendar nutzt OAuth, kein API-Key. Setup-Flow:
 │   ├── main.js                # Speech Recognition + WebSocket + Audio
 │   └── style.css              # Dark Theme mit Orb-Animation
 └── scripts/
-    ├── clap-trigger.py        # Doppelklatschen-Erkennung (cross-platform)
     ├── wakeword-trigger.py    # 'Jarvis' Wake-Word via Picovoice
     ├── google-auth.py         # Einmalige Google-OAuth-Autorisierung
     ├── launch-session.sh      # macOS Session-Launcher (Terminal + Spotify + Chrome)

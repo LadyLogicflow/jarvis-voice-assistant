@@ -102,7 +102,8 @@ async def search_and_read(query: str) -> dict:
         # multi-word voice queries with &/?/# don't get truncated.
         search_url = f"https://duckduckgo.com/?q={quote(query, safe='')}"
         await page.goto(search_url, timeout=15000)
-        _bring_chromium_to_front()
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, _bring_chromium_to_front)
         await page.wait_for_timeout(2000)
 
         # Click first organic result

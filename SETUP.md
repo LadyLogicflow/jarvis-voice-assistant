@@ -150,22 +150,11 @@ python3 server.py
 ```
 Dann http://localhost:8340 in Chrome oeffnen.
 
-### Alles per Doppelklatschen starten
-```
-python3 scripts/clap-trigger.py
-```
-Zweimal klatschen → Spotify, Chrome mit Jarvis und konfigurierte Apps starten automatisch.
-
-### Clap Trigger beim macOS-Login
-Ueber **Systemeinstellungen → Allgemein → Anmeldeobjekte → "+"** ein kleines Shell-Skript hinzufuegen:
+### Session per Launch-Skript starten
 ```bash
-#!/usr/bin/env bash
-cd /Users/DEIN_USER/Downloads/jarvis-voice-assistant-master
-/usr/bin/env python3 scripts/clap-trigger.py &
+bash scripts/launch-session.sh
 ```
-Skript speichern, ausfuehrbar machen (`chmod +x`) und in Anmeldeobjekte aufnehmen.
-
-Alternativ via `launchd`: ein `~/Library/LaunchAgents/com.jarvis.clap.plist` mit `RunAtLoad=true` anlegen.
+Das Skript startet den Server (falls noch nicht aktiv) und oeffnet Chrome mit dem Jarvis-Frontend.
 
 ---
 
@@ -185,7 +174,7 @@ Alternativ via `launchd`: ein `~/Library/LaunchAgents/com.jarvis.clap.plist` mit
 |---|---|
 | Jarvis spricht nicht | Pruefen ob Server laeuft (`python3 server.py`) und Chrome offen ist |
 | "Verbindung verloren" | Alter Server-Prozess laeuft noch → `pkill -f "python3 server.py"` und neu starten |
-| Klatschen wird nicht erkannt | Threshold in `clap-trigger.py` anpassen, Mikrofon-Berechtigung pruefen |
+| Wake-Word wird nicht erkannt | `PICOVOICE_ACCESS_KEY` in `.env` pruefen, Mikrofon-Berechtigung pruefen |
 | Browser-Suche geht nicht | `python3 -m playwright install chromium` ausfuehren |
 | Kein Audio im Browser | Einmal auf die Seite klicken (Chrome Autoplay-Policy) |
 | Screenshot ist schwarz | Bildschirmaufnahme-Berechtigung fuer Terminal aktivieren |
