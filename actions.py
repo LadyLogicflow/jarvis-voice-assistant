@@ -523,6 +523,16 @@ async def execute_action(action: dict) -> str:
             return "Kein Entwurf zum Verwerfen."
         return f"Vergessen, {pick_address()}."
 
+    elif t == "WEEKLY_OUTLOOK":
+        # On-demand-Wochenausblick (gleicher Inhalt wie der
+        # Sonntag-18:00-Trigger). Nutzt den scheduler-Helper damit
+        # die Logik konsistent bleibt.
+        from scheduler import build_weekly_outlook
+        text = await build_weekly_outlook()
+        if not text:
+            return f"Aktuell habe ich nichts Konkretes fuer die naechste Woche, {pick_address()}."
+        return text
+
     elif t == "MEMORIZE":
         # "Merk dir: ..." — speichert eine Notiz. Detect:
         # - kind: vorliebe / abneigung / notiz

@@ -48,6 +48,7 @@ from scheduler import (
     refresh_data,
     refresh_morning_brief_data,
     refresh_steuer_recent,
+    weekly_outlook_scheduler,
 )
 from mail_monitor import mail_monitor_main, register_mail_alert_handler
 import session_state
@@ -82,12 +83,14 @@ async def _lifespan(_app):  # type: ignore[no-untyped-def]  # AsyncGenerator
     task_proactive = asyncio.create_task(proactive_briefs_scheduler())
     task_telegram = asyncio.create_task(telegram_bot_main())
     task_mail = asyncio.create_task(mail_monitor_main())
+    task_weekly = asyncio.create_task(weekly_outlook_scheduler())
     log.info(f"Steuerrecht-Scheduler gestartet (taeglich um {S.MORNING_HOUR}:00 Uhr)")
     log.info(f"Proaktive Briefs aktiv: {S.PROACTIVE_BRIEFS_TIMES}")
+    log.info("Wochenausblick aktiv (Sonntag 18:00)")
     try:
         yield
     finally:
-        for t in (task_brief, task_proactive, task_telegram, task_mail):
+        for t in (task_brief, task_proactive, task_telegram, task_mail, task_weekly):
             t.cancel()
             try:
                 await t
