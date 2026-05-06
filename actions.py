@@ -591,27 +591,59 @@ async def execute_action(action: dict) -> str:
         return f"Notiert {stored_where}."
 
     elif t == "RECALL":
-        # "Was hatte ich zu Mueller offen?" / "Was hatte ich notiert zu X?"
+        # Issue #56 + #57 Stage A: Volltext-Suche ueber alle Quellen.
+        # Stage B (semantische ML-Suche via Embeddings) folgt separat.
         import notes_db
         import persons_db
+        import conversation
         query = p.strip()
         if not query:
             return f"Wonach soll ich suchen, {pick_address()}?"
+        q = query.lower()
         results: list[str] = []
-        # Personen-bezogene Notizen (durch persons_db.notes + open_points)
+        # 1. Personen-bezogene Notizen + offene Punkte
         for prof in persons_db.all_profiles():
-            if query.lower() not in prof.name.lower():
-                continue
-            for note in prof.notes[-5:]:
-                results.append(f"Notiz zu {prof.name}: {note}")
-            for pt in prof.open_points:
-                results.append(f"Offen mit {prof.name}: {pt}")
-        # Allgemeine Notizen
+            if q in prof.name.lower():
+                for note in prof.notes[-5:]:
+                    results.append(f"Notiz zu {prof.name}: {note}")
+                for pt in prof.open_points:
+                    results.append(f"Offen mit {prof.name}: {pt}")
+            else:
+                # Auch nach Substring in den Notizen selbst suchen
+                for note in prof.notes:
+                    if q in note.lower():
+                        results.append(f"Notiz zu {prof.name}: {note}")
+                for pt in prof.open_points:
+                    if q in pt.lower():
+                        results.append(f"Offen mit {prof.name}: {pt}")
+        # 2. Allgemeine Notizen
         for n in notes_db.find(query):
             results.append(f"{n.kind.capitalize()}: {n.text}")
+        # 3. Todoist offene Tasks
+        if S.TODOIST_TOKEN and S.TODOIST_TOKEN != "YOUR_TODOIST_API_TOKEN":
+            try:
+                tasks_text = await todoist_tools.get_tasks(
+                    S.TODOIST_TOKEN, max_tasks=50,
+                    project_ids=S.TODOIST_PROJECT_IDS or None,
+                    section_ids_per_project=S.TODOIST_SECTIONS_PER_PROJECT or None,
+                )
+                if tasks_text and tasks_text != "KEINE_TASKS":
+                    for line in tasks_text.splitlines():
+                        if line.startswith("•") and q in line.lower():
+                            results.append(f"Todoist: {line.lstrip('• ').strip()}")
+            except Exception as e:
+                log.warning(f"RECALL todoist failed: {type(e).__name__}: {e}")
+        # 4. Conversation-History (last 50 turns)
+        history = conversation.load_persistent_history()
+        for msg in history:
+            content = (msg.get("content") or "")
+            if q in content.lower():
+                role = "Du" if msg.get("role") == "user" else "Jarvis"
+                snippet = content.strip()[:120]
+                results.append(f"Frueher ({role}): {snippet}")
         if not results:
             return f"Ich finde nichts zu {query}, {pick_address()}."
-        return f"Zu {query} habe ich:\n" + "\n".join(f"- {r}" for r in results[:10])
+        return f"Zu {query} habe ich:\n" + "\n".join(f"- {r}" for r in results[:15])
 
     elif t == "CALL":
         # "rufe X an" — Lookup, eine Nummer -> direkt waehlen, mehrere
