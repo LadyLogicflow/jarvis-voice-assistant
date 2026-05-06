@@ -22,11 +22,21 @@ import tempfile
 from typing import Optional
 
 from actions import EMPTY_REPLIES, execute_action
+import session_state
 import settings as S
 from prompt import extract_action, get_system_prompt, llm_text, pick_address
 from tts import _split_text, _tts_one, normalize_for_tts
 
 log = S.log
+
+# ---------------------------------------------------------------------------
+# Telegram message-id -> MailRef mapping for reply-context detection.
+# When Jarvis sends a voice-note announcing a new mail, we record the
+# Telegram message_id so that Catrin can reply to that specific note and
+# Jarvis automatically restores the mail context (Issue #49).
+# ---------------------------------------------------------------------------
+_msg_mail_map: dict[int, "session_state.MailRef"] = {}
+_MSG_MAP_MAX = 50  # keep only the last 50 entries to avoid unbounded growth
 
 
 # ---------------------------------------------------------------------------
@@ -219,6 +229,10 @@ async def _handle_message(update, context, *, source_text: str | None = None) ->
         )
         return
 
+    # The session_id for Telegram uses the chat-id so that each Telegram
+    # conversation shares state with itself (and with 'default' via broadcast).
+    session_id = str(update.effective_chat.id)
+
     try:
         if source_text is None:
             voice = update.message.voice or update.message.audio
@@ -237,12 +251,34 @@ async def _handle_message(update, context, *, source_text: str | None = None) ->
             user_text = source_text
             log.info(f"Telegram text: '{user_text[:120]}'")
 
+        # Reply-context detection: if Catrin replies to a Jarvis voice-note
+        # that announced a mail, restore that mail as active_mail so the
+        # full action pipeline (DRAFT_REPLY, DRAFT_APPROVE, …) has context.
+        reply_to = update.message.reply_to_message
+        if reply_to and reply_to.message_id in _msg_mail_map:
+            mail_ref = _msg_mail_map[reply_to.message_id]
+            session_state.set_active_mail(session_id, mail_ref)
+            log.info(
+                f"Telegram reply-context: mail uid={mail_ref.uid} "
+                f"auto-restored for session {session_id!r}"
+            )
+
         reply_text = await _ask_claude(user_text)
         log.info(f"Telegram reply: '{reply_text[:120]}'")
 
         audio = await _tts_full(reply_text)
         if audio:
-            await update.message.reply_voice(voice=io.BytesIO(audio), caption=None)
+            sent_msg = await update.message.reply_voice(
+                voice=io.BytesIO(audio), caption=None
+            )
+            # Record message_id -> active_mail so future replies to this
+            # voice-note can automatically restore the mail context.
+            active = session_state.get(session_id).active_mail
+            if sent_msg and active:
+                _msg_mail_map[sent_msg.message_id] = active
+                if len(_msg_mail_map) > _MSG_MAP_MAX:
+                    oldest = min(_msg_mail_map.keys())
+                    del _msg_mail_map[oldest]
         else:
             await update.message.reply_text(reply_text)
     except Exception as e:
@@ -286,10 +322,18 @@ async def send_user_text(text: str) -> bool:
         return False
 
 
-async def send_user_voice(spoken_text: str, caption: str | None = None) -> bool:
+async def send_user_voice(
+    spoken_text: str,
+    caption: str | None = None,
+    mail_ref: "session_state.MailRef | None" = None,
+) -> bool:
     """Push a spoken voice-note (ElevenLabs TTS) plus optional text
     caption to Catrin's Telegram chat. Falls back to text if the TTS
-    pipeline returns nothing. Quiet-hours aware."""
+    pipeline returns nothing. Quiet-hours aware.
+
+    When *mail_ref* is supplied the sent message_id is recorded in
+    _msg_mail_map so that Catrin can reply to this voice-note and Jarvis
+    will automatically restore the mail context (Issue #49)."""
     if not S.TELEGRAM_BOT_TOKEN or not S.TELEGRAM_CHAT_ID:
         return False
     if _app is None:
@@ -303,11 +347,18 @@ async def send_user_voice(spoken_text: str, caption: str | None = None) -> bool:
         if not audio:
             log.info("send_user_voice: TTS empty, falling back to text")
             return await send_user_text(caption or spoken_text)
-        await _app.bot.send_voice(
+        sent_msg = await _app.bot.send_voice(
             chat_id=S.TELEGRAM_CHAT_ID,
             voice=io.BytesIO(audio),
             caption=caption,
         )
+        # Record message_id -> MailRef so reply-context detection works for
+        # proactively pushed mail announcements (e.g. from mail_monitor).
+        if sent_msg and mail_ref is not None:
+            _msg_mail_map[sent_msg.message_id] = mail_ref
+            if len(_msg_mail_map) > _MSG_MAP_MAX:
+                oldest = min(_msg_mail_map.keys())
+                del _msg_mail_map[oldest]
         return True
     except Exception as e:
         log.warning(f"send_user_voice failed: {type(e).__name__}: {e}")

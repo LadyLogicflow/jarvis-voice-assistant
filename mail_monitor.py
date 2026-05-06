@@ -287,14 +287,17 @@ async def _process_new_uids(account: dict, client, uids: list[int]) -> None:
                         spoken = ""
                     if pp:
                         session_state.set_pending_person("default", pp)
-                        session_state.broadcast_active_mail(session_state.MailRef(
+                        _mail_ref_drift = session_state.MailRef(
                             account=name, uid=uid, sender=sender, subject=subject,
                             date=msg.get("Date", ""),
                             message_id=msg.get("Message-ID", ""),
                             references=msg.get("References", ""),
-                        ))
+                        )
+                        session_state.broadcast_active_mail(_mail_ref_drift)
                         if not S.is_quiet_hours():
-                            await telegram_bot.send_user_voice(spoken, caption=spoken)
+                            await telegram_bot.send_user_voice(
+                                spoken, caption=spoken, mail_ref=_mail_ref_drift
+                            )
                         if not S.is_mac_quiet_hours() and _mail_alert_handler is not None:
                             try:
                                 await _mail_alert_handler(spoken)
@@ -312,12 +315,13 @@ async def _process_new_uids(account: dict, client, uids: list[int]) -> None:
                          f"summary={ics_invite.get('summary')!r} when={when_human}")
                 # active_mail + pending_calendar setzen, ohne Auto-Triage,
                 # damit Catrin entscheidet.
-                session_state.broadcast_active_mail(session_state.MailRef(
+                _mail_ref_cal = session_state.MailRef(
                     account=name, uid=uid, sender=sender, subject=subject,
                     date=msg.get("Date", ""),
                     message_id=msg.get("Message-ID", ""),
                     references=msg.get("References", ""),
-                ))
+                )
+                session_state.broadcast_active_mail(_mail_ref_cal)
                 session_state.set_pending_calendar(
                     "default",
                     session_state.PendingCalendar(
@@ -345,7 +349,7 @@ async def _process_new_uids(account: dict, client, uids: list[int]) -> None:
                 if tg_quiet:
                     log.info(f"mail_monitor[{name}] uid={uid}: telegram quiet hours, suppressed (calendar)")
                 else:
-                    await telegram_bot.send_user_voice(spoken, caption=caption)
+                    await telegram_bot.send_user_voice(spoken, caption=caption, mail_ref=_mail_ref_cal)
                 if mac_quiet:
                     log.info(f"mail_monitor[{name}] uid={uid}: mac quiet hours, suppressed (calendar)")
                 elif _mail_alert_handler is not None:
@@ -384,12 +388,13 @@ async def _process_new_uids(account: dict, client, uids: list[int]) -> None:
                 # Egal ob's geforwarded wird oder nicht: in den Session-
                 # State, damit Catrin gleich darauf referenzieren kann
                 # ("vorlesen", "antworten", "Aufgabe daraus").
-                session_state.broadcast_active_mail(session_state.MailRef(
+                _mail_ref = session_state.MailRef(
                     account=name, uid=uid, sender=sender, subject=subject,
                     date=msg.get("Date", ""),
                     message_id=msg.get("Message-ID", ""),
                     references=msg.get("References", ""),
-                ))
+                )
+                session_state.broadcast_active_mail(_mail_ref)
                 tg_quiet = S.is_quiet_hours()
                 mac_quiet = S.is_mac_quiet_hours()
                 spoken = _format_for_voice(sender, subject)
@@ -399,7 +404,7 @@ async def _process_new_uids(account: dict, client, uids: list[int]) -> None:
                 if tg_quiet:
                     log.info(f"mail_monitor[{name}] uid={uid}: telegram quiet hours, suppressed")
                 else:
-                    await telegram_bot.send_user_voice(spoken, caption=caption)
+                    await telegram_bot.send_user_voice(spoken, caption=caption, mail_ref=_mail_ref)
                 # Mac-Ansage zusaetzlich, sofern nicht in Mac-Quiet-
                 # Hours UND eine Web-UI verbunden ist (der Handler
                 # prueft das selbst).
