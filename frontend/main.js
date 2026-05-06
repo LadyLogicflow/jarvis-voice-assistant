@@ -10,6 +10,52 @@ let audioUnlocked = false;
 let audioCtx = null;
 let lastDisconnectTime = 0;
 
+// Send a JSON message but only when the socket is OPEN. Otherwise the
+// browser raises InvalidStateError and the page logs a noisy stack
+// trace — we'd rather silently drop and let the auto-reconnect handler
+// recover. Returns true on success.
+function wsSend(payload) {
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+        console.warn('[jarvis] wsSend skipped, readyState=' + (ws ? ws.readyState : 'no ws'));
+        return false;
+    }
+    try {
+        ws.send(JSON.stringify(payload));
+        return true;
+    } catch (e) {
+        console.warn('[jarvis] wsSend failed:', e);
+        return false;
+    }
+}
+
+// Audio-queue stall watchdog. If the <audio> element neither fires
+// `onended` nor `onerror` within MAX_AUDIO_MS (Chrome occasionally
+// drops these events after a sleep/wake or screen-share), we force-
+// advance the queue so the conversation doesn't deadlock.
+const MAX_AUDIO_MS = 60000;
+let _audioWatchdog = null;
+function armAudioWatchdog() {
+    if (_audioWatchdog) clearTimeout(_audioWatchdog);
+    _audioWatchdog = setTimeout(() => {
+        _audioWatchdog = null;
+        console.warn('[jarvis] audio watchdog fired — advancing queue');
+        playNext();
+    }, MAX_AUDIO_MS);
+}
+function clearAudioWatchdog() {
+    if (_audioWatchdog) { clearTimeout(_audioWatchdog); _audioWatchdog = null; }
+}
+
+// Reset all transient playback / orb state. Called on socket disconnect
+// so a stuck `isPlaying=true` from a half-played message doesn't keep
+// the orb frozen and recognition disabled until reload.
+function resetPlaybackState() {
+    audioQueue = [];
+    isPlaying = false;
+    clearAudioWatchdog();
+    setOrbState('idle');
+}
+
 // Auto-hide: when Jarvis finishes speaking he stays visible for this many
 // milliseconds. Any further speech (the user talking, or new audio playing)
 // resets the timer. Empirically 30 s is enough for a follow-up question
@@ -85,7 +131,7 @@ function connect() {
     ws.onmessage = (event) => {
         const data = JSON.parse(event.data);
         if (data.type === 'ping') {
-            ws.send(JSON.stringify({ type: 'pong' }));
+            wsSend({ type: 'pong' });
             return;
         }
         if (data.type === 'cancelled') {
@@ -108,7 +154,7 @@ function connect() {
                 sessionStorage.setItem('jarvisGreeted', '1');
                 markGreeted();
                 setOrbState('thinking');
-                ws.send(JSON.stringify({ text: 'Jarvis activate' }));
+                wsSend({ text: 'Jarvis activate' });
             } else {
                 // Bereits begrüßt → make sure recognition is actually running.
                 // After a hide / background suspend, Web Speech often pauses
@@ -139,6 +185,10 @@ function connect() {
     ws.onclose = () => {
         lastDisconnectTime = Date.now();
         status.textContent = '';
+        // Auf einer abgerissenen Verbindung kann ein laufendes Audio
+        // niemals 'onended' bekommen; ohne Reset bliebe `isPlaying`
+        // permanent true und Spracherkennung waere blockiert.
+        resetPlaybackState();
         setTimeout(connect, 5000);
     };
 }
@@ -149,6 +199,7 @@ function queueAudio(base64Audio) {
 }
 
 function playNext() {
+    clearAudioWatchdog();
     if (audioQueue.length === 0) {
         isPlaying = false;
         setOrbState('listening');
@@ -181,8 +232,9 @@ function playNext() {
     const blob = new Blob([bytes], { type: 'audio/mpeg' });
     const url = URL.createObjectURL(blob);
     const audio = new Audio(url);
-    audio.onended = () => { URL.revokeObjectURL(url); playNext(); };
-    audio.onerror = () => { URL.revokeObjectURL(url); playNext(); };
+    audio.onended = () => { clearAudioWatchdog(); URL.revokeObjectURL(url); playNext(); };
+    audio.onerror = () => { clearAudioWatchdog(); URL.revokeObjectURL(url); playNext(); };
+    armAudioWatchdog();
     audio.play().catch(err => {
         console.warn('[jarvis] Autoplay blocked, waiting for click...');
         status.textContent = 'Klicke irgendwo damit Jarvis sprechen kann.';
@@ -232,7 +284,7 @@ if (SPEECH_AVAILABLE) {
             // Recognized: "stopp jarvis", "stop jarvis", "halt jarvis", "abbruch".
             if (/(^|\s)(stopp|stop|halt) jarvis\b/i.test(lower) || /\babbruch\b/i.test(lower)) {
                 addTranscript('user', text);
-                ws.send(JSON.stringify({ type: 'cancel' }));
+                wsSend({ type: 'cancel' });
                 status.textContent = 'Abbruch gesendet.';
                 return;
             }
@@ -252,7 +304,7 @@ if (SPEECH_AVAILABLE) {
                 addTranscript('user', command);
                 setOrbState('thinking');
                 status.textContent = 'Jarvis denkt nach...';
-                ws.send(JSON.stringify({ text: command }));
+                wsSend({ text: command });
             }
         }
     };

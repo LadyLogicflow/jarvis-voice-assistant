@@ -27,6 +27,7 @@ from email.utils import parseaddr
 
 import contacts
 import persons_db
+from prompt import llm_text
 import settings as S
 
 log = S.log
@@ -134,7 +135,7 @@ async def extract_person_details(msg, sender_addr: str, sender_name: str) -> dic
             system=sys_prompt,
             messages=[{"role": "user", "content": user_msg}],
         )
-        text = resp.content[0].text.strip()
+        text = llm_text(resp).strip()
         # JSON kann von ```json``` Block umschlossen sein
         import re as _re
         m = _re.search(r"\{[\s\S]*\}", text)

@@ -4,8 +4,11 @@ Jarvis — Steuerrecht News
 - BFH Entscheidungen per RSS
 """
 
+import logging
 import xml.etree.ElementTree as ET
 import httpx
+
+log = logging.getLogger("jarvis")
 import datetime
 from email.utils import parsedate_to_datetime
 
@@ -76,8 +79,9 @@ async def fetch_recent(days: int = 3) -> str:
                 for title, pub_date in _parse_rss_items(resp.text):
                     if pub_date and pub_date >= cutoff:
                         recent.append(f"• {title} ({pub_date.strftime('%d.%m.')})")
-            except Exception:
-                pass
+            except Exception as e:
+                log.warning(f"steuer_news fetch_recent feed={feed.get('url', '?')!r} "
+                            f"failed: {type(e).__name__}: {e}")
     if not recent:
         return ""
     return "Aktuelle BFH-Neuigkeiten (letzte 3 Tage):\n" + "\n".join(recent)

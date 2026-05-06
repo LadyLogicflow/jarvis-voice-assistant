@@ -23,7 +23,7 @@ from typing import Optional
 
 from actions import EMPTY_REPLIES, execute_action
 import settings as S
-from prompt import extract_action, get_system_prompt, pick_address
+from prompt import extract_action, get_system_prompt, llm_text, pick_address
 from tts import _split_text, _tts_one, normalize_for_tts
 
 log = S.log
@@ -124,7 +124,7 @@ async def _summarize_action(action_type: str, action_result: str) -> str:
         system=sys_prompt,
         messages=[{"role": "user", "content": f"Fasse zusammen:\n\n{action_result}"}],
     )
-    summary, _ = extract_action(resp.content[0].text)
+    summary, _ = extract_action(llm_text(resp))
     return summary
 
 
@@ -137,7 +137,7 @@ async def _ask_claude(user_text: str) -> str:
         system=get_system_prompt(),
         messages=[{"role": "user", "content": user_text}],
     )
-    reply = response.content[0].text
+    reply = llm_text(response)
     spoken_text, action = extract_action(reply)
     log.info(f"Telegram LLM: spoken='{spoken_text[:80]}' action={action}")
 

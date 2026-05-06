@@ -35,6 +35,19 @@ def pick_address() -> str:
     return S.USER_ADDRESS
 
 
+def llm_text(resp) -> str:
+    """Extract the text from an Anthropic .messages.create() response
+    safely. If content is empty (rare — moderation, model glitch), an
+    IndexError would normally crash callers. Return "" instead, callers
+    decide whether to fall back."""
+    try:
+        if resp and resp.content:
+            return resp.content[0].text or ""
+    except (AttributeError, IndexError):
+        pass
+    return ""
+
+
 def pick_greeting() -> str:
     """Pick a time-of-day-appropriate greeting phrase.
 

@@ -68,9 +68,12 @@ def get_unread_mails_imap(
             # Walk newest first.
             picked = list(reversed(ids))[:max_count]
             lines = [f"Ungelesen insgesamt: {total}", ""]
+            skipped = 0
             for mid in picked:
                 typ, msg_data = M.fetch(mid, "(BODY.PEEK[HEADER.FIELDS (FROM SUBJECT DATE)])")
                 if typ != "OK" or not msg_data or not msg_data[0]:
+                    log.warning(f"IMAP fetch mid={mid!r}: typ={typ}, data missing")
+                    skipped += 1
                     continue
                 raw_headers = msg_data[0][1]
                 msg = email.message_from_bytes(raw_headers)
@@ -81,6 +84,8 @@ def get_unread_mails_imap(
                 lines.append(f"Von: {_decode_header(from_addr)}")
                 lines.append(f"Betreff: {subject}")
                 lines.append(f"Empfangen: {date}")
+            if skipped:
+                lines.append(f"\n({skipped} Mail(s) konnten nicht abgerufen werden — siehe Log.)")
             return "\n".join(lines)
     except imaplib.IMAP4.error as e:
         log.warning(f"IMAP login/protocol error: {e}")

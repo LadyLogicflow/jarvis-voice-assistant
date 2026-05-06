@@ -40,7 +40,7 @@ from conversation import (
     conversations,
     load_persistent_history,
 )
-from prompt import extract_action, get_system_prompt, pick_address
+from prompt import extract_action, get_system_prompt, llm_text, pick_address
 import scheduler
 from scheduler import (
     morning_brief_scheduler,
@@ -206,7 +206,7 @@ async def process_message(session_id: str, user_text: str, ws: WebSocket) -> Non
         system=get_system_prompt(),
         messages=history,
     )
-    reply = response.content[0].text
+    reply = llm_text(response)
     log.info(f"LLM raw: {reply[:200]}")
     spoken_text, action = extract_action(reply)
 
@@ -310,7 +310,7 @@ async def process_message(session_id: str, user_text: str, ws: WebSocket) -> Non
         system=summary_system,
         messages=[{"role": "user", "content": f"Fasse zusammen:\n\n{action_result}"}],
     )
-    summary, _ = extract_action(summary_resp.content[0].text)
+    summary, _ = extract_action(llm_text(summary_resp))
     # Defense: if the LLM ended mid-sentence, trim back to the last
     # complete sentence so the user doesn't hear truncated content.
     summary = scheduler.trim_to_complete_sentences(summary)
