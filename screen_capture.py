@@ -22,6 +22,8 @@ from typing import TYPE_CHECKING
 
 from PIL import ImageGrab
 
+from prompt import llm_text
+
 if TYPE_CHECKING:
     from anthropic import AsyncAnthropic
 
@@ -85,4 +87,4 @@ async def describe_screen(anthropic_client: "AsyncAnthropic") -> str:
             ],
         }],
     )
-    return response.content[0].text
+    return llm_text(response)

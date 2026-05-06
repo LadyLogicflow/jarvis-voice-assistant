@@ -5,12 +5,14 @@ Uses Todoist API v1 (api.todoist.com/api/v1).
 
 from __future__ import annotations
 
+import logging
 from datetime import date
 from typing import Optional
 
 import httpx
 
 BASE = "https://api.todoist.com/api/v1"
+log = logging.getLogger("jarvis")
 
 
 def _h(token: str) -> dict:
@@ -57,13 +59,29 @@ async def get_tasks(
     Todoist project IDs (and per-project section IDs)."""
     my_id = await _my_id(token)
 
+    # Pagination follow — die Todoist v1-API liefert nur ~50 Tasks pro
+    # Seite + ein next_cursor. Wenn Catrin viele offene Tasks hat,
+    # wuerde alles ab Page 2 unsichtbar bleiben.
+    all_tasks: list = []
     async with httpx.AsyncClient(timeout=15) as c:
-        try:
-            r = await c.get(f"{BASE}/tasks", headers=_h(token))
-            r.raise_for_status()
-            all_tasks = r.json().get("results", [])
-        except Exception as e:
-            return f"Todoist nicht erreichbar: {e}"
+        cursor = None
+        for _ in range(20):  # max 20 Seiten ≈ 1000 Tasks — Schutz vor Endlos
+            try:
+                params = {"cursor": cursor} if cursor else None
+                r = await c.get(f"{BASE}/tasks", headers=_h(token), params=params)
+                r.raise_for_status()
+                payload = r.json()
+                all_tasks.extend(payload.get("results", []))
+                cursor = payload.get("next_cursor")
+                if not cursor:
+                    break
+            except Exception as e:
+                # Erste Seite nicht erreichbar -> Fehler. Spaetere Seiten:
+                # mit dem zurueck was wir haben weiter.
+                if not all_tasks:
+                    return f"Todoist nicht erreichbar: {e}"
+                log.warning(f"todoist pagination broke at cursor={cursor!r}: {e}")
+                break
 
     pid_set = set(project_ids) if project_ids else None
     sec_sets = (
@@ -100,7 +118,7 @@ async def get_tasks(
             flag = f" (fällig: {due_date})"
         else:
             flag = ""
-        lines.append(f"• {t['content']}{flag}")
+        lines.append(f"• {t.get('content', '(ohne Titel)')}{flag}")
 
     total = len(tasks)
     return f"Todoist — {total} offene Aufgaben:\n" + "\n".join(lines)

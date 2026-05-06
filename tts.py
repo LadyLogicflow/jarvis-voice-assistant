@@ -83,15 +83,49 @@ def normalize_for_tts(text: str) -> str:
     return out.strip()
 
 
+_MAX_CHUNK = 250
+
+
+def _hard_split(s: str) -> list[str]:
+    """Hard-split a single sentence that's longer than _MAX_CHUNK chars.
+    Tries comma boundaries first, then word boundaries; gives up and
+    cuts at _MAX_CHUNK if nothing better is available."""
+    if len(s) <= _MAX_CHUNK:
+        return [s]
+    out: list[str] = []
+    rest = s
+    while len(rest) > _MAX_CHUNK:
+        # Prefer the last comma within the window.
+        cut = rest.rfind(",", 0, _MAX_CHUNK)
+        if cut < _MAX_CHUNK // 2:
+            # Fall back to last whitespace.
+            cut = rest.rfind(" ", 0, _MAX_CHUNK)
+        if cut < _MAX_CHUNK // 2:
+            cut = _MAX_CHUNK
+        out.append(rest[:cut].strip())
+        rest = rest[cut:].lstrip(" ,")
+    if rest:
+        out.append(rest.strip())
+    return [c for c in out if c]
+
+
 def _split_text(text: str) -> list[str]:
-    """Split text into <=250-char chunks at sentence boundaries."""
-    if len(text) <= 250:
+    """Split text into <=_MAX_CHUNK-char chunks at sentence boundaries.
+    Sentences longer than _MAX_CHUNK are themselves hard-split via
+    `_hard_split`, so the TTS API never receives oversized payloads."""
+    if len(text) <= _MAX_CHUNK:
         return [text]
-    chunks = []
+    chunks: list[str] = []
     sentences = re.split(r'(?<=[.!?])\s+', text)
     current = ""
     for s in sentences:
-        if len(current) + len(s) > 250 and current:
+        if len(s) > _MAX_CHUNK:
+            if current:
+                chunks.append(current.strip())
+                current = ""
+            chunks.extend(_hard_split(s))
+            continue
+        if len(current) + len(s) > _MAX_CHUNK and current:
             chunks.append(current.strip())
             current = s
         else:
@@ -135,7 +169,11 @@ async def _tts_one(text: str) -> bytes:
             with attempt:
                 return await _tts_post(text)
     except Exception as e:
-        log.warning(f"TTS EXCEPTION: {e}")
+        log.warning(
+            f"TTS chunk failed after retries (len={len(text)}, "
+            f"preview={text[:60]!r}): {type(e).__name__}: {e}",
+            exc_info=True,
+        )
     return b""
 
 

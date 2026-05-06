@@ -10,6 +10,11 @@ import subprocess
 
 def get_unread_mails(max_count: int = 5) -> str:
     """Fetch unread emails from Mail.app via AppleScript."""
+    # Defensive: if a future caller passes a string (LLM payload, env
+    # var, etc.) we refuse to interpolate that into the AppleScript
+    # source. Cast to int — raises ValueError if not coercible, which
+    # is what we want.
+    max_count = max(1, min(int(max_count), 100))
     script = f"""
 tell application "Mail"
     set theInbox to inbox

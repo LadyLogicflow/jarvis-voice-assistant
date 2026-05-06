@@ -24,6 +24,7 @@ from email.utils import parseaddr
 import contact_sync
 import mail_actions
 import mail_triage
+from prompt import llm_text
 import session_state
 import settings as S
 import telegram_bot
@@ -100,7 +101,7 @@ async def _classify(sender: str, subject: str, body_preview: str) -> str:
             system=_CLASSIFIER_PROMPT,
             messages=[{"role": "user", "content": user_msg}],
         )
-        cat = resp.content[0].text.strip().lower()
+        cat = llm_text(resp).strip().lower()
         for token in cat.replace(",", " ").replace(".", " ").split():
             if token in ("werbung", "info", "handlungsbedarf"):
                 return token

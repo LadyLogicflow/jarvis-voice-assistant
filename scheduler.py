@@ -27,7 +27,7 @@ from tenacity import (
 
 import browser_tools  # for fetch_news (politik feed)
 import google_calendar_tools
-from prompt import pick_address
+from prompt import llm_text, pick_address
 import settings as S
 import steuer_news
 import todoist_tools
@@ -85,7 +85,7 @@ async def fetch_weather() -> dict | None:
         return None
 
 
-def get_tasks_sync() -> list[str]:
+def read_obsidian_tasks_sync() -> list[str]:
     """Read open tasks from Obsidian (sync). Cheap file IO; called via
     run_in_executor from async refresh_data()."""
     if not S.TASKS_FILE:
@@ -100,7 +100,7 @@ def get_tasks_sync() -> list[str]:
             if l.strip().startswith("- [ ]")
         ]
     except Exception as e:
-        log.warning(f"get_tasks_sync failed: {type(e).__name__}: {e}")
+        log.warning(f"read_obsidian_tasks_sync failed: {type(e).__name__}: {e}")
         return []
 
 
@@ -118,7 +118,7 @@ async def refresh_data(force: bool = False) -> None:
     loop = asyncio.get_event_loop()
     weather, tasks = await asyncio.gather(
         fetch_weather(),
-        loop.run_in_executor(None, get_tasks_sync),
+        loop.run_in_executor(None, read_obsidian_tasks_sync),
     )
     S.WEATHER_INFO = weather
     S.TASKS_INFO = tasks
@@ -255,7 +255,7 @@ async def refresh_politik_brief() -> None:
             ),
             messages=[{"role": "user", "content": combined}],
         )
-        out = trim_to_complete_sentences(resp.content[0].text.strip())
+        out = trim_to_complete_sentences(llm_text(resp).strip())
         S.POLITIK_BRIEF = out
         S.POLITIK_BRIEF_DATE = today
         log.info(f"Politik-Brief: {S.POLITIK_BRIEF[:120]}")
@@ -309,7 +309,7 @@ async def refresh_steuer_brief() -> None:
             ),
             messages=[{"role": "user", "content": f"Neue Veroeffentlichungen heute:\n\n{raw}"}],
         )
-        S.STEUER_BRIEF = resp.content[0].text.strip()
+        S.STEUER_BRIEF = llm_text(resp).strip()
         S.STEUER_BRIEF_DATE = datetime.date.today().isoformat()
         log.info(f"Steuerrecht-Brief: {S.STEUER_BRIEF[:80]}")
     except Exception as e:
@@ -398,7 +398,7 @@ async def build_weekly_outlook() -> str:
             system=sys_prompt,
             messages=[{"role": "user", "content": user_msg}],
         )
-        return trim_to_complete_sentences(resp.content[0].text.strip())
+        return trim_to_complete_sentences(llm_text(resp).strip())
     except Exception as e:
         log.warning(f"weekly outlook generation failed: {type(e).__name__}: {e}")
         return ""
@@ -517,7 +517,7 @@ async def _generate_proactive_message(slot: str) -> str:
         system=system_prompt,
         messages=[{"role": "user", "content": user_msg}],
     )
-    return resp.content[0].text.strip()
+    return llm_text(resp).strip()
 
 
 async def proactive_briefs_scheduler() -> None:

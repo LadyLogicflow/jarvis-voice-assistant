@@ -58,31 +58,38 @@ def _browser_alive() -> bool:
         return False
 
 
+# Lock against concurrent _get_browser() calls — without it two
+# parallel SEARCHes during a cold start would each call playwright.
+# launch() and the second clobber would leak the first browser.
+_browser_lock = asyncio.Lock()
+
+
 async def _get_browser():  # type: ignore[no-untyped-def]  # playwright BrowserContext
     """Return a usable BrowserContext. Re-launches Chromium when the
     previous instance was closed by the user (was a hard fail before:
     'BrowserContext.new_page: Target page, context or browser has been
     closed' kept happening on every following SEARCH until restart)."""
     global _browser, _context, _playwright
-    if not _browser_alive():
-        if _browser is not None:
-            log.info("browser disconnected, relaunching Chromium")
-            _browser = None
-            _context = None
-        if _playwright is None:
-            _playwright = await async_playwright().start()
-        launch_args = ["--start-maximized"] if not IS_MAC else []
-        _browser = await _playwright.chromium.launch(headless=False, args=launch_args)
-        ua_string = (
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
-            if IS_MAC
-            else "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-        )
-        _context = await _browser.new_context(
-            user_agent=ua_string,
-            no_viewport=True,
-        )
-    return _context
+    async with _browser_lock:
+        if not _browser_alive():
+            if _browser is not None:
+                log.info("browser disconnected, relaunching Chromium")
+                _browser = None
+                _context = None
+            if _playwright is None:
+                _playwright = await async_playwright().start()
+            launch_args = ["--start-maximized"] if not IS_MAC else []
+            _browser = await _playwright.chromium.launch(headless=False, args=launch_args)
+            ua_string = (
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
+                if IS_MAC
+                else "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+            )
+            _context = await _browser.new_context(
+                user_agent=ua_string,
+                no_viewport=True,
+            )
+        return _context
 
 
 async def search_and_read(query: str) -> dict:
@@ -134,7 +141,11 @@ async def search_and_read(query: str) -> dict:
 
 
 async def visit(url: str, max_chars: int = 5000) -> dict:
-    """Visit a URL and extract main text content."""
+    """Visit a URL and extract main text content. Refuses anything
+    that's not http(s) — Playwright would otherwise gladly open
+    file:///etc/passwd or chrome://settings on an LLM-supplied URL."""
+    if not _is_safe_url(url):
+        return {"error": "Nur http- und https-URLs sind erlaubt.", "url": url}
     ctx = await _get_browser()
     page = await ctx.new_page()
     try:

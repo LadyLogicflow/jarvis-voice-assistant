@@ -26,7 +26,7 @@ import imap_mail_tools
 import mail_actions
 import mail_tools
 import notes_tools
-from prompt import pick_address
+from prompt import llm_text, pick_address
 import screen_capture
 import session_state
 import todoist_tools
@@ -151,7 +151,7 @@ async def _generate_draft_body(mail_data: dict, instruction: str = "") -> str:
             system=sys_prompt,
             messages=[{"role": "user", "content": user_msg}],
         )
-        return resp.content[0].text.strip()
+        return llm_text(resp).strip()
     except Exception as e:
         log.warning(f"_generate_draft_body failed: {type(e).__name__}: {e}")
         return ""
@@ -178,7 +178,7 @@ async def _revise_draft_body(old_body: str, instruction: str) -> str:
             system=sys_prompt,
             messages=[{"role": "user", "content": user_msg}],
         )
-        return resp.content[0].text.strip()
+        return llm_text(resp).strip()
     except Exception as e:
         log.warning(f"_revise_draft_body failed: {type(e).__name__}: {e}")
         return ""
@@ -394,7 +394,7 @@ async def execute_action(action: dict) -> str:
                 system=sys_prompt,
                 messages=[{"role": "user", "content": user_msg}],
             )
-            summary = resp.content[0].text.strip()
+            summary = llm_text(resp).strip()
         except Exception as e:
             log.warning(f"SUMMARIZE_MAIL Claude error: {type(e).__name__}: {e}")
             return f"Zusammenfassung fehlgeschlagen: {type(e).__name__}"
@@ -1000,7 +1000,7 @@ async def execute_action(action: dict) -> str:
                 system=gen_prompt,
                 messages=[{"role": "user", "content": user_msg}],
             )
-            task_text = resp.content[0].text.strip().strip('"\'').strip()
+            task_text = llm_text(resp).strip().strip('"\'').strip()
         except Exception as e:
             log.warning(f"MAIL_TO_TASK Claude error: {type(e).__name__}: {e}")
             # Fallback: Subject-only.
