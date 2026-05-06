@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<title>JARVIS — Funktionsübersicht</title>
+<style>
+@page { size: A4; margin: 1.5cm; }
+body { font-family: -apple-system, "Helvetica Neue", Arial, sans-serif; line-height: 1.45; color: #222; }
+h1 { color: #1a3a5c; border-bottom: 2px solid #1a3a5c; padding-bottom: 6pt; }
+h2 { color: #1a3a5c; margin-top: 20pt; }
+h3 { color: #2c5282; margin-top: 14pt; margin-bottom: 6pt; }
+ul { margin-top: 4pt; padding-left: 20pt; }
+li { margin: 3pt 0; }
+table { border-collapse: collapse; width: 100%; margin: 8pt 0; }
+td, th { border: 1px solid #ccc; padding: 4pt 8pt; text-align: left; vertical-align: top; }
+th { background: #f0f4f8; }
+code { background: #f5f5f5; padding: 1pt 4pt; border-radius: 3pt; font-size: 90%; }
+.subtitle { color: #666; font-size: 11pt; margin-top: -8pt; margin-bottom: 18pt; }
+.section { page-break-inside: avoid; }
+.footer { margin-top: 24pt; font-size: 9pt; color: #888; border-top: 1px solid #eee; padding-top: 8pt; }
+</style>
+</head>
+<body>
+<h1>JARVIS — Funktionsübersicht</h1>
+<div class="subtitle">Catrin Essberger-Brenscheidt &middot; Stand: 6. Mai 2026</div>
+
+<div class="section">
+<h2>Sprache + Interaktion</h2>
+<ul>
+<li><b>Web-UI am Mac</b>: Klatschen oder Tastenkombination starten Jarvis. Spracherkennung via Web Speech API (Deutsch).</li>
+<li><b>30-Sekunden-Follow-up-Fenster</b>: Nach jeder Jarvis-Antwort kannst du 30 s direkt antworten OHNE „Jarvis"-Wake-Word voranzustellen.</li>
+<li><b>Telegram-Bot</b>: Voice-Notes oder Text. Lokales Whisper transkribiert, Antworten als Voice-Note + Text-Caption zurück.</li>
+<li><b>Anrede + Begrüßung</b>: Pro Anfrage zufällige Anrede aus Pool (Catrin/Caterina/Madam) + tageszeit-passende Floskel (Guten Morgen / Guten Tag / Guten Mittag / Guten Nachmittag / Guten Abend).</li>
+</ul>
+</div>
+
+<div class="section">
+<h2>Mail-Monitor (Apple iCloud)</h2>
+<ul>
+<li>Polling-basiert (60 s), klassifiziert eingehend in werbung/info/handlungsbedarf via Claude Haiku.</li>
+<li><b>Auto-Triage</b>: Sender-Regeln pflegbar in <code>mail_triage_rules.json</code> — deine 5 Regeln (coolblue, dihag, amazon, scansnap, hellomed) sind drin.</li>
+<li><b>Heuristiken</b>: Bounce → Junk, Pakete → DHL, Reise → Reise, Newsletter → Werbung.</li>
+<li><b>Hellomed-Sonderfall</b>: bei Anhang Auto-Forward an getmyinvoices.net via SMTP.</li>
+</ul>
+</div>
+
+<div class="section">
+<h2>Mail-Decision-Tree</h2>
+<ul>
+<li><b>Direktbefehle</b> nach Mail-Notification: <i>vorlesen / fass zusammen / antworten / aufgabe / ignorieren</i>.</li>
+<li><b>Antwort-Workflow</b>: Jarvis schlägt proaktiv eine Antwort vor (nutzt <code>business_context.md</code> mit deinen Standard-Sachverhalten), liest vor, fragt nach Freigabe. Iterativ „Änderung wie folgt" bis „freigeben" → in Apple-Drafts. <b>Sendet NIE selbst.</b></li>
+<li>Bei fehlendem Kontext: NEED_INPUT-Marker → Jarvis fragt nach Eckpunkten statt zu erfinden.</li>
+<li><b>Kalender-Einladungen</b>: ICS-Anhang erkannt → „Termin am X eintragen?" → Google Kalender.</li>
+</ul>
+</div>
+
+<div class="section">
+<h2>Personen-Datenbank + Kontakte</h2>
+<ul>
+<li>Apple Kontakte.app als Read+Write-Source via AppleScript.</li>
+<li><b>Auto-Extract</b> bei unbekanntem Sender: Claude rät Anrede, Funktion, Organisation aus dem Mail-Inhalt → Vorschlag „Max Mueller (Geschäftsführer X) anlegen?".</li>
+<li><b>Email-Drift-Detection</b>: Mail vom bekannten Namen aber neue Adresse → Update-Vorschlag.</li>
+<li><b>Telefon-Drift-Detection</b>: Mail mit neuer Nummer in Signatur → Ergänzungs-Vorschlag.</li>
+<li><b>Telefon-Wahl</b>: „Rufe Mueller an" → Auswahl wenn mehrere Nummern, dann FaceTime/iPhone-Continuity.</li>
+</ul>
+</div>
+
+<div class="section">
+<h2>Aufgaben + Termine</h2>
+<ul>
+<li><b>Todoist</b>: gescoped auf deine 3 Projekte (HILO-Section, DIHAG, Privat). Aufgaben anlegen, abschließen, anzeigen. Bei „abschließen" nur deine eigenen, mehrfache Treffer fragen nach.</li>
+<li><b>Google Kalender</b>: Termine anzeigen + anlegen.</li>
+<li><b>Mail → Aufgabe</b>: aus Mail in Todoist-Inbox mit kontextbasierter Beschreibung (kennt Funktion der Person).</li>
+</ul>
+</div>
+
+<div class="section">
+<h2>Gedächtnis</h2>
+<ul>
+<li><b>Merk-dir-Befehl</b>:
+  <ul>
+    <li>„Merk dir: ich trinke morgens schwarzen Kaffee" → Vorliebe</li>
+    <li>„Merk dir zu Mueller: Bilanz braucht's bis Freitag" → Notiz an Mueller verknüpft + Aufgaben-Vorschlag</li>
+    <li>„Merk dir Anrede für Mueller: Du, Max" → setzt direkt die Anrede</li>
+  </ul>
+</li>
+<li><b>Recall</b>: „Was hatte ich zu Mueller?" → Volltext-Suche über Personen-Notizen, allgemeine Notizen, Todoist-Tasks, Conversation-Verlauf.</li>
+</ul>
+</div>
+
+<div class="section">
+<h2>Briefings</h2>
+<ul>
+<li><b>Morgenbriefing</b> bei Activate vor 11 Uhr: Datum + Wetter + Termine + Aufgaben + Steuer-News + Politik (in zufälliger Reihenfolge).</li>
+<li><b>Proaktive Updates</b> 12:30, 16:00, 18:00.</li>
+<li><b>Politik-Brief</b>: 3 wichtigste News (Inland + Wirtschaft Mix) + optional Goodnews am Ende.</li>
+<li><b>Wochenausblick</b>: Sonntag 18:00 automatisch + on-demand. Alle Termine der nächsten 7 Tage + alle offenen Aufgaben einzeln aufgelistet.</li>
+<li><b>Steuer-News</b>: BMF/BFH-RSS-Feeds zusammengefasst.</li>
+</ul>
+</div>
+
+<div class="section">
+<h2>Quiet Hours + Sicherheit</h2>
+<ul>
+<li><b>Quiet Hours</b>: Telegram still ab 21:00, Mac-UI ab 22:00, beide bis 7:00.</li>
+<li><b>WebSocket auf Localhost</b> gebunden — niemand im WLAN kann Jarvis ansteuern.</li>
+<li><b>FileVault aktiv</b>, Dateirechte 600 auf .env / config.json, sicherer .env-Parser im Launcher.</li>
+</ul>
+</div>
+
+<div class="section">
+<h2>Werkzeuge</h2>
+<ul>
+<li>Browser-Suche (DuckDuckGo) + URL öffnen + Webseite zusammenfassen.</li>
+<li>Bildschirm-Screenshot + Beschreibung via Claude Vision.</li>
+<li>macOS Notes.app-Notiz anlegen.</li>
+</ul>
+</div>
+
+<div class="section">
+<h2>Bekannte Baustellen</h2>
+<table>
+<tr><th>Issue</th><th>Beschreibung</th></tr>
+<tr><td>#53 HILO-IMAP</td><td>dotenv-Bug + Server-Sperre, warten auf Diagnose</td></tr>
+<tr><td>#57 Stage B</td><td>Semantische Vector-Search via ML-Embeddings (sentence-transformers + ChromaDB) — eigene Session</td></tr>
+<tr><td>#54 Mac-Restart</td><td>Chrome-Refresh nach Server-Neustart</td></tr>
+</table>
+</div>
+
+<div class="footer">
+JARVIS V2 &middot; persönlicher Butler-Assistent &middot; Repository: github.com/LadyLogicflow/jarvis-voice-assistant
+</div>
+</body>
+</html>
