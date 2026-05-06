@@ -32,8 +32,8 @@ jarvis.log
 # Conversation history persistence (M6.2)
 .jarvis_history.json
 
-# Mail monitor seen-UID tracker (issue #48)
-.jarvis_mail_seen.json
+# Mail monitor seen-UID tracker (issue #48) — multi-account wildcard
+.jarvis_mail_seen*.json
 
 # OS
 .DS_Store
@@ -46,3 +46,4 @@ Thumbs.db
 *.swo
 .jarvis_persons.json
 .jarvis_notes.json
+.jarvis_steuer_seen.json
