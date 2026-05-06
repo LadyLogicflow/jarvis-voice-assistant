@@ -144,11 +144,15 @@ on js_escape(s)
     set out to ""
     repeat with c in characters of s
         set ch to c as text
+        set n to ASCII number of ch
         if ch is "\\\\" then
             set out to out & "\\\\\\\\"
         else if ch is "\\"" then
             set out to out & "\\\\\\""
-        else if (ASCII number of ch) < 32 then
+        else if n = 9 or n = 10 or n = 13 then
+            -- Tab, LF, CR — iCloud-Sync can inject these; replace with space
+            set out to out & " "
+        else if n < 32 then
             set out to out & " "
         else
             set out to out & ch
@@ -177,7 +181,14 @@ async def read_all_contacts(force_refresh: bool = False) -> list[Contact]:
         return _CONTACTS_CACHE
     try:
         raw = await _run_osascript(_DUMP_ALL_AS, timeout=30.0)
-        data = json.loads(raw.strip())
+        try:
+            data = json.loads(raw.strip())
+        except json.JSONDecodeError as e:
+            log.warning(
+                f"contacts: JSON parse failed: {e}, "
+                f"raw[:200]={raw[:200]!r}"
+            )
+            return _CONTACTS_CACHE  # stale-on-error
     except Exception as e:
         log.warning(f"contacts.read_all_contacts failed: "
                     f"{type(e).__name__}: {e}")
@@ -192,20 +203,32 @@ async def read_all_contacts(force_refresh: bool = False) -> list[Contact]:
         )
         for item in data
     ]
+    if not contacts:
+        log.info(
+            "contacts: loaded 0 contacts — "
+            "Kontakte.app leer oder AppleScript-Ergebnis leer"
+        )
+    else:
+        log.info(f"contacts: loaded {len(contacts)} from Apple Contacts.app")
     _CONTACTS_CACHE = contacts
     _CACHE_TIMESTAMP = now
-    log.info(f"contacts: loaded {len(contacts)} from Apple Contacts.app")
     return contacts
 
 
 async def find_contacts_by_name(query: str) -> list[Contact]:
-    """Substring-Match (case-insensitive) auf Kontakt-Namen.
+    """Substring-Match (case-insensitive) auf Kontakt-Namen und Organisation.
+
+    Firmen-Kontakte haben oft keinen Personennamen — deshalb wird zusaetzlich
+    auf c.organization gematcht (Issue #71).
     Liefert ALLE Treffer — Disambiguation macht der Aufrufer."""
     if not query:
         return []
     q = query.lower().strip()
     contacts = await read_all_contacts()
-    return [c for c in contacts if q in c.name.lower()]
+    return [
+        c for c in contacts
+        if q in c.name.lower() or q in c.organization.lower()
+    ]
 
 
 async def find_contact_by_email(email: str) -> Contact | None:

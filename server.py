@@ -96,6 +96,7 @@ async def _lifespan(_app):  # type: ignore[no-untyped-def]  # AsyncGenerator
                 await t
             except (asyncio.CancelledError, Exception):
                 pass
+        await S.ai.close()
         await S.http.aclose()
 
 
