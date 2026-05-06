@@ -216,15 +216,43 @@ async def _process_new_uids(account: dict, client, uids: list[int]) -> None:
                     drift = None
                 if drift:
                     if drift["kind"] == "new_person":
+                        # Lass Claude Anrede / Funktion / Organisation aus
+                        # der Mail raten — Catrin bestaetigt dann ein
+                        # vollstaendigeres Profil.
+                        try:
+                            details = await contact_sync.extract_person_details(
+                                msg, sender_email, sender,
+                            )
+                        except Exception as e:
+                            log.warning(f"mail_monitor[{name}] extract_person_details failed: "
+                                        f"{type(e).__name__}: {e}")
+                            details = {
+                                "name": drift["name"], "email": drift["email"],
+                                "anrede": "", "funktion": "", "organization": "",
+                            }
                         pp = session_state.PendingPersonAction(
                             kind="new_person",
-                            name=drift["name"],
+                            name=details["name"] or drift["name"],
                             new_email=drift["email"],
                             extra_phones=drift.get("phones", []),
+                            anrede=details.get("anrede", ""),
+                            funktion=details.get("funktion", ""),
+                            organization=details.get("organization", ""),
                         )
+                        # Voice-Note mit den Detail-Feldern
+                        detail_bits: list[str] = []
+                        if details.get("funktion"):
+                            detail_bits.append(details["funktion"])
+                        if details.get("organization") and details["organization"] not in (
+                            details.get("funktion", "")
+                        ):
+                            detail_bits.append(details["organization"])
+                        detail_str = ", ".join(detail_bits)
                         spoken = (
-                            f"{drift['name']} ist mir noch nicht in den Kontakten. "
-                            f"Soll ich {drift['name']} mit der Adresse {drift['email']} anlegen?"
+                            f"{pp.name}"
+                            + (f" ({detail_str})" if detail_str else "")
+                            + " ist mir noch nicht in den Kontakten. "
+                            f"Soll ich anlegen?"
                         )
                     elif drift["kind"] == "email_drift":
                         c = drift["contact"]

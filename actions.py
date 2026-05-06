@@ -571,6 +571,20 @@ async def execute_action(action: dict) -> str:
             r"reservieren|bestellen|ueberweisen)\b",
             lower,
         ))
+        # Spezialfall: explizite Anrede-Pflege via "Anrede fuer X: ..."
+        # Diese setzt PersonProfile.anrede statt nur add_note.
+        if person_id and "anrede" in lower:
+            idx = lower.find("anrede")
+            after = text[idx + len("anrede"):].lstrip(":, fuerü")
+            # strip person-name aus dem Praefix wenn drin
+            if person_name and person_name.lower() in after.lower()[:len(person_name) + 5]:
+                after = after[after.lower().find(person_name.lower()) + len(person_name):].lstrip(":, ")
+            if after.strip():
+                prof = persons_db.get(person_id)
+                if prof:
+                    prof.anrede = after.strip()
+                    persons_db.upsert(prof)
+                    return f"Anrede fuer {person_name} gespeichert: {after.strip()}"
         # Speichern
         if person_id:
             persons_db.add_note(person_id, text)
@@ -738,23 +752,34 @@ async def execute_action(action: dict) -> str:
             return f"Es liegt kein Personen-Vorschlag vor, {pick_address()}."
 
         if pending.kind == "new_person":
-            # Apple Kontakt anlegen
+            # Apple Kontakt anlegen — mit organization wenn von Claude
+            # geraten. Anrede + Funktion gehen in die persons_db
+            # (Apple Contacts hat die Felder nicht 1:1).
             phones = pending.extra_phones or ([pending.new_phone] if pending.new_phone else [])
             new_id = await contacts.create_contact(
                 name=pending.name,
                 emails=[pending.new_email] if pending.new_email else None,
                 phones=phones,
+                organization=pending.organization,
             )
             cid = new_id or persons_db.new_id()
             persons_db.upsert(persons_db.PersonProfile(
                 contact_id=cid,
                 name=pending.name,
+                anrede=pending.anrede,
+                funktion=pending.funktion,
                 primary_email=pending.new_email,
                 secondary_phones=phones[1:] if len(phones) > 1 else [],
                 primary_phone=phones[0] if phones else "",
             ))
             session_state.clear_pending_person("default")
-            return f"{pending.name} ist angelegt — in Kontakte und in der Personen-DB."
+            extras = []
+            if pending.funktion:
+                extras.append(f"Funktion: {pending.funktion}")
+            if pending.anrede:
+                extras.append(f"Anrede: {pending.anrede}")
+            extra_str = " (" + ", ".join(extras) + ")" if extras else ""
+            return f"{pending.name} ist angelegt{extra_str}."
 
         if pending.kind == "email_drift":
             # Email an Apple-Kontakt anhaengen + persons_db updaten
@@ -845,8 +870,22 @@ async def execute_action(action: dict) -> str:
             "Antworte NUR mit dem Aufgabentext, KEINE Begruessung, KEINE Erklaerung, "
             "KEINE Anfuehrungszeichen, KEINE Tags."
         )
+        # Bonus: wenn Sender in persons_db, gib Claude die Funktion mit
+        # damit der Task praeziser benannt werden kann
+        # ("Rueckruf Steuerberater Mueller" statt nur "Rueckruf Mueller")
+        try:
+            import persons_db
+            from email.utils import parseaddr
+            addr = parseaddr(mail_data.get("sender", ""))[1].lower()
+            profile = persons_db.find_by_email(addr) if addr else None
+        except Exception:
+            profile = None
+        sender_block = (
+            f"Absender: {mail_data['sender']}"
+            + (f" — {profile.funktion}" if profile and profile.funktion else "")
+        )
         user_msg = (
-            f"Absender: {mail_data['sender']}\n"
+            f"{sender_block}\n"
             f"Betreff: {mail_data['subject']}\n"
             f"Inhalt: {mail_data['text'][:600]}"
         )
