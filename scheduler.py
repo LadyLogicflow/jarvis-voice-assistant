@@ -328,12 +328,12 @@ async def build_weekly_outlook() -> str:
 
     parts: list[str] = []
 
-    # 1. Todoist: offene + ueberfaellige + naechste Woche faellige
+    # 1. Todoist: ALLE offenen + ueberfaelligen Tasks (nicht nur 20)
     if S.TODOIST_TOKEN and S.TODOIST_TOKEN != "YOUR_TODOIST_API_TOKEN":
         try:
             tasks_text = await todoist_tools.get_tasks(
                 S.TODOIST_TOKEN,
-                max_tasks=20,
+                max_tasks=50,
                 project_ids=S.TODOIST_PROJECT_IDS or None,
                 section_ids_per_project=S.TODOIST_SECTIONS_PER_PROJECT or None,
             )
@@ -342,14 +342,16 @@ async def build_weekly_outlook() -> str:
         except Exception as e:
             log.warning(f"weekly outlook: tasks failed: {e}")
 
-    # 2. Google Calendar: Termine bis next_sunday
+    # 2. Google Calendar: alle Termine der naechsten 7 Tage (mindestens —
+    # bei Sonntag-Trigger sind das die naechsten 7 Tage Mo-So). max_results
+    # hoch genug damit Catrin's Vollkalender reinpasst.
     try:
-        days_ahead = (next_sunday - today).days + 1
+        days_ahead = max(7, (next_sunday - today).days + 1)
         cal_text = await google_calendar_tools.get_events(
-            days=max(7, days_ahead), max_results=30,
+            days=days_ahead, max_results=80,
         )
         if cal_text and cal_text != "KEINE_TERMINE":
-            parts.append(f"KALENDER NAECHSTE WOCHE:\n{cal_text}")
+            parts.append(f"KALENDER NAECHSTE 7 TAGE:\n{cal_text}")
     except Exception as e:
         log.warning(f"weekly outlook: calendar failed: {e}")
 
@@ -368,21 +370,31 @@ async def build_weekly_outlook() -> str:
     if not parts:
         return ""
 
-    # Lass Claude den Brief formulieren
+    # Lass Claude den Brief formulieren — Catrin will eine vollstaendige
+    # Auflistung von Terminen + Aufgaben, keine Prosa-Zusammenfassung.
     user_msg = "\n\n".join(parts)
     addr = pick_address()
     sys_prompt = (
-        f"Du bist Jarvis. Erstelle aus den folgenden Daten einen knappen "
-        f"Wochenausblick fuer {addr} — was kommt naechste Woche, worauf "
-        f"sollte sie sich konzentrieren. Maximal 5-6 Saetze, in Prosa "
-        f"(keine Aufzaehlung). Hebe 2-3 wichtige Schwerpunkte hervor, "
-        f"nicht alle Punkte einzeln. Ton: trocken-butlerhaft. "
-        f"Du darfst die Anrede {addr} verwenden. KEINE Tags."
+        f"Du bist Jarvis. Aus den folgenden Daten baust Du einen "
+        f"Wochenausblick fuer {addr}. STRENGES FORMAT:\n\n"
+        f"1. Eine kurze Eroeffnung (1 Satz), z.B. \"Naechste Woche, "
+        f"{addr}, stehen folgende Punkte an.\"\n\n"
+        f"2. Block 'TERMINE': nenne JEDEN einzelnen Termin der naechsten "
+        f"7 Tage als eigenen Halbsatz mit Datum/Wochentag + Uhrzeit + "
+        f"Titel. Keine Auswahl, keine Zusammenfassung — alle nennen.\n\n"
+        f"3. Block 'AUFGABEN': nenne JEDE offene Aufgabe einzeln. "
+        f"Ueberfaellige zuerst, dann nach Faelligkeitsdatum sortiert. "
+        f"Keine Auswahl — alle nennen.\n\n"
+        f"4. Wenn 'OFFENE PUNKTE MIT PERSONEN' vorhanden sind: kurzer "
+        f"Block dazu, max 1 Satz pro Person.\n\n"
+        f"5. Optional 1-2 Saetze am Schluss mit dem Schwerpunkt der Woche.\n\n"
+        f"Ton: trocken-butlerhaft, klar, vollstaendig. KEINE eckigen "
+        f"Klammern, KEINE Tags. Beende JEDEN Satz mit einem Punkt."
     )
     try:
         resp = await S.ai.messages.create(
             model="claude-haiku-4-5-20251001",
-            max_tokens=600,
+            max_tokens=1500,
             system=sys_prompt,
             messages=[{"role": "user", "content": user_msg}],
         )
