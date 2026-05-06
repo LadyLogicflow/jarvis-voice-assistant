@@ -317,6 +317,104 @@ async def refresh_steuer_brief() -> None:
         S.STEUER_BRIEF = ""
 
 
+async def build_weekly_outlook() -> str:
+    """Sammle die wichtigsten offenen Punkte fuer die NAECHSTE Woche
+    aus allen Quellen, lasse Claude einen kurzen Sprach-Brief
+    formulieren. Wird sowohl vom Sonntag-Scheduler als auch von der
+    Action WEEKLY_OUTLOOK genutzt."""
+    today = datetime.date.today()
+    next_monday = today + datetime.timedelta(days=(7 - today.weekday()) % 7 or 7)
+    next_sunday = next_monday + datetime.timedelta(days=6)
+
+    parts: list[str] = []
+
+    # 1. Todoist: offene + ueberfaellige + naechste Woche faellige
+    if S.TODOIST_TOKEN and S.TODOIST_TOKEN != "YOUR_TODOIST_API_TOKEN":
+        try:
+            tasks_text = await todoist_tools.get_tasks(
+                S.TODOIST_TOKEN,
+                max_tasks=20,
+                project_ids=S.TODOIST_PROJECT_IDS or None,
+                section_ids_per_project=S.TODOIST_SECTIONS_PER_PROJECT or None,
+            )
+            if tasks_text and tasks_text != "KEINE_TASKS":
+                parts.append(f"TODOIST OFFEN:\n{tasks_text}")
+        except Exception as e:
+            log.warning(f"weekly outlook: tasks failed: {e}")
+
+    # 2. Google Calendar: Termine bis next_sunday
+    try:
+        days_ahead = (next_sunday - today).days + 1
+        cal_text = await google_calendar_tools.get_events(
+            days=max(7, days_ahead), max_results=30,
+        )
+        if cal_text and cal_text != "KEINE_TERMINE":
+            parts.append(f"KALENDER NAECHSTE WOCHE:\n{cal_text}")
+    except Exception as e:
+        log.warning(f"weekly outlook: calendar failed: {e}")
+
+    # 3. persons_db: offene Punkte
+    try:
+        import persons_db
+        persons_open: list[str] = []
+        for prof in persons_db.all_profiles():
+            for pt in prof.open_points[-3:]:
+                persons_open.append(f"{prof.name}: {pt}")
+        if persons_open:
+            parts.append("OFFENE PUNKTE MIT PERSONEN:\n" + "\n".join(persons_open))
+    except Exception as e:
+        log.warning(f"weekly outlook: persons_db failed: {e}")
+
+    if not parts:
+        return ""
+
+    # Lass Claude den Brief formulieren
+    user_msg = "\n\n".join(parts)
+    addr = pick_address()
+    sys_prompt = (
+        f"Du bist Jarvis. Erstelle aus den folgenden Daten einen knappen "
+        f"Wochenausblick fuer {addr} — was kommt naechste Woche, worauf "
+        f"sollte sie sich konzentrieren. Maximal 5-6 Saetze, in Prosa "
+        f"(keine Aufzaehlung). Hebe 2-3 wichtige Schwerpunkte hervor, "
+        f"nicht alle Punkte einzeln. Ton: trocken-butlerhaft. "
+        f"Du darfst die Anrede {addr} verwenden. KEINE Tags."
+    )
+    try:
+        resp = await S.ai.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=600,
+            system=sys_prompt,
+            messages=[{"role": "user", "content": user_msg}],
+        )
+        return trim_to_complete_sentences(resp.content[0].text.strip())
+    except Exception as e:
+        log.warning(f"weekly outlook generation failed: {type(e).__name__}: {e}")
+        return ""
+
+
+async def weekly_outlook_scheduler() -> None:
+    """Sonntag 18:00: triggere den Wochenausblick automatisch via
+    den proactive-broadcaster (Mac-UI-Push, sofern verbunden)."""
+    triggered_for_week = ""  # ISO week (z.B. "2026-W18")
+    while True:
+        now = datetime.datetime.now()
+        # Sonntag = weekday 6, 18 Uhr ist der Trigger
+        iso_week = f"{now.isocalendar().year}-W{now.isocalendar().week:02d}"
+        if (now.weekday() == 6
+                and now.hour >= 18
+                and triggered_for_week != iso_week):
+            triggered_for_week = iso_week
+            log.info("weekly_outlook_scheduler: triggering Sunday-evening outlook")
+            try:
+                text = await build_weekly_outlook()
+                if text and _proactive_handler is not None:
+                    await _proactive_handler(text)
+            except Exception as e:
+                log.warning(f"weekly_outlook_scheduler failed: "
+                            f"{type(e).__name__}: {e}")
+        await asyncio.sleep(300)  # alle 5 Min reicht
+
+
 async def morning_brief_scheduler() -> None:
     """Long-running task: fetch the morning brief once per day at or
     after `S.MORNING_HOUR`. Refreshes BOTH the Steuer-Brief and the
