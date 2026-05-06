@@ -313,7 +313,13 @@ async def execute_action(action: dict) -> str:
         parts = p.split("|", 1)
         title = parts[0].strip()
         when = parts[1].strip() if len(parts) > 1 else "morgen 10 Uhr"
-        return await google_calendar_tools.add_event(title, when)
+        # Fix #73: Exception fangen und Catrin eine klare Fehlermeldung
+        # geben statt still zu scheitern (silent fail).
+        try:
+            return await google_calendar_tools.add_event(title, when)
+        except Exception as e:
+            log.warning("ADDCAL fehlgeschlagen: %s: %s", type(e).__name__, e)
+            return f"Termin konnte nicht angelegt werden: {e}"
 
     elif t == "NOTE":
         parts = p.split("|", 1)
