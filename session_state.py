@@ -76,7 +76,7 @@ class PendingCalendar:
 @dataclass
 class PendingPersonAction:
     """Vorgeschlagenes Update der Personen-DB / Apple Kontakte.
-    kind: 'new_person' | 'email_drift' | 'phone_drift'.
+    kind: 'new_person' | 'email_drift' | 'phone_drift' | 'call_choice'.
     Catrin sagt 'ja' / 'nein' im Decision-Tree."""
     kind: str
     contact_id: str = ""        # bei email/phone-drift gesetzt
@@ -84,6 +84,10 @@ class PendingPersonAction:
     new_email: str = ""
     new_phone: str = ""
     extra_phones: list[str] = field(default_factory=list)
+    # Bei kind='new_person' optional von Claude geratene Felder:
+    anrede: str = ""
+    funktion: str = ""
+    organization: str = ""
 
 
 @dataclass

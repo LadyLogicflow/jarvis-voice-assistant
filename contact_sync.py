@@ -90,6 +90,70 @@ def extract_phones(text: str) -> list[str]:
     return found
 
 
+async def extract_person_details(msg, sender_addr: str, sender_name: str) -> dict:
+    """Lass Claude aus einer Mail die Personen-Felder raten:
+    name, anrede, funktion, organization. Wird beim 'new_person'-
+    Vorschlag verwendet damit Catrin ein vollstaendiges Profil
+    bestaetigen kann (statt nur die Email-Adresse).
+
+    Liefert immer ein dict — bei LLM-Fehler zumindest mit name + email."""
+    base = {
+        "name": sender_name or sender_addr,
+        "email": sender_addr,
+        "anrede": "",
+        "funktion": "",
+        "organization": "",
+    }
+    body_text = _extract_text_from_email(msg)[:1500]
+    if not body_text:
+        return base
+    sys_prompt = (
+        "Du bist ein Mail-Analyst. Aus der folgenden Mail (Sender + Body) "
+        "extrahiere knapp die Personen-Felder fuer ein Kontakt-Profil. "
+        "Antworte AUSSCHLIESSLICH als JSON mit den Schluesseln "
+        "name, anrede, funktion, organization. "
+        "anrede: wie der Absender wahrscheinlich angeredet werden moechte "
+        "(z.B. 'Herr Mueller', 'Frau Dr. Schmidt', 'Du, Max'). Bei "
+        "informellem Tonfall Du-Form, sonst Sie-Form. "
+        "funktion: Position/Rolle aus der Signatur (z.B. 'Geschaeftsfuehrer "
+        "Mueller GmbH', 'Steuerberater Schmidt & Partner'). Leer wenn nicht "
+        "klar erkennbar. "
+        "organization: Firma/Organisation. Leer wenn unklar. "
+        "Wenn ein Feld nicht erkennbar ist, lass es leer (\"\"). "
+        "KEINE Erklaerungen, NUR das JSON."
+    )
+    user_msg = (
+        f"Sender-Display: {sender_name}\n"
+        f"Sender-Email: {sender_addr}\n\n"
+        f"Mail-Inhalt:\n{body_text}"
+    )
+    try:
+        resp = await S.ai.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=300,
+            system=sys_prompt,
+            messages=[{"role": "user", "content": user_msg}],
+        )
+        text = resp.content[0].text.strip()
+        # JSON kann von ```json``` Block umschlossen sein
+        import re as _re
+        m = _re.search(r"\{[\s\S]*\}", text)
+        if m:
+            import json as _json
+            parsed = _json.loads(m.group(0))
+            return {
+                "name": parsed.get("name") or base["name"],
+                "email": sender_addr,
+                "anrede": parsed.get("anrede", "").strip(),
+                "funktion": parsed.get("funktion", "").strip(),
+                "organization": parsed.get("organization", "").strip(),
+            }
+    except Exception as e:
+        log.warning(f"contact_sync.extract_person_details failed: "
+                    f"{type(e).__name__}: {e}")
+    return base
+
+
 async def check_mail_for_drift(msg, sender_addr: str, sender_name: str) -> dict | None:
     """Pruefe eine eingehende Mail auf Person-/Email-/Phone-Drift.
 
