@@ -21,6 +21,7 @@ import os
 import re
 from email.utils import parseaddr
 
+import contact_sync
 import mail_actions
 import mail_triage
 import session_state
@@ -183,7 +184,9 @@ async def _process_new_uids(account: dict, client, uids: list[int]) -> None:
                 continue
             raw = max(byte_items, key=len)
             msg = email.message_from_bytes(raw)
-            sender = _decode_header(parseaddr(msg.get("From", ""))[0]) or msg.get("From", "")
+            from_parsed = parseaddr(msg.get("From", ""))
+            sender = _decode_header(from_parsed[0]) or msg.get("From", "")
+            sender_email = (from_parsed[1] or "").lower()
             subject = _decode_header(msg.get("Subject"))
             if not sender and not subject:
                 # Parser came back empty — log the raw header so we can
@@ -197,6 +200,80 @@ async def _process_new_uids(account: dict, client, uids: list[int]) -> None:
             category = await _classify(sender, subject, "")
             log.info(f"mail_monitor[{name}] uid={uid} sender={sender!r} "
                      f"subject={subject!r} -> {category}")
+
+            # Personen-Drift-Detection (Issue #55) — nur fuer
+            # forward-eligible Mails, sonst flutet Werbung den Kontakt-
+            # Vorschlag. Wenn Drift erkannt: spezielle Voice-Note +
+            # pending_person_action setzen, normalen Push ueberspringen.
+            if category in S.MAIL_MONITOR_FORWARD:
+                try:
+                    drift = await contact_sync.check_mail_for_drift(
+                        msg, sender_email, sender,
+                    )
+                except Exception as e:
+                    log.warning(f"mail_monitor[{name}] drift check failed: "
+                                f"{type(e).__name__}: {e}")
+                    drift = None
+                if drift:
+                    if drift["kind"] == "new_person":
+                        pp = session_state.PendingPersonAction(
+                            kind="new_person",
+                            name=drift["name"],
+                            new_email=drift["email"],
+                            extra_phones=drift.get("phones", []),
+                        )
+                        spoken = (
+                            f"{drift['name']} ist mir noch nicht in den Kontakten. "
+                            f"Soll ich {drift['name']} mit der Adresse {drift['email']} anlegen?"
+                        )
+                    elif drift["kind"] == "email_drift":
+                        c = drift["contact"]
+                        old = (drift.get("old_emails") or [""])[0]
+                        pp = session_state.PendingPersonAction(
+                            kind="email_drift",
+                            contact_id=c.id,
+                            name=c.name,
+                            new_email=drift["new_email"],
+                        )
+                        spoken = (
+                            f"{c.name} schreibt jetzt von {drift['new_email']}"
+                            + (f" — bisher {old}" if old else "")
+                            + ". Soll ich die Adresse aktualisieren?"
+                        )
+                    elif drift["kind"] == "phone_drift":
+                        c = drift["contact"]
+                        pp = session_state.PendingPersonAction(
+                            kind="phone_drift",
+                            contact_id=c.id,
+                            name=c.name,
+                            new_phone=drift["new_phone"],
+                        )
+                        spoken = (
+                            f"{c.name} hat in der Signatur eine Nummer die ich "
+                            f"nicht kenne: {drift['new_phone']}. "
+                            f"Soll ich die im Kontakt ergaenzen?"
+                        )
+                    else:
+                        pp = None
+                        spoken = ""
+                    if pp:
+                        session_state.set_pending_person("default", pp)
+                        session_state.broadcast_active_mail(session_state.MailRef(
+                            account=name, uid=uid, sender=sender, subject=subject,
+                            date=msg.get("Date", ""),
+                            message_id=msg.get("Message-ID", ""),
+                            references=msg.get("References", ""),
+                        ))
+                        if not S.is_quiet_hours():
+                            await telegram_bot.send_user_voice(spoken, caption=spoken)
+                        if not S.is_mac_quiet_hours() and _mail_alert_handler is not None:
+                            try:
+                                await _mail_alert_handler(spoken)
+                            except Exception as e:
+                                log.warning(f"mail_monitor[{name}] mac alert (drift) failed: "
+                                            f"{type(e).__name__}: {e}")
+                        log.info(f"mail_monitor[{name}] uid={uid}: drift {drift['kind']} pending")
+                        continue
 
             # Kalender-Einladung erkannt? (Stage 5)
             ics_invite = mail_actions.extract_calendar_invite(msg)
