@@ -52,17 +52,49 @@ def _load_business_context() -> str:
         return ""
 
 
+def _person_block_for_mail(mail_data: dict) -> str:
+    """Wenn der Sender in persons_db gepflegt ist, liefere einen
+    knappen Kontext-Block fuer den LLM-Prompt: bevorzugte Anrede,
+    Funktion, offene Punkte. Sonst leerer String."""
+    try:
+        import persons_db
+        from email.utils import parseaddr
+        sender_full = mail_data.get("sender", "")
+        addr = parseaddr(sender_full)[1].lower()
+        if not addr:
+            return ""
+        profile = persons_db.find_by_email(addr)
+        if not profile:
+            return ""
+        bits: list[str] = []
+        if profile.anrede:
+            bits.append(f"Bevorzugte Anrede: {profile.anrede}")
+        if profile.funktion:
+            bits.append(f"Funktion: {profile.funktion}")
+        if profile.open_points:
+            bits.append(
+                "Offene Punkte mit dieser Person: "
+                + "; ".join(profile.open_points[:3])
+            )
+        if not bits:
+            return ""
+        return "\n\nZUSATZWISSEN ZUM EMPFAENGER:\n- " + "\n- ".join(bits)
+    except Exception:
+        return ""
+
+
 async def _generate_draft_body(mail_data: dict, instruction: str = "") -> str:
     """Lass Claude einen Antwort-Entwurf basierend auf Original-Mail
     erstellen. instruction ist optional — wenn leer, schlaegt Jarvis
     proaktiv eine sinnvolle Antwort vor und nutzt dabei den
-    business_context.md falls vorhanden.
+    business_context.md + Personen-DB falls vorhanden.
 
     Liefert reinen Mail-Text — ODER einen NEED_INPUT-Marker, wenn
     Claude erkennt dass er ohne Eckpunkte von Catrin kein guter
     Vorschlag liefern kann (z.B. weil weder Mail noch Kontext einen
     Sachverhalt nahelegen, dem er einfach folgen koennte)."""
     business = _load_business_context()
+    person = _person_block_for_mail(mail_data)
     business_block = (
         f"\n\nGESCHAEFTLICHER KONTEXT (nutze diese Hinweise wenn die "
         f"Original-Mail einen Sachverhalt anspricht der dort beschrieben ist):\n\n"
@@ -79,6 +111,7 @@ async def _generate_draft_body(mail_data: dict, instruction: str = "") -> str:
         f"Gruessen' oder 'Beste Gruesse'), {S.USER_NAME}. KEINE Tags, KEINE "
         f"Erklaerungen davor oder dahinter, NUR der Mail-Text."
         f"{business_block}"
+        f"{person}"
         f"\n\nWICHTIG — Wenn KEIN Vorschlag moeglich:\n"
         f"Wenn die Original-Mail einen Sachverhalt anspricht den weder der "
         f"GESCHAEFTLICHE KONTEXT abdeckt noch Du aus dem Mail-Inhalt allein "
@@ -489,6 +522,87 @@ async def execute_action(action: dict) -> str:
         if not pending:
             return "Kein Entwurf zum Verwerfen."
         return f"Vergessen, {pick_address()}."
+
+    elif t == "CALL":
+        # "rufe X an" — Lookup, eine Nummer -> direkt waehlen, mehrere
+        # Nummern -> Liste mit Indizes zurueckgeben, Catrin sagt "die
+        # erste" / "Mobil" -> CALL_DIAL.
+        import phone
+        query = p.strip()
+        if not query:
+            return f"Wen soll ich anrufen, {pick_address()}?"
+        results = await phone.find_callable(query)
+        if not results:
+            return f"Ich finde niemanden mit dem Namen {query} in deinen Kontakten."
+        if len(results) == 1:
+            name, label, number = results[0]
+            ok = await phone.start_call(number)
+            session_state.clear_pending_person("default")  # falls noch was offen
+            return (f"Rufe {name} an: {number}." if ok
+                    else f"Konnte den Anruf nicht starten — die Nummer {number} ist im Speicher.")
+        # Mehrere Nummern -> Auswahl
+        # Stash in session_state.pending_person als "call_choices"-Hack ist haesslich;
+        # sauberer: PendingCall in session_state. Aber pragmatisch: in active_mail-Slot
+        # missbrauchen waere falsch. Ich nutze pending_person mit kind="call_choice".
+        # Dazu speichere ich die Liste als JSON-string in extra_phones (uebergangsweise).
+        import json as _json
+        choices_json = _json.dumps(results)
+        session_state.set_pending_person(
+            "default",
+            session_state.PendingPersonAction(
+                kind="call_choice",
+                name=query,
+                extra_phones=[choices_json],
+            ),
+        )
+        lines = [f"{i + 1}. {name} ({label}): {number}"
+                 for i, (name, label, number) in enumerate(results)]
+        return (
+            f"Mehrere Nummern fuer {query}:\n"
+            + "\n".join(lines)
+            + "\nWelche soll ich waehlen?"
+        )
+
+    elif t == "CALL_DIAL":
+        # Catrin hat aus der Auswahl-Liste eine Nummer gewaehlt.
+        # Payload kann sein: "1" / "2" / "die erste" / "Mobil" / die Nummer selbst
+        import phone
+        state = session_state.get("default")
+        pending = state.pending_person
+        if not pending or pending.kind != "call_choice" or not pending.extra_phones:
+            return f"Es liegt keine Telefonnummern-Auswahl vor, {pick_address()}."
+        import json as _json
+        try:
+            choices = _json.loads(pending.extra_phones[0])
+        except Exception:
+            session_state.clear_pending_person("default")
+            return "Die Auswahl-Liste ist beschaedigt — sag bitte nochmal 'rufe X an'."
+        chosen = None
+        sel = p.strip().lower()
+        # Index?
+        try:
+            idx = int(sel.split()[0]) - 1
+            if 0 <= idx < len(choices):
+                chosen = choices[idx]
+        except (ValueError, IndexError):
+            pass
+        if chosen is None:
+            # Label-Match (z.B. "primary" / "Mobil") oder Direktwahl
+            for c in choices:
+                _name, label, number = c
+                if (sel in label.lower()
+                        or sel in number
+                        or sel in {"erste", "1.", "ersten"} and choices.index(c) == 0
+                        or sel in {"zweite", "2.", "zweiten"} and choices.index(c) == 1):
+                    chosen = c
+                    break
+        if chosen is None:
+            return f"Konnte aus '{p}' keine Nummer ableiten — sag '1', '2' oder den Label-Namen."
+        name, label, number = chosen
+        session_state.clear_pending_person("default")
+        ok = await phone.start_call(number)
+        return (f"Rufe {name} an: {number}." if ok
+                else f"Konnte den Anruf nicht starten — die Nummer {number}.")
 
     elif t == "ACCEPT_PERSON_ACTION":
         # Bestaetigt den vorgeschlagenen Personen-Update aus
