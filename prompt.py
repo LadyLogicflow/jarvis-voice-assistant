@@ -213,6 +213,21 @@ def build_system_prompt() -> str:
             f"\n  Wenn {addr} \"eintragen\" / \"annehmen\" / \"ja\" sagt -> [ACTION:ACCEPT_CALENDAR_INVITE]"
             f"\n  Wenn {addr} \"ablehnen\" / \"nein\" / \"nicht eintragen\" sagt -> [ACTION:DECLINE_CALENDAR_INVITE]"
         )
+    _pper = _state.pending_person
+    if _pper:
+        if _pper.kind == "new_person":
+            desc_pp = f"Neue Person {_pper.name} (Mail {_pper.new_email}) in Kontakte anlegen"
+        elif _pper.kind == "email_drift":
+            desc_pp = f"Mailadresse von {_pper.name} aktualisieren auf {_pper.new_email}"
+        elif _pper.kind == "phone_drift":
+            desc_pp = f"Telefon-Nummer {_pper.new_phone} bei {_pper.name} ergaenzen"
+        else:
+            desc_pp = "Personen-Vorschlag"
+        active_mail_block += (
+            f"\nPending-Personen-Aktion: {desc_pp}"
+            f"\n  Wenn {addr} \"ja\" / \"anlegen\" / \"aktualisieren\" / \"ergaenzen\" sagt -> [ACTION:ACCEPT_PERSON_ACTION]"
+            f"\n  Wenn {addr} \"nein\" / \"verwerfen\" / \"lass\" sagt -> [ACTION:DECLINE_PERSON_ACTION]"
+        )
 
     hour = int(time.strftime("%H"))
     is_evening = hour >= 18
@@ -296,6 +311,8 @@ AKTIONEN - Schreibe die passende Aktion ans ENDE deiner Antwort. Der Text VOR de
 [ACTION:DRAFT_CANCEL] - Verwirft den aktiven Pending-Entwurf, ohne abzulegen. Nutze wenn {addr} sagt "vergiss den Entwurf", "nicht antworten doch nicht", "abbrechen".
 [ACTION:ACCEPT_CALENDAR_INVITE] - Legt den vorgeschlagenen Kalender-Termin (aus einer Mail-Einladung, siehe Pending-Termin-Einladung unter AKTUELLE DATEN) im Google Kalender an, markiert die Mail als gelesen. Nutze wenn {addr} sagt "eintragen", "ja eintragen", "annehmen". KEIN Text davor.
 [ACTION:DECLINE_CALENDAR_INVITE] - Verwirft die vorgeschlagene Kalender-Einladung, markiert die Mail als gelesen. Nutze wenn {addr} sagt "ablehnen", "nein nicht eintragen", "lass den Termin".
+[ACTION:ACCEPT_PERSON_ACTION] - Bestaetigt einen vorgeschlagenen Personen-Update (neuer Kontakt anlegen / Email-Drift aktualisieren / Telefon-Drift ergaenzen — siehe Pending-Personen-Aktion unter AKTUELLE DATEN). Nutze wenn {addr} sagt "ja", "anlegen", "aktualisieren", "ergaenzen". KEIN Text davor.
+[ACTION:DECLINE_PERSON_ACTION] - Verwirft den vorgeschlagenen Personen-Update. Nutze wenn {addr} sagt "nein", "verwerfen", "lass". KEIN Text davor.
 
 MAIL-WORKFLOW (Decision-Tree nach Mail-Eingang):
 Wenn eine aktive Mail existiert (siehe "Aktive Mail" unter AKTUELLE DATEN), reagiere auf folgende Befehle — {addr} kann SOFORT entscheiden, OHNE erst "vorlesen" zu sagen.

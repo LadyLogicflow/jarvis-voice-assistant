@@ -490,6 +490,72 @@ async def execute_action(action: dict) -> str:
             return "Kein Entwurf zum Verwerfen."
         return f"Vergessen, {pick_address()}."
 
+    elif t == "ACCEPT_PERSON_ACTION":
+        # Bestaetigt den vorgeschlagenen Personen-Update aus
+        # contact_sync. Drei Faelle: new_person / email_drift / phone_drift.
+        import contacts
+        import contact_sync  # noqa: F401  (touch import for traceability)
+        import persons_db
+        state = session_state.get("default")
+        pending = state.pending_person
+        if not pending:
+            return f"Es liegt kein Personen-Vorschlag vor, {pick_address()}."
+
+        if pending.kind == "new_person":
+            # Apple Kontakt anlegen
+            phones = pending.extra_phones or ([pending.new_phone] if pending.new_phone else [])
+            new_id = await contacts.create_contact(
+                name=pending.name,
+                emails=[pending.new_email] if pending.new_email else None,
+                phones=phones,
+            )
+            cid = new_id or persons_db.new_id()
+            persons_db.upsert(persons_db.PersonProfile(
+                contact_id=cid,
+                name=pending.name,
+                primary_email=pending.new_email,
+                secondary_phones=phones[1:] if len(phones) > 1 else [],
+                primary_phone=phones[0] if phones else "",
+            ))
+            session_state.clear_pending_person("default")
+            return f"{pending.name} ist angelegt — in Kontakte und in der Personen-DB."
+
+        if pending.kind == "email_drift":
+            # Email an Apple-Kontakt anhaengen + persons_db updaten
+            await contacts.add_email_to_contact(pending.contact_id, pending.new_email)
+            existing = persons_db.get(pending.contact_id)
+            if existing:
+                persons_db.promote_email_to_primary(pending.contact_id, pending.new_email)
+            else:
+                persons_db.upsert(persons_db.PersonProfile(
+                    contact_id=pending.contact_id,
+                    name=pending.name,
+                    primary_email=pending.new_email,
+                ))
+            session_state.clear_pending_person("default")
+            return f"Adresse aktualisiert. {pending.new_email} ist die neue primaere Mail von {pending.name}."
+
+        if pending.kind == "phone_drift":
+            await contacts.add_phone_to_contact(pending.contact_id, pending.new_phone)
+            existing = persons_db.get(pending.contact_id)
+            if existing:
+                persons_db.add_secondary_phone(pending.contact_id, pending.new_phone)
+            else:
+                persons_db.upsert(persons_db.PersonProfile(
+                    contact_id=pending.contact_id,
+                    name=pending.name,
+                    primary_phone=pending.new_phone,
+                ))
+            session_state.clear_pending_person("default")
+            return f"Nummer {pending.new_phone} bei {pending.name} eingetragen."
+
+        session_state.clear_pending_person("default")
+        return "Unbekannter Personen-Vorschlag — verworfen."
+
+    elif t == "DECLINE_PERSON_ACTION":
+        session_state.clear_pending_person("default")
+        return f"Verworfen, {pick_address()}."
+
     elif t == "ACCEPT_CALENDAR_INVITE":
         # Vorgeschlagenen Kalender-Eintrag anlegen + Mail markieren.
         state = session_state.get("default")

@@ -74,12 +74,26 @@ class PendingCalendar:
 
 
 @dataclass
+class PendingPersonAction:
+    """Vorgeschlagenes Update der Personen-DB / Apple Kontakte.
+    kind: 'new_person' | 'email_drift' | 'phone_drift'.
+    Catrin sagt 'ja' / 'nein' im Decision-Tree."""
+    kind: str
+    contact_id: str = ""        # bei email/phone-drift gesetzt
+    name: str = ""
+    new_email: str = ""
+    new_phone: str = ""
+    extra_phones: list[str] = field(default_factory=list)
+
+
+@dataclass
 class SessionState:
     """Alles was eine Session an strukturiertem State haelt. Erweiterbar
     fuer kuenftige Workflows (active_call, pending_appointment, ...)."""
     active_mail: Optional[MailRef] = None
     pending_draft: Optional[PendingDraft] = None
     pending_calendar: Optional[PendingCalendar] = None
+    pending_person: Optional[PendingPersonAction] = None
     recent_mails: list[MailRef] = field(default_factory=list)
 
 
@@ -113,6 +127,7 @@ def _serialize(state: SessionState) -> dict:
         "active_mail": asdict(state.active_mail) if state.active_mail else None,
         "pending_draft": asdict(state.pending_draft) if state.pending_draft else None,
         "pending_calendar": asdict(state.pending_calendar) if state.pending_calendar else None,
+        "pending_person": asdict(state.pending_person) if state.pending_person else None,
         "recent_mails": [asdict(m) for m in state.recent_mails],
     }
 
@@ -121,11 +136,13 @@ def _deserialize(raw: dict) -> SessionState:
     am = raw.get("active_mail")
     pd = raw.get("pending_draft")
     pc = raw.get("pending_calendar")
+    pp = raw.get("pending_person")
     rm = raw.get("recent_mails") or []
     return SessionState(
         active_mail=MailRef(**am) if am else None,
         pending_draft=PendingDraft(**pd) if pd else None,
         pending_calendar=PendingCalendar(**pc) if pc else None,
+        pending_person=PendingPersonAction(**pp) if pp else None,
         recent_mails=[MailRef(**m) for m in rm if isinstance(m, dict)],
     )
 
@@ -230,6 +247,18 @@ def set_pending_calendar(session_id: str, cal: PendingCalendar) -> None:
 def clear_pending_calendar(session_id: str) -> None:
     state = get(session_id)
     state.pending_calendar = None
+    _save(session_id)
+
+
+def set_pending_person(session_id: str, action: PendingPersonAction) -> None:
+    state = get(session_id)
+    state.pending_person = action
+    _save(session_id)
+
+
+def clear_pending_person(session_id: str) -> None:
+    state = get(session_id)
+    state.pending_person = None
     _save(session_id)
 
 
