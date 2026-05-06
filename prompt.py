@@ -317,6 +317,7 @@ AKTIONEN - Schreibe die passende Aktion ans ENDE deiner Antwort. Der Text VOR de
 [ACTION:RECALL] suchbegriff - Volltext-Suche in Notizen + Vorlieben + Personen-DB. Trigger: "Was hatte ich zu X?", "Was weisst Du ueber X?", "Erinner mich an ...". Beispiel: [ACTION:RECALL] Mueller
 [ACTION:WEEKLY_OUTLOOK] - Liefert einen Wochenausblick fuer die NAECHSTE Woche (offene Tasks + Termine + offene Punkte mit Personen). Nutze wenn {addr} sagt "Wochenausblick", "naechste Woche", "Was steht naechste Woche an?". Wird zusaetzlich automatisch Sonntag 18:00 gepushed.
 [ACTION:CALL] name - Sucht eine Person in den Kontakten und initiiert ein Telefonat ueber FaceTime/iPhone-Continuity. Bei einer Nummer: direkt waehlen. Bei mehreren: Auswahl-Liste. Nutze wenn {addr} sagt "rufe ... an", "telefonier mit ...". Beispiel: [ACTION:CALL] Mueller
+[ACTION:CONTACTS_INFO] - Aggregierte Statistik ueber Apple Kontakte + Personen-DB (Anzahl gesamt, mit Mail, mit Telefon, in DB gepflegt). Nutze wenn {addr} sagt "Wie viele Kontakte habe ich?", "Kontakte-Statistik", "Wie viele Mandanten habe ich gepflegt?". KEIN Text davor.
 [ACTION:CALL_DIAL] auswahl - Waehlt aus der gerade angezeigten Telefonnummern-Liste eine Nummer. Auswahl kann ein Index sein ("1") oder ein Label ("Mobil") oder Stichwort ("die erste"). Nutze NUR wenn unter AKTUELLE DATEN eine offene Telefonnummern-Auswahl steht.
 
 MAIL-WORKFLOW (Decision-Tree nach Mail-Eingang):

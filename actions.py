@@ -659,6 +659,41 @@ async def execute_action(action: dict) -> str:
             return f"Ich finde nichts zu {query}, {pick_address()}."
         return f"Zu {query} habe ich:\n" + "\n".join(f"- {r}" for r in results[:15])
 
+    elif t == "CONTACTS_INFO":
+        # Aggregierte Statistik ueber Apple Kontakte + persons_db.
+        # Nutze wenn {addr} fragt "Wie viele Kontakte habe ich?",
+        # "Kontakte-Statistik", "Wie viele Mandanten habe ich gepflegt?".
+        import contacts
+        import persons_db
+        try:
+            apple = await contacts.read_all_contacts()
+        except Exception as e:
+            log.warning(f"CONTACTS_INFO contacts.read_all_contacts failed: "
+                        f"{type(e).__name__}: {e}")
+            return (
+                f"Ich kann gerade nicht auf die Apple-Kontakte zugreifen, "
+                f"{pick_address()}. Stelle sicher dass die Berechtigung "
+                f"in Systemeinstellungen → Datenschutz → Kontakte "
+                f"fuer Terminal/Python aktiviert ist."
+            )
+        if not apple:
+            return (
+                f"Apple Kontakte liefert keine Eintraege, {pick_address()}. "
+                f"Vermutlich fehlt die Berechtigung — pruefe Systemeinstellungen "
+                f"→ Datenschutz → Kontakte."
+            )
+        total = len(apple)
+        with_mail = sum(1 for c in apple if c.emails)
+        with_phone = sum(1 for c in apple if c.phones)
+        in_db = len(persons_db.all_profiles())
+        lines = [
+            f"Insgesamt {total} Kontakte in Apple Kontakte.",
+            f"Davon {with_mail} mit Mailadresse, {with_phone} mit Telefonnummer.",
+        ]
+        if in_db:
+            lines.append(f"In der Personen-DB hast Du {in_db} Profile zusaetzlich gepflegt.")
+        return " ".join(lines)
+
     elif t == "CALL":
         # "rufe X an" — Lookup, eine Nummer -> direkt waehlen, mehrere
         # Nummern -> Liste mit Indizes zurueckgeben, Catrin sagt "die
