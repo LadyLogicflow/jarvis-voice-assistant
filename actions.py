@@ -331,10 +331,21 @@ async def execute_action(action: dict) -> str:
     elif t == "STEUERNEWS":
         # Use cached brief if fresh, otherwise fetch live.
         from scheduler import refresh_steuer_brief  # local import: avoid cycles
+        import steuer_news as _sn
         today = datetime.date.today().isoformat()
-        if S.STEUER_BRIEF and S.STEUER_BRIEF_DATE == today:
-            return S.STEUER_BRIEF
-        await refresh_steuer_brief()
+        # Pruefe ob alle aktuellen Meldungen bereits gelesen wurden
+        # (Issue #75). Nur pruefen wenn kein frischer Cache vorhanden.
+        if not (S.STEUER_BRIEF and S.STEUER_BRIEF_DATE == today):
+            raw_check = await _sn.fetch_all_sources(mark_seen=False)
+            if raw_check == _sn.BEREITS_GELESEN:
+                return (
+                    "Die Steuernews sind dieselben wie zuletzt — "
+                    "soll ich sie trotzdem vorlesen?"
+                )
+            # Nicht bereits gesehen: Brief auffrischen + Hashes persistieren
+            await refresh_steuer_brief()
+            # Hashes jetzt nach dem Auffrischen speichern
+            await _sn.fetch_all_sources(mark_seen=True)
         return S.STEUER_BRIEF if S.STEUER_BRIEF else "Keine neuen Veroeffentlichungen abrufbar."
 
     elif t == "READ_MAIL":
@@ -459,7 +470,14 @@ async def execute_action(action: dict) -> str:
         # Ablage im Pending-Slot.
         acc = mail_actions._account_by_name(active.account)
         from_addr = (acc or {}).get("user", "")
-        to_addr = active.sender or mail_data.get("sender", "")
+        # RFC 2822: Reply-To hat Vorrang vor From fuer Antwort-Adresse
+        # (Issue #74). Fallback-Kette: reply_to -> sender (aus active) ->
+        # sender-Feld aus dem geladenen Mail-Body.
+        to_addr = (
+            mail_data.get("reply_to", "").strip()
+            or active.sender
+            or mail_data.get("sender", "")
+        )
         subject = active.subject or mail_data.get("subject", "")
         session_state.set_pending_draft("default", session_state.PendingDraft(
             account=active.account,
@@ -470,7 +488,7 @@ async def execute_action(action: dict) -> str:
             references=active.references,
         ))
         return (
-            f"Mein Vorschlag:\n\n{draft_body}\n\n"
+            f"Mein Vorschlag (Antwort an: {to_addr}):\n\n{draft_body}\n\n"
             f"Soll ich das so freigeben?"
         )
 

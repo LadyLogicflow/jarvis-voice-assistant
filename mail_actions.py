@@ -154,6 +154,10 @@ async def read_mail_body(account_name: str, uid: int) -> dict:
         raw = max(byte_items, key=len)
         msg = email.message_from_bytes(raw)
         sender = _decode_header(parseaddr(msg.get("From", ""))[0]) or msg.get("From", "")
+        # reply_to: the address Jarvis should direct replies to.
+        # RFC 2822: Reply-To has precedence over From for replies.
+        raw_reply_to = msg.get("Reply-To", "")
+        reply_to = parseaddr(raw_reply_to)[1].strip() if raw_reply_to else ""
         subject = _decode_header(msg.get("Subject"))
         date = msg.get("Date", "")
         body = _extract_text_from_email(msg)
@@ -162,6 +166,7 @@ async def read_mail_body(account_name: str, uid: int) -> dict:
             body = body[:MAX_BODY_CHARS].rsplit(" ", 1)[0] + " ..."
         return {
             "sender": sender,
+            "reply_to": reply_to,
             "subject": subject,
             "date": date,
             "text": body,
