@@ -109,7 +109,7 @@ _states: dict[str, SessionState] = {}
 # Wird von server.py via register_session / deregister_session gepflegt.
 # broadcast_active_mail benutzt dieses Set um alte/inaktive Sessions zu
 # uebergehen (Fix Issue #89).
-_active_sessions: set[str] = {}
+_active_sessions: set[str] = set()
 
 
 def _state_dir() -> str:
