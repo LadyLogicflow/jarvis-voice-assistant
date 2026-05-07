@@ -17,6 +17,7 @@ modules created in M3.1:
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import os
 import subprocess
 import time
@@ -343,7 +344,9 @@ async def websocket_endpoint(ws: WebSocket) -> None:
             except Exception:
                 break
 
-    asyncio.create_task(keepalive())
+    # Issue #96: Referenz speichern, damit wir den Task beim Disconnect
+    # explizit cancellen koennen und kein "Geister-Task" weiterlaeuft.
+    ka_task = asyncio.create_task(keepalive())
 
     def _cancel_inflight(reason: str) -> bool:
         task = _inflight_tasks.get(session_id)
@@ -390,6 +393,10 @@ async def websocket_endpoint(ws: WebSocket) -> None:
         conversations.pop(session_id, None)
         if ws in active_clients:
             active_clients.remove(ws)
+    finally:
+        ka_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await ka_task
 
 
 app.mount(
