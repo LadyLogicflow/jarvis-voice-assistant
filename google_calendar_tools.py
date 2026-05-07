@@ -42,22 +42,34 @@ def _get_service():  # type: ignore[no-untyped-def]  # googleapiclient Resource
                 # inzwischen schon erneuert hat.
                 creds = Credentials.from_authorized_user_file(TOKEN_PATH, SCOPES)
                 if not creds.valid:
-                    creds.refresh(Request())
-                    # Fix #61: Atomares Schreiben via tmp-Datei + os.replace()
-                    # verhindert korruptes token.json bei Crash mid-write.
-                    tmp_fd, tmp_path = tempfile.mkstemp(
-                        dir=os.path.dirname(TOKEN_PATH), suffix=".tmp"
-                    )
-                    try:
-                        with os.fdopen(tmp_fd, "w") as f:
-                            f.write(creds.to_json())
-                        os.replace(tmp_path, TOKEN_PATH)
-                    except Exception:
+                    # Fix #85: refresh_token kann None sein wenn das OAuth-
+                    # Access widerrufen wurde. In diesem Fall wuerde
+                    # creds.refresh(Request()) mit einem unklaren RefreshError
+                    # fehlschlagen. Stattdessen explizit pruefen und eine
+                    # sprechende Exception werfen.
+                    if creds.expired and creds.refresh_token:
+                        creds.refresh(Request())
+                        # Fix #61: Atomares Schreiben via tmp-Datei + os.replace()
+                        # verhindert korruptes token.json bei Crash mid-write.
+                        tmp_fd, tmp_path = tempfile.mkstemp(
+                            dir=os.path.dirname(TOKEN_PATH), suffix=".tmp"
+                        )
                         try:
-                            os.unlink(tmp_path)
-                        except OSError:
-                            pass
-                        raise
+                            with os.fdopen(tmp_fd, "w") as f:
+                                f.write(creds.to_json())
+                            os.replace(tmp_path, TOKEN_PATH)
+                        except Exception:
+                            try:
+                                os.unlink(tmp_path)
+                            except OSError:
+                                pass
+                            raise
+                    else:
+                        raise RuntimeError(
+                            "Google OAuth-Token abgelaufen und kein refresh_token "
+                            "vorhanden. Bitte 'python3 scripts/google-auth.py' "
+                            "erneut ausführen."
+                        )
         else:
             raise RuntimeError(
                 "Google-Kalender nicht autorisiert. "
@@ -68,7 +80,7 @@ def _get_service():  # type: ignore[no-untyped-def]  # googleapiclient Resource
 
 async def get_events(days: int = 7, max_results: int = 10) -> str:
     """Fetch upcoming calendar events."""
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     return await loop.run_in_executor(None, _fetch_events, days, max_results)
 
 
@@ -125,7 +137,7 @@ async def add_event(title: str, when: str, duration_h: float = 1.0) -> str:
         RuntimeError: Wenn der Google-Kalender nicht autorisiert ist.
         Exception: Bei API-Fehlern vom Google Calendar.
     """
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     return await loop.run_in_executor(None, _add_event, title, when, duration_h)
 
 
