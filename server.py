@@ -264,18 +264,34 @@ async def process_message(session_id: str, user_text: str, ws: WebSocket) -> Non
         await speak(summary, ws, display=summary)
         return
 
+    # Fire-and-forget actions: if the LLM already pre-announced the action
+    # (spoken_text non-empty), suppress the success confirmation — only
+    # speak when there's a question ("?") or an error in the result.
+    # This prevents the double-announcement pattern Catrin reported:
+    # "Ich merke mir das." + "Notiert in den Notizen." = two identical beats.
+    _SILENT_ON_SUCCESS = {
+        "MEMORIZE", "ADDTASK", "DONETASK", "ADDCAL", "NOTE",
+        "MARK_MAIL_READ", "MAIL_TO_TASK",
+        "DRAFT_APPROVE", "DRAFT_CANCEL",
+        "ACCEPT_CALENDAR_INVITE", "DECLINE_CALENDAR_INVITE",
+        "ACCEPT_PERSON_ACTION", "DECLINE_PERSON_ACTION",
+    }
+    if action["type"] in _SILENT_ON_SUCCESS and spoken_text:
+        if "?" not in action_result and "fehlgeschlagen" not in action_result:
+            return  # LLM pre-announced; success needs no repetition
     # These actions return text that's already user-friendly — pass
     # through verbatim. Forcing them through the summary pipeline below
     # would (a) mangle long content like full mail bodies, (b) clip via
-    # max_tokens, (c) waste an LLM round-trip. Mail-decision-tree
-    # actions (READ_MAIL, SUMMARIZE_MAIL, DRAFT_*, MAIL_TO_TASK,
-    # MARK_MAIL_READ) are explicitly user-facing strings and should
-    # never be re-summarized.
+    # max_tokens, (c) waste an LLM round-trip.
     if action["type"] in (
         "STEUERNEWS", "ADDTASK", "DONETASK", "ADDCAL", "NOTE",
         "READ_MAIL", "SUMMARIZE_MAIL",
         "DRAFT_REPLY", "DRAFT_REVISE", "DRAFT_APPROVE", "DRAFT_CANCEL",
         "MAIL_TO_TASK", "MARK_MAIL_READ",
+        "MEMORIZE", "RECALL",
+        "ACCEPT_CALENDAR_INVITE", "DECLINE_CALENDAR_INVITE",
+        "ACCEPT_PERSON_ACTION", "DECLINE_PERSON_ACTION",
+        "WEEKLY_OUTLOOK", "CONTACTS_INFO", "LOOKUP_CONTACT",
     ):
         await append_message(session_id, "assistant", action_result)
         await speak(action_result, ws, display=action_result)
@@ -308,10 +324,10 @@ async def process_message(session_id: str, user_text: str, ws: WebSocket) -> Non
         )
     else:
         summary_system = (
-            f"Du bist Jarvis. Fasse die folgenden Informationen KURZ auf Deutsch zusammen, "
-            f"maximal 2-3 Saetze, im Jarvis-Stil. Sprich den Nutzer als {addr} an. "
-            f"KEINE Begruessung wie 'Guten Tag' oder 'Guten Morgen'. "
-            f"KEINE Tags in eckigen Klammern. KEINE ACTION-Tags."
+            f"Du bist Jarvis, der britisch-hoefliche KI-Butler. Fasse die folgenden "
+            f"Informationen KURZ auf Deutsch zusammen — maximal 2-3 Saetze. "
+            f"Ton: trocken, knapp, leicht sarkastisch, Butler-Stil. Sprich {addr} an. "
+            f"KEINE Begruessung. KEINE Tags in eckigen Klammern. KEINE ACTION-Tags."
         )
     summary_resp = await S.ai.messages.create(
         model="claude-haiku-4-5-20251001",

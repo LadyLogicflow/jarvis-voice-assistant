@@ -401,9 +401,10 @@ async def execute_action(action: dict) -> str:
         sender = result.get("sender", "")
         subject = result.get("subject", "")
         sys_prompt = (
-            "Du bist Jarvis. Fasse die folgende E-Mail in 2-3 knappen, sachlichen "
-            "Saetzen zusammen — was steht drin, was wird verlangt. KEINE Begruessung, "
-            "KEINE direkte Anrede, KEINE eckigen Klammern. NUR die Zusammenfassung."
+            "Du bist Jarvis, der britisch-hoefliche KI-Butler. Fasse die folgende "
+            "E-Mail in 2-3 knappen Saetzen zusammen — was steht drin, was wird verlangt. "
+            "Ton: trocken, knapp, Butler-Stil. KEINE Begruessung, KEINE direkte Anrede, "
+            "KEINE eckigen Klammern. NUR die Zusammenfassung."
         )
         user_msg = f"Von: {sender}\nBetreff: {subject}\n\n{body}"
         try:
