@@ -49,20 +49,20 @@ def _task_in_scope(
     return True
 
 
-async def get_tasks(
-    token: str,
-    max_tasks: int = 10,
-    project_ids: list[str] | None = None,
-    section_ids_per_project: dict[str, list[str]] | None = None,
-) -> str:
-    """Fetch open tasks assigned to me, optionally filtered to a set of
-    Todoist project IDs (and per-project section IDs)."""
-    my_id = await _my_id(token)
+async def _fetch_all_tasks(token: str) -> list[dict] | str:
+    """Paginierter Fetch aller Tasks ueber alle Seiten.
 
-    # Pagination follow — die Todoist v1-API liefert nur ~50 Tasks pro
-    # Seite + ein next_cursor. Wenn Catrin viele offene Tasks hat,
-    # wuerde alles ab Page 2 unsichtbar bleiben.
-    all_tasks: list = []
+    Spiegelt exakt die Paginierungslogik aus get_tasks():
+    - Todoist v1-API: Ergebnisse in ``results``, Cursor in ``next_cursor``
+    - Max. 20 Seiten (~1000 Tasks) als Schutz vor Endlos-Schleifen
+    - Erste Seite nicht erreichbar -> Fehler-String zurueck
+    - Spaetere Seiten: Warnung loggen, mit bisherigen Daten weiterarbeiten
+
+    Returns:
+        list[dict]: Alle gesammelten Task-Dicts, oder
+        str: Fehlermeldung falls bereits die erste Seite fehlschlaegt.
+    """
+    all_tasks: list[dict] = []
     async with httpx.AsyncClient(timeout=15) as c:
         cursor = None
         for _ in range(20):  # max 20 Seiten ≈ 1000 Tasks — Schutz vor Endlos
@@ -82,6 +82,26 @@ async def get_tasks(
                     return f"Todoist nicht erreichbar: {e}"
                 log.warning(f"todoist pagination broke at cursor={cursor!r}: {e}")
                 break
+    return all_tasks
+
+
+async def get_tasks(
+    token: str,
+    max_tasks: int = 10,
+    project_ids: list[str] | None = None,
+    section_ids_per_project: dict[str, list[str]] | None = None,
+) -> str:
+    """Fetch open tasks assigned to me, optionally filtered to a set of
+    Todoist project IDs (and per-project section IDs)."""
+    my_id = await _my_id(token)
+
+    # Pagination follow — die Todoist v1-API liefert nur ~50 Tasks pro
+    # Seite + ein next_cursor. Wenn Catrin viele offene Tasks hat,
+    # wuerde alles ab Page 2 unsichtbar bleiben.
+    result = await _fetch_all_tasks(token)
+    if isinstance(result, str):
+        return result  # Fehlermeldung direkt weiterreichen
+    all_tasks = result
 
     pid_set = set(project_ids) if project_ids else None
     sec_sets = (
@@ -167,16 +187,17 @@ async def complete_task(
     - section filter inside the HILO project
     On multiple matches: returns the list back to the caller and asks
     Catrin to disambiguate, instead of silently picking one.
+
+    Previously this function fetched only the first page of tasks from
+    the Todoist API, making tasks on page 2+ invisible to complete_task.
+    Now uses _fetch_all_tasks() for full pagination parity with get_tasks().
     """
     my_id = await _my_id(token)
 
-    async with httpx.AsyncClient(timeout=15) as c:
-        try:
-            r = await c.get(f"{BASE}/tasks", headers=_h(token))
-            r.raise_for_status()
-            all_tasks = r.json().get("results", [])
-        except Exception as e:
-            return f"Todoist nicht erreichbar: {e}"
+    result = await _fetch_all_tasks(token)
+    if isinstance(result, str):
+        return result  # Fehlermeldung direkt weiterreichen
+    all_tasks = result
 
     pid_set = set(project_ids) if project_ids else None
     sec_sets = (

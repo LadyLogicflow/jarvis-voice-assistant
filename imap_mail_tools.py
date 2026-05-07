@@ -57,7 +57,7 @@ def get_unread_mails_imap(
         with cls(host, port) as M:
             M.login(user, password)
             M.select(folder, readonly=True)
-            typ, data = M.search(None, "UNSEEN")
+            typ, data = M.uid("search", None, "UNSEEN")
             if typ != "OK":
                 return f"Fehler beim IMAP-Search: {typ}"
             ids = data[0].split()
@@ -65,14 +65,14 @@ def get_unread_mails_imap(
             if total == 0:
                 return "KEINE_MAILS"
 
-            # Walk newest first.
+            # Walk newest first.  ids are already UIDs.
             picked = list(reversed(ids))[:max_count]
             lines = [f"Ungelesen insgesamt: {total}", ""]
             skipped = 0
-            for mid in picked:
-                typ, msg_data = M.fetch(mid, "(BODY.PEEK[HEADER.FIELDS (FROM SUBJECT DATE)])")
+            for uid in picked:
+                typ, msg_data = M.uid("fetch", uid, "(BODY.PEEK[HEADER.FIELDS (FROM SUBJECT DATE)])")
                 if typ != "OK" or not msg_data or not msg_data[0]:
-                    log.warning(f"IMAP fetch mid={mid!r}: typ={typ}, data missing")
+                    log.warning(f"IMAP UID fetch uid={uid!r}: typ={typ}, data missing")
                     skipped += 1
                     continue
                 raw_headers = msg_data[0][1]
