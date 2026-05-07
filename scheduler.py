@@ -550,7 +550,12 @@ async def memory_reindex_scheduler() -> None:
 
 
 async def proactive_briefs_scheduler() -> None:
-    """Long-running task: fire each configured slot once per day."""
+    """Long-running task: fire each configured slot once per day.
+
+    Uses '>=' on the HH:MM string (not '=='): if the Mac was asleep at
+    exactly the configured time and the loop wakes up a few minutes later,
+    the slot still fires today — same approach as morning_brief_scheduler.
+    """
     triggered: dict[str, str] = {}  # slot "HH:MM" -> ISO date last fired
     while True:
         try:
@@ -558,7 +563,7 @@ async def proactive_briefs_scheduler() -> None:
             today = datetime.date.today().isoformat()
             current_hhmm = now.strftime("%H:%M")
             for slot in S.PROACTIVE_BRIEFS_TIMES:
-                if current_hhmm != slot:
+                if current_hhmm < slot:
                     continue
                 if triggered.get(slot) == today:
                     continue
