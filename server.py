@@ -17,6 +17,7 @@ modules created in M3.1:
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import os
 import subprocess
 import time
@@ -66,7 +67,7 @@ async def _broadcast_proactive(text: str) -> None:
         log.info("proactive: no clients connected, skipping")
         return
     target = active_clients[-1]
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     await loop.run_in_executor(None, _show_chrome)
     await speak(text, target, display=text)
 
@@ -135,14 +136,14 @@ def require_jarvis_token(x_jarvis_token: str | None = Header(default=None)) -> N
 
 @app.get("/hide", dependencies=[Depends(require_jarvis_token)])
 async def hide_endpoint() -> dict:
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     await loop.run_in_executor(None, _hide_chrome)
     return {"ok": True}
 
 
 @app.get("/show", dependencies=[Depends(require_jarvis_token)])
 async def show_endpoint() -> dict:
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     await loop.run_in_executor(None, _show_chrome)
     return {"ok": True}
 
@@ -343,7 +344,9 @@ async def websocket_endpoint(ws: WebSocket) -> None:
             except Exception:
                 break
 
-    asyncio.create_task(keepalive())
+    # Issue #96: Referenz speichern, damit wir den Task beim Disconnect
+    # explizit cancellen koennen und kein "Geister-Task" weiterlaeuft.
+    ka_task = asyncio.create_task(keepalive())
 
     def _cancel_inflight(reason: str) -> bool:
         task = _inflight_tasks.get(session_id)
@@ -390,6 +393,10 @@ async def websocket_endpoint(ws: WebSocket) -> None:
         conversations.pop(session_id, None)
         if ws in active_clients:
             active_clients.remove(ws)
+    finally:
+        ka_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await ka_task
 
 
 app.mount(
