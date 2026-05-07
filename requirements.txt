@@ -36,3 +36,7 @@ faster-whisper>=1.0  # local STT, no PyTorch / no API key
 
 # IMAP IDLE push monitor (issue #48) — async, supports IDLE
 aioimaplib>=1.0
+
+# Semantisches Gedächtnis (issue #57) — Vektorspeicher + Embeddings
+chromadb>=0.5.0
+sentence-transformers>=3.0.0

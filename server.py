@@ -43,6 +43,7 @@ from conversation import (
 from prompt import extract_action, get_system_prompt, llm_text, pick_address
 import scheduler
 from scheduler import (
+    memory_reindex_scheduler,
     morning_brief_scheduler,
     proactive_briefs_scheduler,
     refresh_data,
@@ -79,18 +80,24 @@ async def _lifespan(_app):  # type: ignore[no-untyped-def]  # AsyncGenerator
     session_state.load_all()
     scheduler.register_proactive_handler(_broadcast_proactive)
     register_mail_alert_handler(_broadcast_proactive)
+    # Startet Reindex beim Boot (im Hintergrund, blockiert nicht)
+    import memory_search
+    asyncio.create_task(memory_search.reindex_all())
     task_brief = asyncio.create_task(morning_brief_scheduler())
     task_proactive = asyncio.create_task(proactive_briefs_scheduler())
     task_telegram = asyncio.create_task(telegram_bot_main())
     task_mail = asyncio.create_task(mail_monitor_main())
     task_weekly = asyncio.create_task(weekly_outlook_scheduler())
+    task_memory = asyncio.create_task(memory_reindex_scheduler())
     log.info(f"Steuerrecht-Scheduler gestartet (taeglich um {S.MORNING_HOUR}:00 Uhr)")
     log.info(f"Proaktive Briefs aktiv: {S.PROACTIVE_BRIEFS_TIMES}")
     log.info("Wochenausblick aktiv (Sonntag 18:00)")
+    log.info("Memory-Reindex-Scheduler aktiv (täglich 03:00 Uhr + Startup)")
     try:
         yield
     finally:
-        for t in (task_brief, task_proactive, task_telegram, task_mail, task_weekly):
+        for t in (task_brief, task_proactive, task_telegram, task_mail, task_weekly,
+                  task_memory):
             t.cancel()
             try:
                 await t
