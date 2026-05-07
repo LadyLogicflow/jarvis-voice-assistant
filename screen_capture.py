@@ -14,6 +14,7 @@ Platform notes:
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import io
 import logging
@@ -60,7 +61,7 @@ def capture_screen() -> bytes:
 async def describe_screen(anthropic_client: "AsyncAnthropic") -> str:
     """Capture screen and describe it using Claude Vision."""
     try:
-        loop = __import__("asyncio").get_event_loop()
+        loop = asyncio.get_running_loop()
         png_bytes = await loop.run_in_executor(None, capture_screen)
     except ScreenCaptureError as e:
         log.warning(f"capture_screen failed: {e}")

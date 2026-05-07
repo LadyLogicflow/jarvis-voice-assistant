@@ -68,7 +68,7 @@ def _get_service():  # type: ignore[no-untyped-def]  # googleapiclient Resource
 
 async def get_events(days: int = 7, max_results: int = 10) -> str:
     """Fetch upcoming calendar events."""
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     return await loop.run_in_executor(None, _fetch_events, days, max_results)
 
 
@@ -125,7 +125,7 @@ async def add_event(title: str, when: str, duration_h: float = 1.0) -> str:
         RuntimeError: Wenn der Google-Kalender nicht autorisiert ist.
         Exception: Bei API-Fehlern vom Google Calendar.
     """
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     return await loop.run_in_executor(None, _add_event, title, when, duration_h)
 
 

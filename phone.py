@@ -74,7 +74,7 @@ async def start_call(number: str) -> bool:
     # Wir senden die unnormalisierte Nummer — macOS' tel:-Handler
     # versteht alle ueblichen Schreibweisen.
     url = f"tel:{number}"
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
 
     def _blocking():
         return subprocess.run(

@@ -66,7 +66,7 @@ async def _broadcast_proactive(text: str) -> None:
         log.info("proactive: no clients connected, skipping")
         return
     target = active_clients[-1]
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     await loop.run_in_executor(None, _show_chrome)
     await speak(text, target, display=text)
 
@@ -135,14 +135,14 @@ def require_jarvis_token(x_jarvis_token: str | None = Header(default=None)) -> N
 
 @app.get("/hide", dependencies=[Depends(require_jarvis_token)])
 async def hide_endpoint() -> dict:
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     await loop.run_in_executor(None, _hide_chrome)
     return {"ok": True}
 
 
 @app.get("/show", dependencies=[Depends(require_jarvis_token)])
 async def show_endpoint() -> dict:
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     await loop.run_in_executor(None, _show_chrome)
     return {"ok": True}
 
