@@ -1,5 +1,5 @@
 """
-Jarvis — Steuerrecht News
+Jarvis -- Steuerrecht News
 - BFH Pressemitteilungen per RSS
 - BFH Entscheidungen per RSS
 """
@@ -87,15 +87,14 @@ def _parse_rss_items(xml_text: str) -> list:
     return items
 
 
-async def fetch_all_sources(mark_seen: bool = False) -> str:
-    """Fetch BFH RSS feeds and return them as text (used by [ACTION:STEUERNEWS]).
+async def _fetch_feeds_raw() -> tuple[str, set[str]]:
+    """Interner Helper: RSS-Feeds einmalig abrufen (Issue #91).
 
-    Gibt ``BEREITS_GELESEN`` zurueck wenn alle aktuellen Titel bereits in der
-    gesehenen-Liste stehen (Issue #75). Wenn ``mark_seen=True`` uebergeben
-    wird (nach dem Vorlesen), werden die Hashes persistiert.
+    Gibt (formatted_text, current_hashes) zurueck.  Die Hashes
+    enthalten alle Titel-Hashes der gerade gelieferten Items.  Kein
+    Seen-Check, kein Disk-Write -- das bleibt Aufgabe des Aufrufers.
     """
-    seen = _load_seen_hashes()
-    blocks = []
+    blocks: list[str] = []
     current_titles: list[str] = []
     async with httpx.AsyncClient(timeout=20, follow_redirects=True, headers=HEADERS) as client:
         for feed in BFH_FEEDS:
@@ -107,28 +106,50 @@ async def fetch_all_sources(mark_seen: bool = False) -> str:
                 for title, pub_date in items[:5]:
                     current_titles.append(title)
                     date_str = pub_date.strftime("%d.%m.%Y") if pub_date else ""
-                    lines.append(f"• {title} ({date_str})" if date_str else f"• {title}")
+                    lines.append(f"\u2022 {title} ({date_str})" if date_str else f"\u2022 {title}")
                 blocks.append(f"=== {feed['name']} ===\n" + ("\n".join(lines) or "Keine Eintraege."))
             except Exception as e:
                 blocks.append(f"=== {feed['name']} ===\nNicht erreichbar: {e}")
-
-    if not current_titles:
-        return "\n\n".join(blocks)
-
+    text = "\n\n".join(blocks)
     current_hashes = {_title_hash(t) for t in current_titles}
+    return text, current_hashes
+
+
+def commit_seen(hashes: set[str]) -> None:
+    """Persistiert eine Menge von Titel-Hashes als gesehen (Issue #91).
+
+    Wird vom STEUERNEWS-Handler aufgerufen nachdem der Brief generiert
+    wurde, sodass der RSS-Fetch nur einmal stattfindet.
+    """
+    seen = _load_seen_hashes()
+    _save_seen_hashes(seen | hashes)
+
+
+async def fetch_all_sources(mark_seen: bool = False) -> str:
+    """Fetch BFH RSS feeds and return them as text (used by [ACTION:STEUERNEWS]).
+
+    Gibt ``BEREITS_GELESEN`` zurueck wenn alle aktuellen Titel bereits in der
+    gesehenen-Liste stehen (Issue #75). Wenn ``mark_seen=True`` uebergeben
+    wird (nach dem Vorlesen), werden die Hashes persistiert.
+    """
+    seen = _load_seen_hashes()
+    text, current_hashes = await _fetch_feeds_raw()
+
+    if not current_hashes:
+        return text
 
     # Alle aktuellen Meldungen bereits gesehen?
-    if current_hashes and current_hashes.issubset(seen):
+    if current_hashes.issubset(seen):
         return BEREITS_GELESEN
 
     if mark_seen:
         _save_seen_hashes(seen | current_hashes)
 
-    return "\n\n".join(blocks)
+    return text
 
 
 def mark_steuer_news_seen(result_text: str) -> None:
-    """Persistiert die gesehenen Hashes nachtraeglich — aufzurufen
+    """Persistiert die gesehenen Hashes nachtraeglich -- aufzurufen
     nachdem Jarvis die Nachrichten vorgelesen hat (Issue #75)."""
     # Wir koennen die Titel nicht mehr aus dem formatierten Text
     # rekonstruieren. Daher beim naechsten fetch_all_sources-Aufruf
@@ -149,7 +170,7 @@ async def fetch_recent(days: int = 3) -> str:
                 resp.raise_for_status()
                 for title, pub_date in _parse_rss_items(resp.text):
                     if pub_date and pub_date >= cutoff:
-                        recent.append(f"• {title} ({pub_date.strftime('%d.%m.')})")
+                        recent.append(f"\u2022 {title} ({pub_date.strftime('%d.%m.')})")
             except Exception as e:
                 log.warning(f"steuer_news fetch_recent feed={feed.get('url', '?')!r} "
                             f"failed: {type(e).__name__}: {e}")

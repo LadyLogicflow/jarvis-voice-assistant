@@ -289,11 +289,16 @@ async def refresh_steuer_recent() -> None:
         S.STEUER_RECENT = ""
 
 
-async def refresh_steuer_brief() -> None:
-    """Fetch steuerrecht news and summarize with Claude. Updates global cache."""
+async def refresh_steuer_brief(raw: str | None = None) -> None:
+    """Fetch steuerrecht news and summarize with Claude. Updates global cache.
+
+    Wenn ``raw`` uebergeben wird, wird kein erneuter RSS-Fetch durchgefuehrt
+    -- der bereits geholte Text wird direkt verwendet (Issue #91).
+    """
     log.info("Steuerrecht-Brief wird abgerufen...")
     try:
-        raw = await steuer_news.fetch_all_sources()
+        if raw is None:
+            raw = await steuer_news.fetch_all_sources()
         resp = await S.ai.messages.create(
             model="claude-haiku-4-5-20251001",
             max_tokens=600,
