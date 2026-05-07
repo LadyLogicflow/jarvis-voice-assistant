@@ -629,35 +629,43 @@ async def execute_action(action: dict) -> str:
         return f"Notiert {stored_where}."
 
     elif t == "RECALL":
-        # Issue #56 + #57 Stage A: Volltext-Suche ueber alle Quellen.
-        # Stage B (semantische ML-Suche via Embeddings) folgt separat.
+        # Issue #56 + #57: Zweistufige Suche — erst Volltext (schnell),
+        # dann semantisch via ChromaDB/sentence-transformers (Issue #57).
         import notes_db
         import persons_db
         import conversation
+        import memory_search
         query = p.strip()
         if not query:
             return f"Wonach soll ich suchen, {pick_address()}?"
         q = query.lower()
         results: list[str] = []
-        # 1. Personen-bezogene Notizen + offene Punkte
+        seen_texts: set[str] = set()  # Deduplizierung zwischen Volltext + Semantik
+
+        def _add_result(text: str) -> None:
+            key = text.strip()[:100]
+            if key not in seen_texts:
+                seen_texts.add(key)
+                results.append(text)
+
+        # 1. Personen-bezogene Notizen + offene Punkte (Volltext)
         for prof in persons_db.all_profiles():
             if q in prof.name.lower():
                 for note in prof.notes[-5:]:
-                    results.append(f"Notiz zu {prof.name}: {note}")
+                    _add_result(f"Notiz zu {prof.name}: {note}")
                 for pt in prof.open_points:
-                    results.append(f"Offen mit {prof.name}: {pt}")
+                    _add_result(f"Offen mit {prof.name}: {pt}")
             else:
-                # Auch nach Substring in den Notizen selbst suchen
                 for note in prof.notes:
                     if q in note.lower():
-                        results.append(f"Notiz zu {prof.name}: {note}")
+                        _add_result(f"Notiz zu {prof.name}: {note}")
                 for pt in prof.open_points:
                     if q in pt.lower():
-                        results.append(f"Offen mit {prof.name}: {pt}")
-        # 2. Allgemeine Notizen
+                        _add_result(f"Offen mit {prof.name}: {pt}")
+        # 2. Allgemeine Notizen (Volltext)
         for n in notes_db.find(query):
-            results.append(f"{n.kind.capitalize()}: {n.text}")
-        # 3. Todoist offene Tasks
+            _add_result(f"{n.kind.capitalize()}: {n.text}")
+        # 3. Todoist offene Tasks (Volltext)
         if S.TODOIST_TOKEN and S.TODOIST_TOKEN != "YOUR_TODOIST_API_TOKEN":
             try:
                 tasks_text = await todoist_tools.get_tasks(
@@ -668,17 +676,31 @@ async def execute_action(action: dict) -> str:
                 if tasks_text and tasks_text != "KEINE_TASKS":
                     for line in tasks_text.splitlines():
                         if line.startswith("•") and q in line.lower():
-                            results.append(f"Todoist: {line.lstrip('• ').strip()}")
+                            _add_result(f"Todoist: {line.lstrip('• ').strip()}")
             except Exception as e:
                 log.warning(f"RECALL todoist failed: {type(e).__name__}: {e}")
-        # 4. Conversation-History (last 50 turns)
+        # 4. Conversation-History (Volltext, letzte 50 Turns)
         history = conversation.load_persistent_history()
         for msg in history:
             content = (msg.get("content") or "")
             if q in content.lower():
                 role = "Du" if msg.get("role") == "user" else "Jarvis"
                 snippet = content.strip()[:120]
-                results.append(f"Frueher ({role}): {snippet}")
+                _add_result(f"Frueher ({role}): {snippet}")
+        # 5. Semantische Suche via ChromaDB (Issue #57)
+        # Ergänzt Volltext-Treffer um bedeutungsähnliche Einträge.
+        try:
+            semantic_hits = memory_search.search(query, n_results=5)
+            for hit in semantic_hits:
+                # Nur bei hinreichender Ähnlichkeit (score >= 0.5) und
+                # nur wenn nicht schon durch Volltext gefunden.
+                if hit.get("score", 0) >= 0.5:
+                    text = hit.get("text", "").strip()
+                    if text:
+                        _add_result(f"[Erinnerung] {text[:200]}")
+        except Exception as e:
+            log.warning(f"RECALL semantic search failed: {type(e).__name__}: {e}")
+
         if not results:
             return f"Ich finde nichts zu {query}, {pick_address()}."
         return f"Zu {query} habe ich:\n" + "\n".join(f"- {r}" for r in results[:15])

@@ -520,6 +520,35 @@ async def _generate_proactive_message(slot: str) -> str:
     return llm_text(resp).strip()
 
 
+async def memory_reindex_scheduler() -> None:
+    """Long-running task: täglich um 03:00 Uhr den Vektorspeicher neu aufbauen.
+
+    Läuft im Hintergrund — wenn ChromaDB/sentence-transformers nicht
+    installiert sind, loggt memory_search.reindex_all() lediglich einen
+    Hinweis und kehrt sofort zurück.
+    """
+    import memory_search
+    triggered_today = ""
+    _REINDEX_HOUR = 3  # 03:00 Uhr
+    while True:
+        try:
+            now = datetime.datetime.now()
+            today = datetime.date.today().isoformat()
+            if now.hour == _REINDEX_HOUR and triggered_today != today:
+                triggered_today = today
+                log.info("memory_reindex_scheduler: Starte nächtlichen Reindex …")
+                try:
+                    await memory_search.reindex_all()
+                except Exception as e:
+                    log.warning(
+                        f"memory_reindex_scheduler: reindex_all fehlgeschlagen: "
+                        f"{type(e).__name__}: {e}"
+                    )
+        except Exception as e:
+            log.warning(f"memory_reindex_scheduler loop error: {type(e).__name__}: {e}")
+        await asyncio.sleep(60)
+
+
 async def proactive_briefs_scheduler() -> None:
     """Long-running task: fire each configured slot once per day."""
     triggered: dict[str, str] = {}  # slot "HH:MM" -> ISO date last fired

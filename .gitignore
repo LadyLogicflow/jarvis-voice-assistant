@@ -47,3 +47,6 @@ Thumbs.db
 .jarvis_persons.json
 .jarvis_notes.json
 .jarvis_steuer_seen.json
+
+# Vektorspeicher (issue #57) — lokal, nie committen
+.jarvis_chroma/
