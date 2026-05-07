@@ -416,6 +416,12 @@ async def _process_new_uids(account: dict, client, uids: list[int]) -> None:
                     except Exception as e:
                         log.warning(f"mail_monitor[{name}] mac alert failed: "
                                     f"{type(e).__name__}: {e}")
+        except asyncio.CancelledError:
+            # Server shutdown mid-processing: the finally block below
+            # persists the current UID before we re-raise so asyncio can
+            # cleanly terminate the task without double-processing on the
+            # next server start (Issue #78).
+            raise
         except Exception as e:
             log.warning(f"mail_monitor[{name}] uid={uid}: {type(e).__name__}: {e}")
         finally:
