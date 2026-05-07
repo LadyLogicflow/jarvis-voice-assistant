@@ -34,7 +34,7 @@ if not ACCESS_KEY:
     print("Kostenloser Key: https://console.picovoice.ai/")
     sys.exit(1)
 
-WORKSPACE_PATH = config["workspace_path"]
+WORKSPACE_PATH = config.get("workspace_path", os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 SCRIPT_PATH = os.path.join(WORKSPACE_PATH, "scripts", "launch-session.sh")
 COOLDOWN = 5.0
 
