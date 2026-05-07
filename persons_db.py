@@ -59,7 +59,7 @@ def _load() -> None:
             raw = json.load(f)
         for cid, item in raw.items():
             if isinstance(item, dict):
-                _persons[cid] = PersonProfile(**item)
+                _persons[cid] = PersonProfile(**{k: v for k, v in item.items() if k in PersonProfile.__dataclass_fields__})
         log.info(f"persons_db: loaded {len(_persons)} profiles from disk")
     except Exception as e:
         log.warning(f"persons_db._load failed: {type(e).__name__}: {e}")

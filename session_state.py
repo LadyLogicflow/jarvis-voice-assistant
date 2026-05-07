@@ -105,6 +105,12 @@ class SessionState:
 # persistierten Werten gefuellt (siehe load_all).
 _states: dict[str, SessionState] = {}
 
+# Set der aktuell per WebSocket verbundenen Session-IDs.
+# Wird von server.py via register_session / deregister_session gepflegt.
+# broadcast_active_mail benutzt dieses Set um alte/inaktive Sessions zu
+# uebergehen (Fix Issue #89).
+_active_sessions: set[str] = {}
+
 
 def _state_dir() -> str:
     """Verzeichnis fuer die per-session JSON-Dateien. Liegt im
@@ -143,11 +149,11 @@ def _deserialize(raw: dict) -> SessionState:
     pp = raw.get("pending_person")
     rm = raw.get("recent_mails") or []
     return SessionState(
-        active_mail=MailRef(**am) if am else None,
-        pending_draft=PendingDraft(**pd) if pd else None,
-        pending_calendar=PendingCalendar(**pc) if pc else None,
-        pending_person=PendingPersonAction(**pp) if pp else None,
-        recent_mails=[MailRef(**m) for m in rm if isinstance(m, dict)],
+        active_mail=MailRef(**{k: v for k, v in am.items() if k in MailRef.__dataclass_fields__}) if am else None,
+        pending_draft=PendingDraft(**{k: v for k, v in pd.items() if k in PendingDraft.__dataclass_fields__}) if pd else None,
+        pending_calendar=PendingCalendar(**{k: v for k, v in pc.items() if k in PendingCalendar.__dataclass_fields__}) if pc else None,
+        pending_person=PendingPersonAction(**{k: v for k, v in pp.items() if k in PendingPersonAction.__dataclass_fields__}) if pp else None,
+        recent_mails=[MailRef(**{k: v for k, v in m.items() if k in MailRef.__dataclass_fields__}) for m in rm if isinstance(m, dict)],
     )
 
 
@@ -280,16 +286,36 @@ def find_recent_mail(session_id: str, query: str) -> Optional[MailRef]:
     return None
 
 
-def broadcast_active_mail(mail: MailRef) -> None:
-    """Setzt active_mail in JEDER bekannten Session plus dem festen
-    'default'-Slot. 'default' ist der Fallback den die Actions lesen
-    (siehe actions.READ_MAIL / MARK_MAIL_READ und prompt.py).
+def register_session(session_id: str) -> None:
+    """Markiert eine Session als aktiv (WebSocket verbunden).
+    Muss von server.py beim WebSocket-Accept aufgerufen werden."""
+    _active_sessions.add(session_id)
 
-    Ohne 'default' im Set wuerde nach einem Restart, der persistierte
-    Sessions wiederherstellt, broadcast nur in die alten Sessions
-    schreiben — die Actions saehen dann keine aktive Mail bis irgendwer
-    'default' explizit anlegt."""
-    sessions = set(all_sessions())
+
+def deregister_session(session_id: str) -> None:
+    """Entfernt eine Session aus dem Aktiv-Set (WebSocket getrennt).
+    Muss von server.py beim Disconnect aufgerufen werden."""
+    _active_sessions.discard(session_id)
+
+
+def broadcast_active_mail(mail: MailRef) -> None:
+    """Setzt active_mail nur in Sessions mit aktiver WebSocket-Verbindung
+    plus dem festen 'default'-Slot.
+
+    Vor Issue #89 wurden ALLE persistierten Sessions (auch alte/inaktive
+    Browser-Tabs) beschrieben. Nach einem Server-Neustart wurden dadurch
+    alle durch load_all() wiederhergestellten Sessions mit der zuletzt
+    eingegangenen Mail aufgeweckt.
+
+    Fix: Nur Sessions in _active_sessions (registriert via
+    register_session beim WebSocket-Accept, entfernt via
+    deregister_session beim Disconnect) erhalten das Update.
+
+    'default' bleibt als Fallback-Slot erhalten, damit Actions die
+    active_mail lesen (READ_MAIL, MARK_MAIL_READ, prompt.py) immer
+    einen gueltigen Anker haben, auch wenn noch kein Browser-Client
+    verbunden ist."""
+    sessions = set(_active_sessions)
     sessions.add("default")
     for sid in sessions:
         set_active_mail(sid, mail)
