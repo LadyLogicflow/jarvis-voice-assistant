@@ -143,11 +143,11 @@ def _deserialize(raw: dict) -> SessionState:
     pp = raw.get("pending_person")
     rm = raw.get("recent_mails") or []
     return SessionState(
-        active_mail=MailRef(**am) if am else None,
-        pending_draft=PendingDraft(**pd) if pd else None,
-        pending_calendar=PendingCalendar(**pc) if pc else None,
-        pending_person=PendingPersonAction(**pp) if pp else None,
-        recent_mails=[MailRef(**m) for m in rm if isinstance(m, dict)],
+        active_mail=MailRef(**{k: v for k, v in am.items() if k in MailRef.__dataclass_fields__}) if am else None,
+        pending_draft=PendingDraft(**{k: v for k, v in pd.items() if k in PendingDraft.__dataclass_fields__}) if pd else None,
+        pending_calendar=PendingCalendar(**{k: v for k, v in pc.items() if k in PendingCalendar.__dataclass_fields__}) if pc else None,
+        pending_person=PendingPersonAction(**{k: v for k, v in pp.items() if k in PendingPersonAction.__dataclass_fields__}) if pp else None,
+        recent_mails=[MailRef(**{k: v for k, v in m.items() if k in MailRef.__dataclass_fields__}) for m in rm if isinstance(m, dict)],
     )
 
 

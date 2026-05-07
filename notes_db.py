@@ -64,7 +64,7 @@ def _load() -> None:
         if isinstance(raw, list):
             for item in raw:
                 if isinstance(item, dict):
-                    _notes.append(Note(**item))
+                    _notes.append(Note(**{k: v for k, v in item.items() if k in Note.__dataclass_fields__}))
         log.info(f"notes_db: loaded {len(_notes)} notes from disk")
     except Exception as e:
         log.warning(f"notes_db._load failed: {type(e).__name__}: {e}")
