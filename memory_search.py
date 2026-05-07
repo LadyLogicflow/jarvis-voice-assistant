@@ -18,6 +18,7 @@ import hashlib
 import json
 import logging
 import os
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -57,6 +58,7 @@ _AVAILABLE = _CHROMADB_AVAILABLE and _ST_AVAILABLE
 _chroma_client: Any | None = None
 _collection: Any | None = None
 _embedding_model: Any | None = None
+_embedding_model_lock = threading.Lock()
 
 _CHROMA_PATH = str(Path.home() / ".jarvis_chroma")
 _COLLECTION_NAME = "jarvis_memory"
@@ -64,19 +66,28 @@ _EMBEDDING_MODEL_NAME = "all-MiniLM-L6-v2"
 
 
 def _get_embedding_model() -> Any | None:
-    """Lädt das Embedding-Modell einmalig (lazy, thread-safe über GIL)."""
+    """Lädt das Embedding-Modell einmalig (lazy, thread-safe via Lock).
+
+    Verwendet double-checked locking: der schnelle Pfad ohne Lock verhindert
+    den Lock-Overhead bei bereits initialisiertem Modell. Der zweite Check
+    im Lock-Block verhindert doppelte Initialisierung bei gleichzeitigen
+    Aufrufen (z. B. Startup-Reindex + RECALL-Action).
+    """
     global _embedding_model
     if not _ST_AVAILABLE:
         return None
-    if _embedding_model is None:
-        try:
-            from sentence_transformers import SentenceTransformer
-            log.info("memory_search: Lade Embedding-Modell %s …", _EMBEDDING_MODEL_NAME)
-            _embedding_model = SentenceTransformer(_EMBEDDING_MODEL_NAME)
-            log.info("memory_search: Embedding-Modell geladen.")
-        except Exception as exc:
-            log.warning("memory_search: Embedding-Modell konnte nicht geladen werden: %s", exc)
-            return None
+    if _embedding_model is not None:
+        return _embedding_model
+    with _embedding_model_lock:
+        if _embedding_model is None:
+            try:
+                from sentence_transformers import SentenceTransformer
+                log.info("memory_search: Lade Embedding-Modell %s …", _EMBEDDING_MODEL_NAME)
+                _embedding_model = SentenceTransformer(_EMBEDDING_MODEL_NAME)
+                log.info("memory_search: Embedding-Modell geladen.")
+            except Exception as exc:
+                log.warning("memory_search: Embedding-Modell konnte nicht geladen werden: %s", exc)
+                return None
     return _embedding_model
 
 

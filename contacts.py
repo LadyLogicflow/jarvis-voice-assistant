@@ -24,6 +24,7 @@ import asyncio
 import json
 import re
 import subprocess
+import time
 from dataclasses import dataclass, field
 
 import settings as S
@@ -166,53 +167,73 @@ end js_escape
 _CONTACTS_CACHE: list[Contact] = []
 _CACHE_TIMESTAMP: float = 0.0
 _CACHE_TTL_SECONDS = 300  # 5 minutes
+_cache_lock = asyncio.Lock()
 
 
 async def read_all_contacts(force_refresh: bool = False) -> list[Contact]:
     """Hol alle Apple-Kontakte. Cache fuer 5 Minuten — der Lookup
     waehrend Mail-Drift-Detection darf nicht jeden Mail-Eingang ein
-    osascript triggern (~200ms Overhead)."""
-    import time
+    osascript triggern (~200ms Overhead).
+
+    Verwendet asyncio.Lock mit Double-Checked Locking (Issue #97):
+    Der schnelle Pfad (Cache gueltig) prueft ohne Lock. Nur beim
+    tatsaechlichen Refresh wird der Lock gehalten, damit gleichzeitige
+    async-Aufrufe (z.B. Mail-Klassifikation + Drift-Detection) keinen
+    doppelten osascript-Aufruf ausloesen.
+    """
     global _CONTACTS_CACHE, _CACHE_TIMESTAMP
     now = time.time()
+    # Fast path: Cache gueltig — kein Lock noetig.
     if (not force_refresh
             and _CONTACTS_CACHE
             and (now - _CACHE_TIMESTAMP) < _CACHE_TTL_SECONDS):
         return _CONTACTS_CACHE
-    try:
-        raw = await _run_osascript(_DUMP_ALL_AS, timeout=30.0)
+
+    async with _cache_lock:
+        # Double-check innerhalb des Locks: ein anderer Coroutine koennte
+        # den Cache bereits aktualisiert haben waehrend wir gewartet haben.
+        now = time.time()
+        if (not force_refresh
+                and _CONTACTS_CACHE
+                and (now - _CACHE_TIMESTAMP) < _CACHE_TTL_SECONDS):
+            return _CONTACTS_CACHE
+
         try:
-            data = json.loads(raw.strip())
-        except json.JSONDecodeError as e:
-            log.warning(
-                f"contacts: JSON parse failed: {e}, "
-                f"raw[:200]={raw[:200]!r}"
-            )
+            raw = await _run_osascript(_DUMP_ALL_AS, timeout=30.0)
+            try:
+                data = json.loads(raw.strip())
+            except json.JSONDecodeError as e:
+                log.warning(
+                    f"contacts: JSON parse failed: {e}, "
+                    f"raw[:200]={raw[:200]!r}"
+                )
+                return _CONTACTS_CACHE  # stale-on-error
+        except Exception as e:
+            log.warning(f"contacts.read_all_contacts failed: "
+                        f"{type(e).__name__}: {e}")
             return _CONTACTS_CACHE  # stale-on-error
-    except Exception as e:
-        log.warning(f"contacts.read_all_contacts failed: "
-                    f"{type(e).__name__}: {e}")
-        return _CONTACTS_CACHE  # stale-on-error
-    contacts = [
-        Contact(
-            id=item.get("id", ""),
-            name=item.get("name", "").strip(),
-            emails=[e.lower() for e in item.get("emails", []) if e],
-            phones=[p for p in item.get("phones", []) if p],
-            organization=item.get("organization", "").strip(),
-        )
-        for item in data
-    ]
-    if not contacts:
-        log.info(
-            "contacts: loaded 0 contacts — "
-            "Kontakte.app leer oder AppleScript-Ergebnis leer"
-        )
-    else:
-        log.info(f"contacts: loaded {len(contacts)} from Apple Contacts.app")
-    _CONTACTS_CACHE = contacts
-    _CACHE_TIMESTAMP = now
-    return contacts
+        contacts = [
+            Contact(
+                id=item.get("id", ""),
+                name=item.get("name", "").strip(),
+                emails=[e.lower() for e in item.get("emails", []) if e],
+                phones=[p for p in item.get("phones", []) if p],
+                organization=item.get("organization", "").strip(),
+            )
+            for item in data
+        ]
+        if not contacts:
+            log.info(
+                "contacts: loaded 0 contacts — "
+                "Kontakte.app leer oder AppleScript-Ergebnis leer"
+            )
+        else:
+            log.info(
+                f"contacts: loaded {len(contacts)} from Apple Contacts.app"
+            )
+        _CONTACTS_CACHE = contacts
+        _CACHE_TIMESTAMP = now
+        return contacts
 
 
 async def find_contacts_by_name(query: str) -> list[Contact]:
