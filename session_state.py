@@ -105,6 +105,12 @@ class SessionState:
 # persistierten Werten gefuellt (siehe load_all).
 _states: dict[str, SessionState] = {}
 
+# Set der aktuell per WebSocket verbundenen Session-IDs.
+# Wird von server.py via register_session / deregister_session gepflegt.
+# broadcast_active_mail benutzt dieses Set um alte/inaktive Sessions zu
+# uebergehen (Fix Issue #89).
+_active_sessions: set[str] = set()
+
 
 def _state_dir() -> str:
     """Verzeichnis fuer die per-session JSON-Dateien. Liegt im
@@ -280,16 +286,36 @@ def find_recent_mail(session_id: str, query: str) -> Optional[MailRef]:
     return None
 
 
-def broadcast_active_mail(mail: MailRef) -> None:
-    """Setzt active_mail in JEDER bekannten Session plus dem festen
-    'default'-Slot. 'default' ist der Fallback den die Actions lesen
-    (siehe actions.READ_MAIL / MARK_MAIL_READ und prompt.py).
+def register_session(session_id: str) -> None:
+    """Markiert eine Session als aktiv (WebSocket verbunden).
+    Muss von server.py beim WebSocket-Accept aufgerufen werden."""
+    _active_sessions.add(session_id)
 
-    Ohne 'default' im Set wuerde nach einem Restart, der persistierte
-    Sessions wiederherstellt, broadcast nur in die alten Sessions
-    schreiben — die Actions saehen dann keine aktive Mail bis irgendwer
-    'default' explizit anlegt."""
-    sessions = set(all_sessions())
+
+def deregister_session(session_id: str) -> None:
+    """Entfernt eine Session aus dem Aktiv-Set (WebSocket getrennt).
+    Muss von server.py beim Disconnect aufgerufen werden."""
+    _active_sessions.discard(session_id)
+
+
+def broadcast_active_mail(mail: MailRef) -> None:
+    """Setzt active_mail nur in Sessions mit aktiver WebSocket-Verbindung
+    plus dem festen 'default'-Slot.
+
+    Vor Issue #89 wurden ALLE persistierten Sessions (auch alte/inaktive
+    Browser-Tabs) beschrieben. Nach einem Server-Neustart wurden dadurch
+    alle durch load_all() wiederhergestellten Sessions mit der zuletzt
+    eingegangenen Mail aufgeweckt.
+
+    Fix: Nur Sessions in _active_sessions (registriert via
+    register_session beim WebSocket-Accept, entfernt via
+    deregister_session beim Disconnect) erhalten das Update.
+
+    'default' bleibt als Fallback-Slot erhalten, damit Actions die
+    active_mail lesen (READ_MAIL, MARK_MAIL_READ, prompt.py) immer
+    einen gueltigen Anker haben, auch wenn noch kein Browser-Client
+    verbunden ist."""
+    sessions = set(_active_sessions)
     sessions.add("default")
     for sid in sessions:
         set_active_mail(sid, mail)

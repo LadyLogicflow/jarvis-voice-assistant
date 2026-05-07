@@ -333,6 +333,9 @@ async def websocket_endpoint(ws: WebSocket) -> None:
     # Drop stale connections (prevents multi-wake).
     active_clients.clear()
     active_clients.append(ws)
+    # Issue #89: Nur aktive WebSocket-Sessions in broadcast_active_mail
+    # beschreiben. Register hier, deregister beim Disconnect.
+    session_state.register_session(session_id)
     log.info("Client connected (Liste bereinigt)")
 
     async def keepalive():
@@ -390,6 +393,7 @@ async def websocket_endpoint(ws: WebSocket) -> None:
         conversations.pop(session_id, None)
         if ws in active_clients:
             active_clients.remove(ws)
+        session_state.deregister_session(session_id)
 
 
 app.mount(
