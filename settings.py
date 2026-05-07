@@ -143,6 +143,9 @@ IMAP_FOLDER = config.get("imap_folder", "INBOX")
 # Jarvis opens an IMAP IDLE connection on startup and pushes incoming
 # Mails (after Haiku classification) to Telegram during waking hours.
 MAIL_MONITOR_ENABLED = bool(config.get("mail_monitor_enabled", False))
+# Browser: headless mode. Set to true in SSH/CI environments without a
+# display. Default false (visible Chromium window on desktop).
+BROWSER_HEADLESS = bool(config.get("browser_headless", False))
 # Which categories trigger a Telegram push. Default: only mails the
 # classifier flagged as "handlungsbedarf". Set to ["handlungsbedarf",
 # "info"] to also forward FYI mails.

@@ -55,6 +55,9 @@
   "mac_quiet_end": "07:00",
   "whisper_model": "base",
 
+  "_comment_browser": "Browser settings. browser_headless: set to true in SSH/CI environments without a display. Default false (visible Chromium on desktop).",
+  "browser_headless": false,
+
   "_comment_mail_monitor": "IMAP IDLE push monitor (issue #48). Multiple accounts in parallel. Each account's password lives in env IMAP_PASSWORD_{NAME_UPPER}. Categories: werbung | info | handlungsbedarf — only the listed ones forward to Telegram. Quiet hours suppress pushes.",
   "mail_monitor_enabled": false,
   "mail_monitor_forward": ["handlungsbedarf"],
