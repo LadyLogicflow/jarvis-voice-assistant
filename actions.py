@@ -692,9 +692,9 @@ async def execute_action(action: dict) -> str:
         try:
             semantic_hits = memory_search.search(query, n_results=5)
             for hit in semantic_hits:
-                # Nur bei hinreichender Ähnlichkeit (score >= 0.5) und
+                # Nur bei hinreichender Ähnlichkeit (score >= 0.7) und
                 # nur wenn nicht schon durch Volltext gefunden.
-                if hit.get("score", 0) >= 0.5:
+                if hit.get("score", 0) >= 0.7:
                     text = hit.get("text", "").strip()
                     if text:
                         _add_result(f"[Erinnerung] {text[:200]}")

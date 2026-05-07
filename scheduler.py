@@ -534,7 +534,7 @@ async def memory_reindex_scheduler() -> None:
         try:
             now = datetime.datetime.now()
             today = datetime.date.today().isoformat()
-            if now.hour == _REINDEX_HOUR and triggered_today != today:
+            if now.hour >= _REINDEX_HOUR and triggered_today != today:
                 triggered_today = today
                 log.info("memory_reindex_scheduler: Starte nächtlichen Reindex …")
                 try:
