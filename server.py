@@ -205,7 +205,7 @@ async def process_message(session_id: str, user_text: str, ws: WebSocket) -> Non
         if _dt.datetime.now().hour < S.MORNING_BRIEF_UNTIL_HOUR:
             await refresh_morning_brief_data()
 
-    append_message(session_id, "user", user_text)
+    await append_message(session_id, "user", user_text)
     history = conversations[session_id][-16:]
 
     response = await S.ai.messages.create(
@@ -220,7 +220,7 @@ async def process_message(session_id: str, user_text: str, ws: WebSocket) -> Non
 
     if spoken_text:
         log.info(f"Jarvis: {spoken_text[:80]}")
-        append_message(session_id, "assistant", spoken_text)
+        await append_message(session_id, "assistant", spoken_text)
         if not await speak(spoken_text, ws, display=spoken_text):
             return  # WebSocket lost, abort
 
@@ -247,19 +247,19 @@ async def process_message(session_id: str, user_text: str, ws: WebSocket) -> Non
     if action["type"] == "OPEN":
         # OPEN normally stays silent; speak only when the URL was rejected.
         if isinstance(action_result, str) and action_result.startswith("Diese URL"):
-            append_message(session_id, "assistant", action_result)
+            await append_message(session_id, "assistant", action_result)
             await speak(action_result, ws, display=action_result)
         return
 
     if isinstance(action_result, str) and action_result in EMPTY_REPLIES:
         msg = EMPTY_REPLIES[action_result]
-        append_message(session_id, "assistant", msg)
+        await append_message(session_id, "assistant", msg)
         await speak(msg, ws, display=msg)
         return
 
     if not action_result or "fehlgeschlagen" in action_result:
         summary = f"Das hat leider nicht funktioniert, {pick_address()}."
-        append_message(session_id, "assistant", summary)
+        await append_message(session_id, "assistant", summary)
         await speak(summary, ws, display=summary)
         return
 
@@ -276,7 +276,7 @@ async def process_message(session_id: str, user_text: str, ws: WebSocket) -> Non
         "DRAFT_REPLY", "DRAFT_REVISE", "DRAFT_APPROVE", "DRAFT_CANCEL",
         "MAIL_TO_TASK", "MARK_MAIL_READ",
     ):
-        append_message(session_id, "assistant", action_result)
+        await append_message(session_id, "assistant", action_result)
         await speak(action_result, ws, display=action_result)
         return
 
@@ -322,7 +322,7 @@ async def process_message(session_id: str, user_text: str, ws: WebSocket) -> Non
     # Defense: if the LLM ended mid-sentence, trim back to the last
     # complete sentence so the user doesn't hear truncated content.
     summary = scheduler.trim_to_complete_sentences(summary)
-    append_message(session_id, "assistant", summary)
+    await append_message(session_id, "assistant", summary)
     await speak(summary, ws, display=summary)
 
 
