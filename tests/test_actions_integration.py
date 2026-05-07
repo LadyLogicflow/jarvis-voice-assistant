@@ -175,18 +175,56 @@ async def test_steuernews_uses_cached_brief():
 
 
 async def test_steuernews_refreshes_when_no_cache():
+    """Issue #91: _fetch_feeds_raw wird genau einmal aufgerufen."""
     import datetime as dt
+    import steuer_news as _sn
     import scheduler
     S.STEUER_BRIEF = ""
     S.STEUER_BRIEF_DATE = ""
 
-    async def fake_refresh():
+    fetch_calls = []
+    fake_raw = "=== BFH Pressemitteilungen ===\n\u2022 Urteil XY (07.05.2026)"
+    fake_hashes: set[str] = set()
+
+    async def fake_fetch_feeds_raw():
+        fetch_calls.append(1)
+        return fake_raw, fake_hashes
+
+    async def fake_refresh(raw=None):
         S.STEUER_BRIEF = "Fresh brief"
         S.STEUER_BRIEF_DATE = dt.date.today().isoformat()
 
-    with patch.object(scheduler, "refresh_steuer_brief", new=fake_refresh):
+    with (
+        patch.object(_sn, "_fetch_feeds_raw", new=fake_fetch_feeds_raw),
+        patch.object(_sn, "_load_seen_hashes", return_value=set()),
+        patch.object(_sn, "commit_seen"),
+        patch.object(scheduler, "refresh_steuer_brief", new=fake_refresh),
+    ):
         result = await _exec("STEUERNEWS")
+
     assert result == "Fresh brief"
+    assert len(fetch_calls) == 1, f"_fetch_feeds_raw wurde {len(fetch_calls)}x aufgerufen, erwartet 1"
+
+
+async def test_steuernews_bereits_gelesen():
+    """Wenn alle Hashes bereits gesehen: Rueckfrage ohne Fetch-Schleife."""
+    import steuer_news as _sn
+    S.STEUER_BRIEF = ""
+    S.STEUER_BRIEF_DATE = ""
+
+    known_hash = _sn._title_hash("Urteil XY")
+    fake_raw = "=== BFH Pressemitteilungen ===\n\u2022 Urteil XY"
+
+    async def fake_fetch_feeds_raw():
+        return fake_raw, {known_hash}
+
+    with (
+        patch.object(_sn, "_fetch_feeds_raw", new=fake_fetch_feeds_raw),
+        patch.object(_sn, "_load_seen_hashes", return_value={known_hash}),
+    ):
+        result = await _exec("STEUERNEWS")
+
+    assert "dieselben wie zuletzt" in result
 
 
 # ---- Unknown action -----------------------------------------------------

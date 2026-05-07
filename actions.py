@@ -330,24 +330,26 @@ async def execute_action(action: dict) -> str:
 
     elif t == "STEUERNEWS":
         # Use cached brief if fresh, otherwise fetch live.
+        # Issue #91: RSS-Feeds werden nur einmal gefetcht; das Ergebnis
+        # wird an refresh_steuer_brief weitergereicht und die Hashes erst
+        # nach der Brief-Generierung via commit_seen persistiert.
         from scheduler import refresh_steuer_brief  # local import: avoid cycles
         import steuer_news as _sn
         today = datetime.date.today().isoformat()
-        # Pruefe ob alle aktuellen Meldungen bereits gelesen wurden
-        # (Issue #75). Nur pruefen wenn kein frischer Cache vorhanden.
         if not (S.STEUER_BRIEF and S.STEUER_BRIEF_DATE == today):
-            raw_check = await _sn.fetch_all_sources(mark_seen=False)
-            if raw_check == _sn.BEREITS_GELESEN:
+            # 1x fetchen -- Ergebnis fuer Seen-Check UND Brief-Generierung
+            raw, current_hashes = await _sn._fetch_feeds_raw()
+            seen = _sn._load_seen_hashes()
+            if current_hashes and current_hashes.issubset(seen):
                 return (
-                    "Die Steuernews sind dieselben wie zuletzt — "
+                    "Die Steuernews sind dieselben wie zuletzt \u2014 "
                     "soll ich sie trotzdem vorlesen?"
                 )
-            # Nicht bereits gesehen: Brief auffrischen + Hashes persistieren
-            await refresh_steuer_brief()
-            # Hashes jetzt nach dem Auffrischen speichern
-            await _sn.fetch_all_sources(mark_seen=True)
+            # Brief mit bereits geholtem Raw-Text generieren (kein 2. Fetch)
+            await refresh_steuer_brief(raw=raw)
+            # Hashes erst jetzt persistieren (nach erfolgreicher Generierung)
+            _sn.commit_seen(current_hashes)
         return S.STEUER_BRIEF if S.STEUER_BRIEF else "Keine neuen Veroeffentlichungen abrufbar."
-
     elif t == "READ_MAIL":
         # Vorlesen der aktuellen Mail (active_mail aus session_state).
         # Optional payload: "account|uid" um eine andere als die aktive
