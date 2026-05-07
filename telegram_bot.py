@@ -22,6 +22,7 @@ import tempfile
 from typing import Optional
 
 from actions import EMPTY_REPLIES, execute_action
+import conversation
 import session_state
 import settings as S
 from prompt import extract_action, get_system_prompt, llm_text, pick_address
@@ -138,14 +139,28 @@ async def _summarize_action(action_type: str, action_result: str) -> str:
     return summary
 
 
-async def _ask_claude(user_text: str) -> str:
+async def _ask_claude(session_id: str, user_text: str) -> str:
     """Mirror server.process_message: LLM call, optional action, optional
-    summarization. Returns the final spoken text."""
+    summarization. Returns the final spoken text.
+
+    Conversation history is loaded from *conversation.conversations* (seeded
+    from disk on first use for this session_id) so every Telegram exchange
+    carries the same rolling context as the WebSocket flow (Issue #82).
+    """
+    # Seed from persistent history the first time we see this session.
+    if session_id not in conversation.conversations:
+        conversation.conversations[session_id] = (
+            conversation.load_persistent_history()
+        )
+
+    conversation.append_message(session_id, "user", user_text)
+    history = conversation.conversations[session_id][-16:]
+
     response = await S.ai.messages.create(
         model="claude-haiku-4-5-20251001",
         max_tokens=1024,
         system=get_system_prompt(),
-        messages=[{"role": "user", "content": user_text}],
+        messages=history,
     )
     reply = llm_text(response)
     spoken_text, action = extract_action(reply)
@@ -263,8 +278,10 @@ async def _handle_message(update, context, *, source_text: str | None = None) ->
                 f"auto-restored for session {session_id!r}"
             )
 
-        reply_text = await _ask_claude(user_text)
+        reply_text = await _ask_claude(session_id, user_text)
         log.info(f"Telegram reply: '{reply_text[:120]}'")
+        # Persist the assistant turn so the next message has full context.
+        conversation.append_message(session_id, "assistant", reply_text)
 
         audio = await _tts_full(reply_text)
         if audio:
