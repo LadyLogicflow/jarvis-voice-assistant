@@ -115,7 +115,7 @@ async def refresh_data(force: bool = False) -> None:
         log.info(f"refresh_data skip (cooldown noch {remaining}s)")
         return
     _last_refresh_time = now
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     weather, tasks = await asyncio.gather(
         fetch_weather(),
         loop.run_in_executor(None, read_obsidian_tasks_sync),

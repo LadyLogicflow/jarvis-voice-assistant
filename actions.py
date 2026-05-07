@@ -251,7 +251,7 @@ async def execute_action(action: dict) -> str:
         return await browser_tools.fetch_news(S.NEWS_URL, S.NEWS_SOURCE_NAME)
 
     elif t == "MAIL":
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         if S.MAIL_BACKEND == "imap":
             if not (S.IMAP_HOST and S.IMAP_USER and S.IMAP_PASSWORD):
                 return ("IMAP-Backend ausgewaehlt aber unvollstaendig konfiguriert. "
@@ -325,7 +325,7 @@ async def execute_action(action: dict) -> str:
         parts = p.split("|", 1)
         title = parts[0].strip()
         body = parts[1].strip() if len(parts) > 1 else ""
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(None, notes_tools.add_note, title, body)
 
     elif t == "STEUERNEWS":

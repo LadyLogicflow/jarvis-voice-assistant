@@ -64,7 +64,7 @@ def _load_whisper():
 
 async def _transcribe(audio_bytes: bytes) -> str:
     """Transcribe an OGG/MP3/WAV blob via faster-whisper (German)."""
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
 
     def _do():
         model = _load_whisper()

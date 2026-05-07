@@ -83,7 +83,7 @@ async def _lifespan(_app):  # type: ignore[no-untyped-def]  # AsyncGenerator
     register_mail_alert_handler(_broadcast_proactive)
     # Startet Reindex beim Boot (im Hintergrund, blockiert nicht)
     import memory_search
-    asyncio.create_task(memory_search.reindex_all())
+    task_reindex = asyncio.create_task(memory_search.reindex_all())
     task_brief = asyncio.create_task(morning_brief_scheduler())
     task_proactive = asyncio.create_task(proactive_briefs_scheduler())
     task_telegram = asyncio.create_task(telegram_bot_main())
@@ -97,8 +97,8 @@ async def _lifespan(_app):  # type: ignore[no-untyped-def]  # AsyncGenerator
     try:
         yield
     finally:
-        for t in (task_brief, task_proactive, task_telegram, task_mail, task_weekly,
-                  task_memory):
+        for t in (task_reindex, task_brief, task_proactive, task_telegram, task_mail,
+                  task_weekly, task_memory):
             t.cancel()
             try:
                 await t

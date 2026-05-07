@@ -104,7 +104,7 @@ async def search_and_read(query: str) -> dict:
         # multi-word voice queries with &/?/# don't get truncated.
         search_url = f"https://duckduckgo.com/?q={quote(query, safe='')}"
         await page.goto(search_url, timeout=15000)
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         await loop.run_in_executor(None, _bring_chromium_to_front)
         await page.wait_for_timeout(2000)
 
@@ -220,7 +220,7 @@ async def open_url(url: str) -> dict:
     Refuses anything that is not http(s) — see _is_safe_url()."""
     if not _is_safe_url(url):
         return {"success": False, "url": url, "error": "rejected: only http/https URLs allowed"}
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     await loop.run_in_executor(None, webbrowser.open, url)
     return {"success": True, "url": url}
 

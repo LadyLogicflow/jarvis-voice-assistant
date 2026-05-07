@@ -15,6 +15,7 @@ Aktionen:
 
 from __future__ import annotations
 
+import asyncio
 import email
 import email.header
 import email.utils
@@ -453,7 +454,7 @@ async def forward_mail(account_name: str, uid: int, to_addr: str) -> bool:
     smtp_host = acc.get("smtp_host", acc["host"])
     smtp_port = int(acc.get("smtp_port", 587))
     try:
-        loop = __import__("asyncio").get_event_loop()
+        loop = asyncio.get_running_loop()
         def _send():
             ssl_context = ssl.create_default_context()
             with smtplib.SMTP(smtp_host, smtp_port, timeout=30) as s:

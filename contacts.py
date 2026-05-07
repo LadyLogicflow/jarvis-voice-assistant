@@ -69,7 +69,7 @@ def normalize_phone(phone: str) -> str:
 # ---------------------------------------------------------------------------
 async def _run_osascript(script: str, timeout: float = 15.0) -> str:
     """Run osascript and return stdout. Raises RuntimeError on non-zero."""
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
 
     def _blocking():
         result = subprocess.run(
