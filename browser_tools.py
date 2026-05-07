@@ -15,6 +15,8 @@ from urllib.parse import unquote, parse_qs, urlparse
 import httpx
 from playwright.async_api import async_playwright
 
+import settings as S
+
 log = logging.getLogger("jarvis.browser")
 
 _browser = None
@@ -79,7 +81,7 @@ async def _get_browser():  # type: ignore[no-untyped-def]  # playwright BrowserC
             if _playwright is None:
                 _playwright = await async_playwright().start()
             launch_args = ["--start-maximized"] if not IS_MAC else []
-            _browser = await _playwright.chromium.launch(headless=False, args=launch_args)
+            _browser = await _playwright.chromium.launch(headless=S.BROWSER_HEADLESS, args=launch_args)
             ua_string = (
                 "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
                 if IS_MAC
