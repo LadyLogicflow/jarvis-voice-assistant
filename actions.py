@@ -599,7 +599,7 @@ async def execute_action(action: dict) -> str:
         # Diese setzt PersonProfile.anrede statt nur add_note.
         if person_id and "anrede" in lower:
             idx = lower.find("anrede")
-            after = text[idx + len("anrede"):].lstrip(":, fuerü")
+            after = _re.sub(r'^[:\s,]*(f[uü]r\s+)?', '', text[idx + len("anrede"):], flags=_re.I)
             # strip person-name aus dem Praefix wenn drin
             if person_name and person_name.lower() in after.lower()[:len(person_name) + 5]:
                 after = after[after.lower().find(person_name.lower()) + len(person_name):].lstrip(":, ")
