@@ -398,6 +398,7 @@ async def forward_mail(account_name: str, uid: int, to_addr: str) -> bool:
     Jarvis emits an outgoing message without explicit Catrin-approval.
     Used by the Hellomed-getmyinvoices auto-forward rule."""
     import smtplib
+    import ssl
     from email.mime.multipart import MIMEMultipart
     from email.mime.text import MIMEText
     acc = _account_by_name(account_name)
@@ -454,8 +455,9 @@ async def forward_mail(account_name: str, uid: int, to_addr: str) -> bool:
     try:
         loop = __import__("asyncio").get_event_loop()
         def _send():
+            ssl_context = ssl.create_default_context()
             with smtplib.SMTP(smtp_host, smtp_port, timeout=30) as s:
-                s.starttls()
+                s.starttls(context=ssl_context)
                 s.login(acc["user"], acc["password"])
                 s.send_message(fwd)
         await loop.run_in_executor(None, _send)
