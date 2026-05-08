@@ -483,25 +483,9 @@ async def _idle_session(account: dict, aioimaplib_module) -> None:
     """One IMAP login + IDLE cycle for one account. Returns when the
     connection drops."""
     name = account["name"]
-    use_ssl = account["ssl"]
-    port = account["port"]
-    # Port 993 = direct TLS (IMAP4_SSL).
-    # Port 143 with ssl=true = STARTTLS: connect plain, upgrade after hello.
-    starttls = use_ssl and port != 993
-    if use_ssl and not starttls:
-        cls = aioimaplib_module.IMAP4_SSL
-    else:
-        cls = aioimaplib_module.IMAP4
-    client = cls(host=account["host"], port=port, timeout=60)
+    cls = aioimaplib_module.IMAP4_SSL if account["ssl"] else aioimaplib_module.IMAP4
+    client = cls(host=account["host"], port=account["port"], timeout=60)
     await client.wait_hello_from_server()
-
-    if starttls:
-        tls_resp = await client.starttls()
-        if getattr(tls_resp, "result", None) != "OK":
-            raise RuntimeError(
-                f"STARTTLS failed for {name}: {_resp_summary(tls_resp)}"
-            )
-        log.info(f"mail_monitor[{name}] STARTTLS ok")
 
     login_resp = await client.login(account["user"], account["password"])
     if getattr(login_resp, "result", None) != "OK":
