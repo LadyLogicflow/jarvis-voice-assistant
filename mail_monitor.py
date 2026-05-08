@@ -603,7 +603,8 @@ async def _idle_session(account: dict, aioimaplib_module) -> None:
 
 async def _account_loop(account: dict, aioimaplib_module) -> None:
     """Keep the IDLE session alive for one account, reconnecting on
-    crash with 30 s back-off."""
+    crash with back-off. Auth failures use a long back-off (30 min) to
+    avoid triggering IP bans from repeated rapid login attempts."""
     name = account["name"]
     while True:
         try:
@@ -611,9 +612,16 @@ async def _account_loop(account: dict, aioimaplib_module) -> None:
         except asyncio.CancelledError:
             raise
         except Exception as e:
-            log.warning(f"mail_monitor[{name}] session crashed: "
-                        f"{type(e).__name__}: {e}; reconnect in 30s")
-            await asyncio.sleep(30)
+            err = str(e)
+            is_auth = "LOGIN rejected" in err or "AUTHENTICATIONFAILED" in err
+            if is_auth:
+                log.warning(f"mail_monitor[{name}] auth failed: {e}; "
+                            f"reconnect in 30min (avoid IP ban)")
+                await asyncio.sleep(1800)
+            else:
+                log.warning(f"mail_monitor[{name}] session crashed: "
+                            f"{type(e).__name__}: {e}; reconnect in 30s")
+                await asyncio.sleep(30)
 
 
 async def mail_monitor_main() -> None:
