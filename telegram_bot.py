@@ -283,21 +283,7 @@ async def _handle_message(update, context, *, source_text: str | None = None) ->
         # Persist the assistant turn so the next message has full context.
         conversation.append_message(session_id, "assistant", reply_text)
 
-        audio = await _tts_full(reply_text)
-        if audio:
-            sent_msg = await update.message.reply_voice(
-                voice=io.BytesIO(audio), caption=None
-            )
-            # Record message_id -> active_mail so future replies to this
-            # voice-note can automatically restore the mail context.
-            active = session_state.get(session_id).active_mail
-            if sent_msg and active:
-                _msg_mail_map[sent_msg.message_id] = active
-                if len(_msg_mail_map) > _MSG_MAP_MAX:
-                    oldest = min(_msg_mail_map.keys())
-                    del _msg_mail_map[oldest]
-        else:
-            await update.message.reply_text(reply_text)
+        await update.message.reply_text(reply_text)
     except Exception as e:
         log.warning(f"Telegram handler error: {type(e).__name__}: {e}")
         try:
@@ -344,42 +330,11 @@ async def send_user_voice(
     caption: str | None = None,
     mail_ref: "session_state.MailRef | None" = None,
 ) -> bool:
-    """Push a spoken voice-note (ElevenLabs TTS) plus optional text
-    caption to Catrin's Telegram chat. Falls back to text if the TTS
-    pipeline returns nothing. Quiet-hours aware.
-
-    When *mail_ref* is supplied the sent message_id is recorded in
-    _msg_mail_map so that Catrin can reply to this voice-note and Jarvis
-    will automatically restore the mail context (Issue #49)."""
-    if not S.TELEGRAM_BOT_TOKEN or not S.TELEGRAM_CHAT_ID:
-        return False
-    if _app is None:
-        log.warning("send_user_voice: bot not yet running")
-        return False
-    if S.is_quiet_hours():
-        log.info(f"send_user_voice suppressed by quiet hours: {spoken_text[:60]!r}")
-        return False
-    try:
-        audio = await _tts_full(spoken_text)
-        if not audio:
-            log.info("send_user_voice: TTS empty, falling back to text")
-            return await send_user_text(caption or spoken_text)
-        sent_msg = await _app.bot.send_voice(
-            chat_id=S.TELEGRAM_CHAT_ID,
-            voice=io.BytesIO(audio),
-            caption=caption,
-        )
-        # Record message_id -> MailRef so reply-context detection works for
-        # proactively pushed mail announcements (e.g. from mail_monitor).
-        if sent_msg and mail_ref is not None:
-            _msg_mail_map[sent_msg.message_id] = mail_ref
-            if len(_msg_mail_map) > _MSG_MAP_MAX:
-                oldest = min(_msg_mail_map.keys())
-                del _msg_mail_map[oldest]
-        return True
-    except Exception as e:
-        log.warning(f"send_user_voice failed: {type(e).__name__}: {e}")
-        return False
+    """Send a Telegram text notification. The voice/TTS path is intentionally
+    removed — Telegram messages are always text-only. The caption is used when
+    available (shorter), otherwise spoken_text. The mail_ref parameter is kept
+    for API compatibility but is no longer used."""
+    return await send_user_text(caption or spoken_text)
 
 
 async def telegram_bot_main() -> None:
