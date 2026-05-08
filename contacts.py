@@ -340,7 +340,7 @@ async def create_contact(
     emails: list[str] | None = None,
     phones: list[str] | None = None,
     organization: str = "",
-) -> str | None:
+) -> Optional[str]:
     """Legt einen neuen Kontakt an. Liefert die ID oder None."""
     if not name:
         return None

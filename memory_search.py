@@ -20,7 +20,7 @@ import logging
 import os
 import threading
 from pathlib import Path
-from typing import Any
+from typing import Optional, Any
 
 log = logging.getLogger("jarvis")
 
@@ -147,7 +147,7 @@ def index_text(
     text: str,
     source: str,
     doc_id: str,
-    metadata: dict | None = None,
+    metadata: Optional[dict] = None,
 ) -> None:
     """Ein Dokument in den Vektorspeicher schreiben (upsert).
 

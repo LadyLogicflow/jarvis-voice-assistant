@@ -68,7 +68,7 @@ async def _fetch_weather_once() -> dict:
     return result
 
 
-async def fetch_weather() -> dict | None:
+async def fetch_weather() -> Optional[dict]:
     """Fetch wttr.in weather with one retry on transient failure.
     Returns None when both attempts fail."""
     try:
@@ -289,7 +289,7 @@ async def refresh_steuer_recent() -> None:
         S.STEUER_RECENT = ""
 
 
-async def refresh_steuer_brief(raw: str | None = None) -> None:
+async def refresh_steuer_brief(raw: Optional[str] = None) -> None:
     """Fetch steuerrecht news and summarize with Claude. Updates global cache.
 
     Wenn ``raw`` uebergeben wird, wird kein erneuter RSS-Fetch durchgefuehrt

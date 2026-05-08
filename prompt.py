@@ -78,7 +78,7 @@ def pick_greeting() -> str:
 ACTION_PATTERN = re.compile(r'\[ACTION:(\w+)\]\s*(.*?)$', re.DOTALL | re.MULTILINE)
 
 
-def extract_action(text: str) -> tuple[str, dict | None]:
+def extract_action(text: str) -> tuple[str, Optional[dict]]:
     match = ACTION_PATTERN.search(text)
     if match:
         clean = text[:match.start()].strip()

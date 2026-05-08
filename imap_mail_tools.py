@@ -17,7 +17,7 @@ from email.utils import parseaddr
 log = logging.getLogger("jarvis.imap")
 
 
-def _decode_header(raw: str | None) -> str:
+def _decode_header(raw: Optional[str]) -> str:
     """Decode an RFC 2047 mail header (encoded UTF-8 / Quoted-Printable)
     into a plain string."""
     if not raw:

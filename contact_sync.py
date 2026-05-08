@@ -155,7 +155,7 @@ async def extract_person_details(msg, sender_addr: str, sender_name: str) -> dic
     return base
 
 
-async def check_mail_for_drift(msg, sender_addr: str, sender_name: str) -> dict | None:
+async def check_mail_for_drift(msg, sender_addr: str, sender_name: str) -> Optional[dict]:
     """Pruefe eine eingehende Mail auf Person-/Email-/Phone-Drift.
 
     Reihenfolge:

@@ -33,7 +33,7 @@ log = S.log
 MAX_BODY_CHARS = 1500
 
 
-def _account_by_name(name: str) -> dict | None:
+def _account_by_name(name: str) -> Optional[dict]:
     """Find the account dict (with password) in MAIL_MONITOR_ACCOUNTS."""
     for acc in S.MAIL_MONITOR_ACCOUNTS:
         if acc.get("name") == name:
@@ -270,7 +270,7 @@ async def append_to_drafts(account_name: str, msg_bytes: bytes) -> tuple[bool, s
                 pass
 
 
-def extract_calendar_invite(msg) -> dict | None:
+def extract_calendar_invite(msg) -> Optional[dict]:
     """Wenn die Mail einen Kalender-Termin enthaelt (text/calendar oder
     .ics-Anhang), gib ein dict mit den wichtigen Feldern zurueck.
 

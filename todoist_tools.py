@@ -148,8 +148,8 @@ async def add_task(
     token: str,
     content: str,
     due: str = "",
-    project_id: str | None = None,
-    section_id: str | None = None,
+    project_id: Optional[str] = None,
+    section_id: Optional[str] = None,
 ) -> str:
     """Add a new task. Optionally pin it to a project / section."""
     payload: dict = {"content": content}

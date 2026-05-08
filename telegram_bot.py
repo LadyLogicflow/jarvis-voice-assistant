@@ -229,7 +229,7 @@ def _is_authorized(update) -> bool:
     return str(update.effective_chat.id) == str(S.TELEGRAM_CHAT_ID)
 
 
-async def _handle_message(update, context, *, source_text: str | None = None) -> None:
+async def _handle_message(update, context, *, source_text: Optional[str] = None) -> None:
     """Common handler for both voice and text messages."""
     if not _is_authorized(update):
         log.warning(
@@ -327,7 +327,7 @@ async def send_user_text(text: str) -> bool:
 
 async def send_user_voice(
     spoken_text: str,
-    caption: str | None = None,
+    caption: Optional[str] = None,
     mail_ref: "session_state.MailRef | None" = None,
 ) -> bool:
     """Send a Telegram text notification. The voice/TTS path is intentionally

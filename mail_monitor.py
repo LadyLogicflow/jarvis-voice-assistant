@@ -61,7 +61,7 @@ def _save_state(account_name: str, uid: int) -> None:
                     f"{type(e).__name__}: {e}")
 
 
-def _decode_header(raw: str | None) -> str:
+def _decode_header(raw: Optional[str]) -> str:
     if not raw:
         return ""
     parts = email.header.decode_header(raw)
@@ -485,9 +485,18 @@ async def _idle_session(account: dict, aioimaplib_module) -> None:
     name = account["name"]
     cls = aioimaplib_module.IMAP4_SSL if account["ssl"] else aioimaplib_module.IMAP4
     client = cls(host=account["host"], port=account["port"], timeout=60)
-    await client.wait_hello_from_server()
+    log.info(f"mail_monitor[{name}] connecting to {account['host']}:{account['port']}…")
+    try:
+        await asyncio.wait_for(client.wait_hello_from_server(), timeout=30)
+    except asyncio.TimeoutError:
+        raise RuntimeError(f"IMAP greeting timeout after 30s ({account['host']}:{account['port']})")
 
-    login_resp = await client.login(account["user"], account["password"])
+    try:
+        login_resp = await asyncio.wait_for(
+            client.login(account["user"], account["password"]), timeout=30
+        )
+    except asyncio.TimeoutError:
+        raise RuntimeError(f"LOGIN timeout after 30s for user={account['user']!r}")
     if getattr(login_resp, "result", None) != "OK":
         raise RuntimeError(
             f"LOGIN rejected for user={account['user']!r}: {_resp_summary(login_resp)}"

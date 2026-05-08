@@ -251,7 +251,7 @@ http = httpx.AsyncClient(timeout=30)
 # Mutable runtime state. Other modules MUST access these via
 # `import settings as S; S.WEATHER_INFO` so they see updates.
 # ---------------------------------------------------------------------------
-WEATHER_INFO: dict | None = None
+WEATHER_INFO: Optional[dict] = None
 TASKS_INFO: list[str] = []  # Obsidian Tasks.md
 STEUER_BRIEF: str = ""
 STEUER_BRIEF_DATE: str = ""

@@ -139,7 +139,7 @@ def _show_chrome() -> None:
     subprocess.Popen(["osascript", "-e", script])
 
 
-def require_jarvis_token(x_jarvis_token: str | None = Header(default=None)) -> None:
+def require_jarvis_token(x_jarvis_token: Optional[str] = Header(default=None)) -> None:
     """No-op when JARVIS_AUTH_TOKEN is unset, otherwise rejects requests
     without a matching `X-Jarvis-Token` header."""
     if not S.JARVIS_AUTH_TOKEN:
