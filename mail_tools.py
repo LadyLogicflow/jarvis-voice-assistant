@@ -65,3 +65,38 @@ end tell
         return "Mail.app hat nicht rechtzeitig geantwortet."
     except Exception as e:
         return f"Fehler: {e}"
+
+
+def create_draft(to: str, subject: str, body: str) -> str:
+    """Create a draft in Mail.app via AppleScript. Does not send.
+    Returns a status string."""
+    def esc(s: str) -> str:
+        return s.replace("\\", "\\\\").replace('"', '\\"')
+
+    script = f"""
+tell application "Mail"
+    set newMsg to make new outgoing message with properties {{\\
+        subject:"{esc(subject)}",\\
+        content:"{esc(body)}"\\
+    }}
+    tell newMsg
+        if "{esc(to)}" is not "" then
+            make new to recipient at end of to recipients with properties {{address:"{esc(to)}"}}
+        end if
+        set visible to false
+    end tell
+end tell
+return "ok"
+"""
+    try:
+        result = subprocess.run(
+            ["osascript", "-e", script],
+            capture_output=True, text=True, timeout=15
+        )
+        if result.returncode != 0:
+            return f"Fehler beim Erstellen des Entwurfs: {result.stderr.strip()}"
+        return "Entwurf erstellt."
+    except subprocess.TimeoutExpired:
+        return "Mail.app hat nicht rechtzeitig geantwortet."
+    except Exception as e:
+        return f"Fehler: {e}"

@@ -53,6 +53,7 @@ from scheduler import (
     weekly_outlook_scheduler,
 )
 from mail_monitor import mail_monitor_main, register_mail_alert_handler
+import planner
 import session_state
 from telegram_bot import telegram_bot_main
 from tts import speak
@@ -70,6 +71,17 @@ async def _broadcast_proactive(text: str) -> None:
     loop = asyncio.get_running_loop()
     await loop.run_in_executor(None, _show_chrome)
     await speak(text, target, display=text)
+
+
+async def broadcast_to_all_sessions(text: str) -> None:
+    """Send a text-only status message to all connected WebSocket clients
+    (display only, no TTS). Used by the planner for silent notifications."""
+    for ws in list(active_clients):
+        try:
+            import json as _json
+            await ws.send_text(_json.dumps({"type": "status", "text": text}))
+        except Exception:
+            pass
 
 
 @asynccontextmanager
@@ -90,15 +102,17 @@ async def _lifespan(_app):  # type: ignore[no-untyped-def]  # AsyncGenerator
     task_mail = asyncio.create_task(mail_monitor_main())
     task_weekly = asyncio.create_task(weekly_outlook_scheduler())
     task_memory = asyncio.create_task(memory_reindex_scheduler())
+    task_planner = asyncio.create_task(planner.planner_loop())
     log.info(f"Steuerrecht-Scheduler gestartet (taeglich um {S.MORNING_HOUR}:00 Uhr)")
     log.info(f"Proaktive Briefs aktiv: {S.PROACTIVE_BRIEFS_TIMES}")
     log.info("Wochenausblick aktiv (Sonntag 18:00)")
     log.info("Memory-Reindex-Scheduler aktiv (täglich 03:00 Uhr + Startup)")
+    log.info("Task-Planer aktiv (stündlich, Mo–Fr 17–19 Uhr)")
     try:
         yield
     finally:
         for t in (task_reindex, task_brief, task_proactive, task_telegram, task_mail,
-                  task_weekly, task_memory):
+                  task_weekly, task_memory, task_planner):
             t.cancel()
             try:
                 await t
@@ -329,6 +343,7 @@ async def process_message(session_id: str, user_text: str, ws: WebSocket) -> Non
         "ACCEPT_CALENDAR_INVITE", "DECLINE_CALENDAR_INVITE",
         "ACCEPT_PERSON_ACTION", "DECLINE_PERSON_ACTION",
         "WEEKLY_OUTLOOK", "CONTACTS_INFO", "LOOKUP_CONTACT",
+        "PLAN_NOW",
     ):
         await append_message(session_id, "assistant", action_result)
         await speak(action_result, ws, display=action_result)

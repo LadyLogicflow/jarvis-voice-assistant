@@ -550,6 +550,10 @@ async def execute_action(action: dict) -> str:
             return "Kein Entwurf zum Verwerfen."
         return f"Vergessen, {pick_address()}."
 
+    elif t == "PLAN_NOW":
+        import planner
+        return await planner.plan_now()
+
     elif t == "WEEKLY_OUTLOOK":
         # On-demand-Wochenausblick (gleicher Inhalt wie der
         # Sonntag-18:00-Trigger). Nutzt den scheduler-Helper damit

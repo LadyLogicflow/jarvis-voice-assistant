@@ -197,3 +197,63 @@ def _add_event(title: str, when: str, duration_h: float) -> str:
     event_id = created.get("id", "")
     log.info("Kalender-Eintrag angelegt: id=%s titel=%r", event_id, title)
     return f"Termin angelegt: {title} am {dt.strftime('%d.%m. um %H:%M')} Uhr"
+
+
+async def create_event_at(title: str, start_dt: "datetime", duration_min: int) -> str:
+    """Create a calendar event at an exact datetime. Returns the event_id on
+    success, raises on failure."""
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, _create_event_at, title, start_dt, duration_min)
+
+
+def _create_event_at(title: str, start_dt: "datetime", duration_min: int) -> str:
+    service = _get_service()
+    end_dt = start_dt + timedelta(minutes=duration_min)
+    event = {
+        "summary": title,
+        "start": {"dateTime": start_dt.isoformat(), "timeZone": "Europe/Berlin"},
+        "end":   {"dateTime": end_dt.isoformat(),   "timeZone": "Europe/Berlin"},
+    }
+    created = service.events().insert(calendarId="primary", body=event).execute()
+    event_id = created.get("id", "")
+    log.info("Planner: event created id=%s titel=%r", event_id, title)
+    return event_id
+
+
+async def delete_event(event_id: str) -> bool:
+    """Delete a calendar event by its ID. Returns True on success."""
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, _delete_event, event_id)
+
+
+def _delete_event(event_id: str) -> bool:
+    try:
+        service = _get_service()
+        service.events().delete(calendarId="primary", eventId=event_id).execute()
+        log.info("Planner: event deleted id=%s", event_id)
+        return True
+    except Exception as e:
+        log.warning("Planner: delete_event failed id=%s: %s", event_id, e)
+        return False
+
+
+async def get_events_raw(start_dt: "datetime", end_dt: "datetime") -> list[dict]:
+    """Return raw event dicts between start_dt and end_dt (tz-aware)."""
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, _get_events_raw, start_dt, end_dt)
+
+
+def _get_events_raw(start_dt: "datetime", end_dt: "datetime") -> list[dict]:
+    try:
+        service = _get_service()
+        result = service.events().list(
+            calendarId="primary",
+            timeMin=start_dt.isoformat(),
+            timeMax=end_dt.isoformat(),
+            singleEvents=True,
+            orderBy="startTime",
+        ).execute()
+        return result.get("items", [])
+    except Exception as e:
+        log.warning("get_events_raw failed: %s", e)
+        return []
