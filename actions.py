@@ -598,6 +598,22 @@ async def execute_action(action: dict) -> str:
             r"reservieren|bestellen|ueberweisen)\b",
             lower,
         ))
+        def _near_dup(new: str, existing: list[str]) -> bool:
+            """True when new text is semantically redundant with an existing entry.
+            Uses token containment: if >= 75% of the shorter text's tokens
+            appear in the longer text, treat as duplicate."""
+            a = set(_re.sub(r'[^\w]', ' ', new.lower()).split())
+            if len(a) < 2:
+                return False
+            for ex in existing:
+                b = set(_re.sub(r'[^\w]', ' ', ex.lower()).split())
+                if not b:
+                    continue
+                overlap = len(a & b) / min(len(a), len(b))
+                if overlap >= 0.75:
+                    return True
+            return False
+
         # Spezialfall: explizite Anrede-Pflege via "Anrede fuer X: ..."
         # Diese setzt PersonProfile.anrede statt nur add_note.
         if person_id and "anrede" in lower:
@@ -612,11 +628,17 @@ async def execute_action(action: dict) -> str:
                     prof.anrede = after.strip()
                     persons_db.upsert(prof)
                     return f"Anrede fuer {person_name} gespeichert: {after.strip()}"
-        # Speichern
+        # Speichern — nur wenn kein Duplikat vorhanden
         if person_id:
+            prof = persons_db.get(person_id)
+            if prof and _near_dup(text, prof.notes):
+                return f"Das habe ich bereits bei {person_name} notiert, {pick_address()}."
             persons_db.add_note(person_id, text)
             stored_where = f"bei {person_name}"
         else:
+            existing_texts = [n.text for n in notes_db.all_notes()]
+            if _near_dup(text, existing_texts):
+                return f"Das ist mir bereits bekannt, {pick_address()}."
             notes_db.add(text, kind=kind)
             stored_where = (
                 "in den Vorlieben" if kind == "vorliebe"
