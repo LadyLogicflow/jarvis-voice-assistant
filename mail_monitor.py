@@ -623,10 +623,15 @@ async def _account_loop(account: dict, aioimaplib_module) -> None:
         except Exception as e:
             err = str(e)
             is_auth = "LOGIN rejected" in err or "AUTHENTICATIONFAILED" in err
+            is_timeout = isinstance(e, (asyncio.TimeoutError, TimeoutError)) or "TimeoutError" in type(e).__name__
             if is_auth:
                 log.warning(f"mail_monitor[{name}] auth failed: {e}; "
                             f"reconnect in 30min (avoid IP ban)")
                 await asyncio.sleep(1800)
+            elif is_timeout:
+                log.warning(f"mail_monitor[{name}] connection timeout (server unresponsive / IP throttle?); "
+                            f"reconnect in 10min")
+                await asyncio.sleep(600)
             else:
                 log.warning(f"mail_monitor[{name}] session crashed: "
                             f"{type(e).__name__}: {e}; reconnect in 30s")
