@@ -162,8 +162,9 @@ function connect() {
                 // restart it. `startListening()` is a no-op if it's already
                 // active, so calling it unconditionally is safe.
                 if (isListening) {
-                    try { recognition.stop(); } catch (e) {}
+                    try { if (recognition) recognition.stop(); } catch (e) {}
                     isListening = false;
+                    recognition = null;
                 }
                 setOrbState('listening');
                 setTimeout(startListening, 200);
@@ -223,8 +224,9 @@ function playNext() {
     setOrbState('speaking');
     status.textContent = '';
     if (isListening) {
-        recognition.stop();
+        if (recognition) recognition.stop();
         isListening = false;
+        recognition = null;
     }
 
     const b64 = audioQueue.shift();
@@ -252,7 +254,7 @@ function playNext() {
 
 // Speech Recognition
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-let recognition;
+let recognition = null;
 let isListening = false;
 const SPEECH_AVAILABLE = !!SpeechRecognition;
 
@@ -265,13 +267,16 @@ if (!SPEECH_AVAILABLE) {
     orb.title = 'Spracherkennung nicht verfuegbar (Chrome benoetigt)';
 }
 
-if (SPEECH_AVAILABLE) {
-    recognition = new SpeechRecognition();
-    recognition.lang = 'de-DE';
-    recognition.continuous = true;
-    recognition.interimResults = false;
+// Chrome's SpeechRecognition API becomes unreliable when the same object
+// is reused after onend — start() on a finished object silently fails.
+// Fix: recreate the object fresh on every startListening() call.
+function _buildRecognition() {
+    const r = new SpeechRecognition();
+    r.lang = 'de-DE';
+    r.continuous = false;   // one utterance per session; we restart on onend
+    r.interimResults = false;
 
-    recognition.onresult = (event) => {
+    r.onresult = (event) => {
         const last = event.results[event.results.length - 1];
         if (last.isFinal) {
             const text = last[0].transcript.trim();
@@ -309,28 +314,42 @@ if (SPEECH_AVAILABLE) {
         }
     };
 
-    recognition.onend = () => {
+    r.onend = () => {
         isListening = false;
-        if (!isPlaying) setTimeout(startListening, 300);
+        recognition = null;
+        if (!isPlaying) setTimeout(startListening, 200);
     };
 
-    recognition.onerror = (event) => {
+    r.onerror = (event) => {
         isListening = false;
+        recognition = null;
+        if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
+            status.textContent = 'Mikrofon-Zugriff verweigert. Bitte in Chrome-Einstellungen erlauben.';
+            setOrbState('idle');
+            return;
+        }
         if (!isPlaying) {
-            const delay = (event.error === 'no-speech' || event.error === 'aborted') ? 300 : 1000;
+            const delay = event.error === 'no-speech' ? 200 : 500;
             setTimeout(startListening, delay);
         }
     };
+
+    return r;
 }
 
 function startListening() {
-    if (isPlaying || !SPEECH_AVAILABLE) return;
+    if (isPlaying || !SPEECH_AVAILABLE || isListening) return;
+    recognition = _buildRecognition();
     try {
         recognition.start();
         isListening = true;
         setOrbState('listening');
         status.textContent = '';
-    } catch(e) {}
+    } catch(e) {
+        recognition = null;
+        isListening = false;
+        console.warn('[jarvis] recognition.start() failed:', e);
+    }
 }
 
 orb.addEventListener('click', () => {
@@ -340,8 +359,9 @@ orb.addEventListener('click', () => {
         return;
     }
     if (isListening) {
-        recognition.stop();
+        if (recognition) recognition.stop();
         isListening = false;
+        recognition = null;
         setOrbState('idle');
         status.textContent = 'Pausiert. Klicke zum Fortsetzen.';
     } else {
