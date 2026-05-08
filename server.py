@@ -219,7 +219,12 @@ async def process_message(session_id: str, user_text: str, ws: WebSocket) -> Non
     log.info(f"LLM raw: {reply[:200]}")
     spoken_text, action = extract_action(reply)
 
-    if spoken_text:
+    # RECALL: hold spoken_text until we know if there are results.
+    # The LLM often generates a negative pre-text ("I don't know...") before
+    # triggering RECALL, which would then contradict the actual results.
+    _hold_spoken = action is not None and action["type"] == "RECALL"
+
+    if spoken_text and not _hold_spoken:
         log.info(f"Jarvis: {spoken_text[:80]}")
         await append_message(session_id, "assistant", spoken_text)
         if not await speak(spoken_text, ws, display=spoken_text):
@@ -279,6 +284,38 @@ async def process_message(session_id: str, user_text: str, ws: WebSocket) -> Non
     if action["type"] in _SILENT_ON_SUCCESS and spoken_text:
         if "?" not in action_result and "fehlgeschlagen" not in action_result:
             return  # LLM pre-announced; success needs no repetition
+    # RECALL: synthesize raw notes into natural butler speech.
+    # spoken_text was held above so no contradiction is possible.
+    if action["type"] == "RECALL":
+        no_results = action_result.startswith("Ich finde nichts") or \
+                     action_result.startswith("Wonach soll ich")
+        if no_results:
+            # Use the LLM's own "I don't know" phrasing if available, else
+            # fall back to the action message.
+            msg = spoken_text if spoken_text else action_result
+            await append_message(session_id, "assistant", msg)
+            await speak(msg, ws, display=msg)
+        else:
+            addr = pick_address()
+            synth_resp = await S.ai.messages.create(
+                model="claude-haiku-4-5-20251001",
+                max_tokens=350,
+                system=(
+                    f"Du bist Jarvis, der britisch-hoefliche KI-Butler. "
+                    f"Fasse die folgenden Gedaechtnis-Eintraege in 2-3 natuerlichen Saetzen "
+                    f"zusammen. Keine Aufzaehlung, keine 'Notiz:'-Prefixe, keine eckigen "
+                    f"Klammern, keine Kategorien. Nur die relevanten Fakten in fliesender "
+                    f"Sprache. Ton: trocken, praezise, Butler-Stil. Sprich {addr} an. "
+                    f"Keine Begrueszung, kein 'Guten Tag'."
+                ),
+                messages=[{"role": "user", "content": action_result}],
+            )
+            summary, _ = extract_action(llm_text(synth_resp))
+            summary = scheduler.trim_to_complete_sentences(summary)
+            await append_message(session_id, "assistant", summary)
+            await speak(summary, ws, display=summary)
+        return
+
     # These actions return text that's already user-friendly — pass
     # through verbatim. Forcing them through the summary pipeline below
     # would (a) mangle long content like full mail bodies, (b) clip via
@@ -288,7 +325,7 @@ async def process_message(session_id: str, user_text: str, ws: WebSocket) -> Non
         "READ_MAIL", "SUMMARIZE_MAIL",
         "DRAFT_REPLY", "DRAFT_REVISE", "DRAFT_APPROVE", "DRAFT_CANCEL",
         "MAIL_TO_TASK", "MARK_MAIL_READ",
-        "MEMORIZE", "RECALL",
+        "MEMORIZE",
         "ACCEPT_CALENDAR_INVITE", "DECLINE_CALENDAR_INVITE",
         "ACCEPT_PERSON_ACTION", "DECLINE_PERSON_ACTION",
         "WEEKLY_OUTLOOK", "CONTACTS_INFO", "LOOKUP_CONTACT",
