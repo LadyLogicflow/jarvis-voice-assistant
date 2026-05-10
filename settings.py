@@ -149,8 +149,10 @@ IMAP_FOLDER = config.get("imap_folder", "INBOX")
 # Mails (after Haiku classification) to Telegram during waking hours.
 MAIL_MONITOR_ENABLED = bool(config.get("mail_monitor_enabled", False))
 # Browser: headless mode. Set to true in SSH/CI environments without a
-# display. Default false (visible Chromium window on desktop).
-BROWSER_HEADLESS = bool(config.get("browser_headless", False))
+# display. Auto-detected: headless when no DISPLAY/WAYLAND_DISPLAY is set
+# (typical on Raspberry Pi / server). config.json can override explicitly.
+_no_display = not os.environ.get("DISPLAY") and not os.environ.get("WAYLAND_DISPLAY")
+BROWSER_HEADLESS = bool(config.get("browser_headless", _no_display))
 # Which categories trigger a Telegram push. Default: only mails the
 # classifier flagged as "handlungsbedarf". Set to ["handlungsbedarf",
 # "info"] to also forward FYI mails.
