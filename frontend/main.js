@@ -122,7 +122,8 @@ window.addEventListener('load', () => {
 });
 
 function connect() {
-    ws = new WebSocket(`ws://${location.host}/ws`);
+    const wsProto = location.protocol === 'https:' ? 'wss' : 'ws';
+    ws = new WebSocket(`${wsProto}://${location.host}/ws`);
     ws.onopen = () => {
         console.log('[jarvis] WebSocket connected');
         lastDisconnectTime = 0;

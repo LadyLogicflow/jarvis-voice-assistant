@@ -87,6 +87,8 @@ MORNING_HOUR = config.get("morning_hour", 7)
 
 SERVER_PORT = int(config.get("server_port", 8340))
 SERVER_HOST = config.get("server_host", "0.0.0.0")
+SERVER_SSL_CERT = config.get("server_ssl_cert", "")
+SERVER_SSL_KEY = config.get("server_ssl_key", "")
 ELEVENLABS_MODEL = config.get("elevenlabs_model", "eleven_turbo_v2_5")
 GREETING_COOLDOWN = float(config.get("greeting_cooldown", 10.0))
 ACTIVATE_COOLDOWN = float(config.get("activate_cooldown", 90.0))

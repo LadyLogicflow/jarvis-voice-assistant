@@ -485,8 +485,16 @@ async def serve_index() -> FileResponse:
 
 if __name__ == "__main__":
     import uvicorn
+    ssl_on = bool(S.SERVER_SSL_CERT and S.SERVER_SSL_KEY)
+    proto = "https" if ssl_on else "http"
     log.info("=" * 50)
     log.info("J.A.R.V.I.S. V2 Server")
-    log.info(f"http://{S.SERVER_HOST}:{S.SERVER_PORT}")
+    log.info(f"{proto}://{S.SERVER_HOST}:{S.SERVER_PORT}")
     log.info("=" * 50)
-    uvicorn.run(app, host=S.SERVER_HOST, port=S.SERVER_PORT)
+    uvicorn.run(
+        app,
+        host=S.SERVER_HOST,
+        port=S.SERVER_PORT,
+        ssl_certfile=S.SERVER_SSL_CERT or None,
+        ssl_keyfile=S.SERVER_SSL_KEY or None,
+    )
