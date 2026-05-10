@@ -556,12 +556,33 @@ async def execute_action(action: dict) -> str:
 
     elif t == "SYNC_CONTACTS":
         from contacts_carddav import sync_icloud_contacts
-        from persons_db import upsert_contact
+        import persons_db
+        from persons_db import PersonProfile, upsert, get
         contacts = await sync_icloud_contacts()
         if not contacts:
             return "Keine Kontakte geladen — bitte ICLOUD_APPLE_ID und ICLOUD_APP_PASSWORD in der .env prüfen."
         for c in contacts:
-            upsert_contact(c.id, c.name, emails=c.emails, phones=c.phones, organization=c.organization)
+            existing = persons_db.get(c.id)
+            if existing:
+                if c.emails and not existing.primary_email:
+                    existing.primary_email = c.emails[0]
+                    existing.secondary_emails = c.emails[1:]
+                if c.phones and not existing.primary_phone:
+                    existing.primary_phone = c.phones[0]
+                    existing.secondary_phones = c.phones[1:]
+                if c.organization and not existing.funktion:
+                    existing.funktion = c.organization
+                persons_db.upsert(existing)
+            else:
+                persons_db.upsert(PersonProfile(
+                    contact_id=c.id,
+                    name=c.name,
+                    primary_email=c.emails[0] if c.emails else "",
+                    secondary_emails=c.emails[1:],
+                    primary_phone=c.phones[0] if c.phones else "",
+                    secondary_phones=c.phones[1:],
+                    funktion=c.organization,
+                ))
         return f"{len(contacts)} Kontakte aus iCloud geladen."
 
     elif t == "WEEKLY_OUTLOOK":
