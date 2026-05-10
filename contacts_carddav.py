@@ -26,15 +26,23 @@ _NS = {
     "card": "urn:ietf:params:xml:ns:carddav",
 }
 
-# vCard field patterns
-_FN = re.compile(r"^FN[;:](.+)$", re.MULTILINE)
-_EMAIL = re.compile(r"^EMAIL[^:]*:(.+)$", re.MULTILINE)
-_TEL = re.compile(r"^TEL[^:]*:(.+)$", re.MULTILINE)
-_ORG = re.compile(r"^ORG[;:](.+)$", re.MULTILINE)
-_UID = re.compile(r"^UID[;:](.+)$", re.MULTILINE)
+# vCard field patterns.
+# iCloud prefixes labeled fields with "item1.", "item2.", etc.
+# — so TEL lines look like "item1.TEL;type=CELL:+49..." instead of "TEL:...".
+_FN = re.compile(r"^(?:item\d+\.)?FN[;:](.+)$", re.MULTILINE)
+_EMAIL = re.compile(r"^(?:item\d+\.)?EMAIL[^:]*:(.+)$", re.MULTILINE)
+_TEL = re.compile(r"^(?:item\d+\.)?TEL[^:]*:(.+)$", re.MULTILINE)
+_ORG = re.compile(r"^(?:item\d+\.)?ORG[;:](.+)$", re.MULTILINE)
+_UID = re.compile(r"^(?:item\d+\.)?UID[;:](.+)$", re.MULTILINE)
+
+
+def _unfold(vcard: str) -> str:
+    """Remove vCard line folding (CRLF/LF + space/tab → nothing)."""
+    return re.sub(r"\r?\n[ \t]", "", vcard)
 
 
 def _parse_vcard(vcard: str) -> Optional[Contact]:
+    vcard = _unfold(vcard)
     fn = _FN.search(vcard)
     if not fn:
         return None
