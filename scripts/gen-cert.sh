@@ -9,11 +9,13 @@ mkdir -p "$CERT_DIR"
 IP=$(hostname -I | awk '{print $1}')
 HOST=$(hostname).local
 
-openssl req -x509 -newkey rsa:2048 -days 3650 -nodes \
+openssl req -x509 -newkey rsa:2048 -days 398 -nodes \
     -keyout "$CERT_DIR/key.pem" \
     -out    "$CERT_DIR/cert.pem" \
     -subj   "/CN=$HOST" \
-    -addext "subjectAltName=IP:$IP,DNS:$HOST,DNS:localhost"
+    -addext "subjectAltName=IP:$IP,DNS:$HOST,DNS:localhost" \
+    -addext "keyUsage=digitalSignature,keyEncipherment" \
+    -addext "extendedKeyUsage=serverAuth"
 
 echo ""
 echo "Zertifikat erstellt:"
