@@ -1,0 +1,10 @@
+[Unit]
+Description=JARVIS Auto-Updater — alle 15 Minuten
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=15min
+Unit=jarvis-update.service
+
+[Install]
+WantedBy=timers.target

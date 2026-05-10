@@ -1,0 +1,18 @@
+[Unit]
+Description=JARVIS Personal Assistant
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/jarvis-voice-assistant-master
+ExecStart=/usr/bin/python3 server.py
+Restart=on-failure
+RestartSec=10
+StandardOutput=append:/home/pi/jarvis-voice-assistant-master/jarvis.log
+StandardError=append:/home/pi/jarvis-voice-assistant-master/jarvis.log
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target
