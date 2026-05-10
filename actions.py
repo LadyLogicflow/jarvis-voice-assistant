@@ -34,6 +34,29 @@ import todoist_tools
 log = S.log
 
 
+def _format_phone_tts(number: str) -> str:
+    """Format a phone number for natural TTS output.
+
+    Removes clutter, ensures digit groups are space-separated so
+    ElevenLabs reads them in short bursts rather than one long stream.
+    '+4917612345678' → '0176 12 34 56 78'
+    '+49 211 123456' → '0211 12 34 56'
+    """
+    import re as _re
+    n = number.strip()
+    # Replace leading +49 with 0 for German numbers
+    n = _re.sub(r"^\+49\s*", "0", n)
+    # Strip all non-digit characters to normalize
+    digits = _re.sub(r"\D", "", n)
+    if not digits:
+        return number
+    # Keep leading 0 prefix, then group remaining digits in pairs
+    prefix = digits[:4] if len(digits) >= 10 else digits[:3]
+    rest = digits[len(prefix):]
+    groups = [rest[i:i+2] for i in range(0, len(rest), 2)]
+    return prefix + " " + " ".join(groups) if groups else prefix
+
+
 def _load_business_context() -> str:
     """Catrins business_context.md als Hintergrund fuer Mail-Antworten.
 
@@ -824,7 +847,7 @@ async def execute_action(action: dict) -> str:
                 else:
                     out_parts.append("Mails: " + ", ".join(email_list) + ".")
         if r["phones"]:
-            phone_list = [pp for pp in r["phones"] if pp]
+            phone_list = [_format_phone_tts(pp) for pp in r["phones"] if pp]
             if phone_list:
                 if len(phone_list) == 1:
                     out_parts.append(f"Telefon: {phone_list[0]}.")
