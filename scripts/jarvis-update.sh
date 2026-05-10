@@ -19,6 +19,7 @@ fi
 
 echo "$(date '+%Y-%m-%d %H:%M:%S') | new commits detected, pulling…" >>"$LOG"
 git pull origin main >>"$LOG" 2>&1
+"__REPO__/.venv/bin/pip" install -r "__REPO__/requirements.txt" >>"$LOG" 2>&1
 echo "$(date '+%Y-%m-%d %H:%M:%S') | restarting $SERVICE" >>"$LOG"
 systemctl restart "$SERVICE"
 echo "$(date '+%Y-%m-%d %H:%M:%S') | done" >>"$LOG"
