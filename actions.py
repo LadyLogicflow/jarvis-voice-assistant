@@ -554,6 +554,16 @@ async def execute_action(action: dict) -> str:
         import planner
         return await planner.plan_now()
 
+    elif t == "SYNC_CONTACTS":
+        from contacts_carddav import sync_icloud_contacts
+        from persons_db import upsert_contact
+        contacts = await sync_icloud_contacts()
+        if not contacts:
+            return "Keine Kontakte geladen — bitte ICLOUD_APPLE_ID und ICLOUD_APP_PASSWORD in der .env prüfen."
+        for c in contacts:
+            upsert_contact(c.id, c.name, emails=c.emails, phones=c.phones, organization=c.organization)
+        return f"{len(contacts)} Kontakte aus iCloud geladen."
+
     elif t == "WEEKLY_OUTLOOK":
         # On-demand-Wochenausblick (gleicher Inhalt wie der
         # Sonntag-18:00-Trigger). Nutzt den scheduler-Helper damit

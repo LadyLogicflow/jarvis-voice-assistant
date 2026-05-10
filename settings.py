@@ -66,6 +66,8 @@ ELEVENLABS_API_KEY = _required_env("ELEVENLABS_API_KEY")
 TODOIST_TOKEN = os.environ.get("TODOIST_API_TOKEN", "").strip()
 JARVIS_AUTH_TOKEN = os.environ.get("JARVIS_AUTH_TOKEN", "").strip()
 IMAP_PASSWORD = os.environ.get("IMAP_PASSWORD", "").strip()
+ICLOUD_APPLE_ID = os.environ.get("ICLOUD_APPLE_ID", "").strip()
+ICLOUD_APP_PASSWORD = os.environ.get("ICLOUD_APP_PASSWORD", "").strip()
 
 
 # ---------------------------------------------------------------------------
