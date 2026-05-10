@@ -5,13 +5,13 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=pi
-WorkingDirectory=/home/pi/jarvis-voice-assistant-master
+User=__USER__
+WorkingDirectory=__REPO__
 ExecStart=/usr/bin/python3 server.py
 Restart=on-failure
 RestartSec=10
-StandardOutput=append:/home/pi/jarvis-voice-assistant-master/jarvis.log
-StandardError=append:/home/pi/jarvis-voice-assistant-master/jarvis.log
+StandardOutput=append:__REPO__/jarvis.log
+StandardError=append:__REPO__/jarvis.log
 Environment=PYTHONUNBUFFERED=1
 
 [Install]

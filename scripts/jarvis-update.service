@@ -4,4 +4,4 @@ Description=JARVIS Auto-Updater (single run)
 [Service]
 Type=oneshot
 User=root
-ExecStart=/home/pi/jarvis-voice-assistant-master/scripts/jarvis-update.sh
+ExecStart=__REPO__/scripts/jarvis-update.sh

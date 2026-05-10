@@ -2,9 +2,9 @@
 # Auto-updater: pulls latest changes from git, restarts JARVIS if anything changed.
 set -euo pipefail
 
-REPO_DIR="/home/pi/jarvis-voice-assistant-master"
+REPO_DIR="__REPO__"
 SERVICE="jarvis"
-LOG="/home/pi/jarvis-voice-assistant-master/jarvis-update.log"
+LOG="__REPO__/jarvis-update.log"
 
 cd "$REPO_DIR"
 
