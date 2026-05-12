@@ -55,17 +55,19 @@ from scheduler import (
 from mail_monitor import mail_monitor_main, register_mail_alert_handler
 import planner
 import session_state
-from telegram_bot import telegram_bot_main
+from telegram_bot import telegram_bot_main, send_user_text as telegram_send
 from tts import speak
 
 log = S.log
 
 
 async def _broadcast_proactive(text: str) -> None:
-    """Push a server-generated message to the most recent client.
-    Brings Chrome to the foreground first so the user sees + hears it."""
+    """Push a server-generated message to the UI and Telegram.
+    Brings Chrome to the foreground first so the user sees + hears it.
+    Telegram delivery is quiet-hours aware (handled by send_user_text)."""
+    await telegram_send(text)
     if not active_clients:
-        log.info("proactive: no clients connected, skipping")
+        log.info("proactive: no clients connected, skipping UI broadcast")
         return
     target = active_clients[-1]
     loop = asyncio.get_running_loop()
