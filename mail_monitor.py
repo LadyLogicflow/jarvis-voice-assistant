@@ -370,8 +370,7 @@ async def _process_new_uids(account: dict, client, uids: list[int]) -> None:
                     await mail_actions.mark_mail_read(name, uid)
                 elif triage["action"] == "move":
                     folder = triage.get("folder", "Junk")
-                    if triage.get("also_mark_read"):
-                        await mail_actions.mark_mail_read(name, uid)
+                    await mail_actions.mark_mail_read(name, uid)
                     await mail_actions.move_mail(name, uid, folder)
                 elif triage["action"] == "forward":
                     to_addr = triage.get("to", "")
