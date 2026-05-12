@@ -129,7 +129,11 @@ def route(
                 "folder": rule.get("after_forward_move_to", ""),
             }
         if action == "move":
-            return {"action": "move", "folder": rule.get("folder", "Junk")}
+            return {
+                "action": "move",
+                "folder": rule.get("folder", "Junk"),
+                "also_mark_read": rule.get("also_mark_read", False),
+            }
         if action == "mark_read":
             return {"action": "mark_read"}
 

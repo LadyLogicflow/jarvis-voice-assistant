@@ -1,9 +1,16 @@
 {
   "_comment": "Auto-Triage-Regeln fuer den mail_monitor. Datei wird bei jeder eingehenden Mail frisch eingelesen — Aenderungen wirken ohne Server-Restart. Diese Datei ist gitignored; pflege sie selbst nach Bedarf.",
 
-  "_comment_actions": "Verfuegbare Aktionen: 'mark_read' (nur als gelesen markieren), 'move' (verschieben + gelesen markieren — braucht 'folder'), 'forward' (auto-forward + gelesen — braucht 'to'; nutzt SMTP, sendet wirklich). Optional 'forward_only_with_attachment': true — nur wenn die Mail einen Anhang hat.",
+  "_comment_actions": "Verfuegbare Aktionen: 'mark_read' (nur als gelesen markieren), 'move' (verschieben — braucht 'folder'; optional 'also_mark_read': true um zusaetzlich als gelesen zu markieren), 'forward' (auto-forward + gelesen — braucht 'to'; nutzt SMTP, sendet wirklich). Optional 'forward_only_with_attachment': true — nur wenn die Mail einen Anhang hat.",
 
   "rules": [
+    {
+      "name": "ELSTER-Portal",
+      "from_contains": "elster.de",
+      "action": "move",
+      "folder": "Elster",
+      "also_mark_read": true
+    },
     {
       "from_contains": "no-reply@coolblue.de",
       "action": "move",
