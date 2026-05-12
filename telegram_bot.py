@@ -163,6 +163,13 @@ async def _ask_claude(session_id: str, user_text: str) -> str:
         messages=history,
     )
     reply = llm_text(response)
+    if not reply:
+        stop = getattr(response, "stop_reason", "?")
+        n_blocks = len(getattr(response, "content", []))
+        log.warning(
+            f"Telegram: empty LLM response — stop_reason={stop} "
+            f"content_blocks={n_blocks} history_len={len(history)}"
+        )
     spoken_text, action = extract_action(reply)
     log.info(f"Telegram LLM: spoken='{spoken_text[:80]}' action={action}")
 
@@ -310,6 +317,9 @@ async def _text_handler(update, context) -> None:
 _app = None
 
 
+_TELEGRAM_MAX_LEN = 4096
+
+
 async def send_user_text(text: str) -> bool:
     """Push a text message to Catrin's Telegram chat from anywhere in
     the server. Returns True on success, False if not configured /
@@ -322,6 +332,8 @@ async def send_user_text(text: str) -> bool:
     if S.is_quiet_hours():
         log.info(f"send_user_text suppressed by quiet hours: {text[:60]!r}")
         return False
+    if len(text) > _TELEGRAM_MAX_LEN:
+        text = text[: _TELEGRAM_MAX_LEN - 4] + " ..."
     try:
         await _app.bot.send_message(chat_id=S.TELEGRAM_CHAT_ID, text=text)
         return True
