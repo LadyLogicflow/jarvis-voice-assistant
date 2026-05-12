@@ -87,7 +87,8 @@ _CLASSIFIER_PROMPT = (
     "- info = Statusmeldungen, automatische Notifications die kein Handeln erfordern "
     "(Versandbestaetigungen, OAuth-Logins, etc.)\n"
     "- handlungsbedarf = Persoenliche Antworten erwartet, Termine, Fristen, Mandantensachen, "
-    "wichtige Mitteilungen.\n"
+    "wichtige Mitteilungen. IMMER handlungsbedarf: ELSTER, Finanzamt, Behoerden, Gerichte, "
+    "Steuerberaterkammer, IHK, Rentenversicherung, Krankenkassen, DATEV-Nachrichten.\n"
     "Antworte NUR mit dem einen Wort, kein Satz, keine Erklaerung."
 )
 
