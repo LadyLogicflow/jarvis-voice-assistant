@@ -338,11 +338,28 @@ async def send_user_voice(
     caption: Optional[str] = None,
     mail_ref: "session_state.MailRef | None" = None,
 ) -> bool:
-    """Send a Telegram text notification. The voice/TTS path is intentionally
-    removed — Telegram messages are always text-only. The caption is used when
-    available (shorter), otherwise spoken_text. The mail_ref parameter is kept
-    for API compatibility but is no longer used."""
-    return await send_user_text(caption or spoken_text)
+    """Send a Telegram text notification and, when mail_ref is given, record
+    the returned message_id so reply-context detection in _handle_message can
+    restore the mail as active_mail when Catrin replies to this note."""
+    if not S.TELEGRAM_BOT_TOKEN or not S.TELEGRAM_CHAT_ID:
+        return False
+    if _app is None:
+        log.warning("send_user_voice: bot not yet running")
+        return False
+    text = caption or spoken_text
+    if len(text) > _TELEGRAM_MAX_LEN:
+        text = text[: _TELEGRAM_MAX_LEN - 4] + " ..."
+    try:
+        msg = await _app.bot.send_message(chat_id=S.TELEGRAM_CHAT_ID, text=text)
+        if mail_ref is not None:
+            _msg_mail_map[msg.message_id] = mail_ref
+            # Evict oldest entries when the cap is exceeded.
+            while len(_msg_mail_map) > _MSG_MAP_MAX:
+                _msg_mail_map.pop(next(iter(_msg_mail_map)))
+        return True
+    except Exception as e:
+        log.warning(f"send_user_voice failed: {type(e).__name__}: {e}")
+        return False
 
 
 async def telegram_bot_main() -> None:
