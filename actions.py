@@ -655,14 +655,18 @@ async def execute_action(action: dict) -> str:
         return await planner.plan_now()
 
     elif t == "IMPORT_MAIL_HISTORY":
-        # Parse params: "account=HILO months=3" or just "HILO" or "3"
+        import email as _email
+        import email.utils as _email_utils
         import re as _re
+        import uuid as _uuid
         import aioimaplib
         import memory_search
         import persons_db as _pdb
         from email.utils import parseaddr
         from persons_db import PersonProfile
-        from mail_monitor import _classify  # reuse existing classifier
+        from mail_monitor import (
+            _classify, _baseline_uid, _uids_in_range, _decode_header,
+        )
 
         account_name = "HILO"
         months = 3
@@ -680,7 +684,6 @@ async def execute_action(action: dict) -> str:
                 if digits:
                     months = int(digits.group())
 
-        # Find account config (case-insensitive)
         acc = next(
             (a for a in S.MAIL_MONITOR_ACCOUNTS
              if a.get("name", "").lower() == account_name.lower()),
@@ -694,99 +697,107 @@ async def execute_action(action: dict) -> str:
         if not acc.get("password"):
             return f"Kein Passwort fuer Konto '{account_name}' in der .env hinterlegt."
 
-        since_date = (datetime.date.today() - datetime.timedelta(days=months * 30)).strftime("%d-%b-%Y")
+        cutoff = datetime.datetime.now(tz=datetime.timezone.utc) - datetime.timedelta(days=months * 30)
+        folder = acc.get("folder", "INBOX")
 
         cls = aioimaplib.IMAP4_SSL if acc.get("ssl", True) else aioimaplib.IMAP4
         client = cls(host=acc["host"], port=acc["port"], timeout=30)
         total = handlungsbedarf_count = contacts_saved = 0
         try:
-            await client.wait_hello_from_server()
-            login_resp = await client.login(acc["user"], acc["password"])
-            if getattr(login_resp, "result", None) != "OK":
+            await asyncio.wait_for(client.wait_hello_from_server(), timeout=30)
+            login_resp = await asyncio.wait_for(
+                client.login(acc["user"], acc["password"]), timeout=30
+            )
+            if login_resp[0] != "OK":
                 return f"Login fehlgeschlagen fuer {acc['user']!r}."
-            folder = acc.get("folder", "INBOX")
             sel = await client.select(folder)
-            if getattr(sel, "result", None) != "OK":
+            if sel[0] != "OK":
                 return f"Ordner '{folder}' konnte nicht geöffnet werden."
 
-            resp = await client.uid("search", f"SINCE {since_date}")
-            if getattr(resp, "result", None) != "OK":
-                return "IMAP-Suche fehlgeschlagen."
-            uid_line = next((l for l in resp.lines if l.strip()), b"")
-            if isinstance(uid_line, (bytes, bytearray)):
-                uid_line = uid_line.decode("ascii", errors="ignore")
-            uids = [int(x) for x in uid_line.split() if x.isdigit()]
-            if not uids:
+            # Apple iCloud rejects UID SEARCH — use STATUS UIDNEXT + UID FETCH range
+            # (same approach as mail_monitor._baseline_uid / _uids_in_range).
+            max_uid = await _baseline_uid(client, folder)
+            if max_uid <= 0:
+                return f"Keine Mails in '{account_name}'."
+            low_uid = max(0, max_uid - 5000)  # scan at most 5000 recent UIDs
+            all_uids = await _uids_in_range(client, low_uid, max_uid)
+            if not all_uids:
                 return f"Keine Mails in den letzten {months} Monaten in '{account_name}'."
 
-            total = len(uids)
-            BATCH = 50
-            for i in range(0, len(uids), BATCH):
-                batch = uids[i:i + BATCH]
-                uid_set = ",".join(str(u) for u in batch)
-                fetch_resp = await client.uid(
-                    "fetch", uid_set, "(BODY.PEEK[HEADER.FIELDS (FROM SUBJECT DATE)])"
-                )
-                if getattr(fetch_resp, "result", None) != "OK":
+            # Pass 1: fetch headers sequentially (one UID at a time — Apple-safe,
+            # same as mail_monitor._process_new_uids). Apply date filter here.
+            parsed: list[tuple[str, str, str]] = []  # (sender_raw, sender_email, subject)
+            _sem = asyncio.Semaphore(10)
+
+            for uid in all_uids:
+                typ, data = await client.uid("fetch", str(uid), "BODY.PEEK[HEADER]")
+                if typ != "OK" or not data:
                     continue
-                # Parse header blocks from response lines
-                sender_subj_pairs: list[tuple[str, str]] = []
-                cur_from = cur_subj = ""
-                for raw in fetch_resp.lines:
-                    if isinstance(raw, (bytes, bytearray)):
-                        raw = raw.decode("utf-8", errors="replace")
-                    line = raw.rstrip()
-                    low = line.lower()
-                    if low.startswith("from:"):
-                        cur_from = line[5:].strip()
-                    elif low.startswith("subject:"):
-                        cur_subj = line[8:].strip()
-                    elif line == "" and (cur_from or cur_subj):
-                        sender_subj_pairs.append((cur_from, cur_subj))
-                        cur_from = cur_subj = ""
-                if cur_from or cur_subj:
-                    sender_subj_pairs.append((cur_from, cur_subj))
-
-                for sender_raw, subject in sender_subj_pairs:
-                    if not sender_raw and not subject:
-                        continue
-                    category = await _classify(sender_raw, subject, "")
-                    if category != "handlungsbedarf":
-                        continue
-                    handlungsbedarf_count += 1
-                    sender_email = parseaddr(sender_raw)[1].lower().strip()
-
-                    # Upsert into persons_db if email is new
-                    if sender_email:
-                        existing = _pdb.find_by_email(sender_email)
-                        if not existing:
-                            display = parseaddr(sender_raw)[0] or sender_email
-                            import uuid as _uuid
-                            _pdb.upsert(PersonProfile(
-                                contact_id=str(_uuid.uuid4()),
-                                name=display,
-                                primary_email=sender_email,
-                                last_contact=datetime.date.today().isoformat(),
-                            ))
-                            contacts_saved += 1
-
-                    # Index in memory_search
+                byte_items = [b for b in data if isinstance(b, (bytes, bytearray))]
+                if not byte_items:
+                    continue
+                raw = max(byte_items, key=len)
+                msg = _email.message_from_bytes(raw)
+                date_str = msg.get("Date", "")
+                if date_str:
                     try:
-                        doc_id = memory_search._make_doc_id(
-                            "mail", f"{account_name}:{sender_email}:{subject}"
-                        )
-                        memory_search.index_text(
-                            text=f"Mail von {sender_raw}: {subject}",
-                            source="mail",
-                            doc_id=doc_id,
-                            metadata={
-                                "sender_email": sender_email,
-                                "account": account_name,
-                                "category": "handlungsbedarf",
-                            },
-                        )
-                    except Exception as e:
-                        log.debug("IMPORT_MAIL_HISTORY: index_text failed: %s", e)
+                        mail_dt = _email_utils.parsedate_to_datetime(date_str)
+                        if mail_dt.tzinfo is None:
+                            mail_dt = mail_dt.replace(tzinfo=datetime.timezone.utc)
+                        if mail_dt < cutoff:
+                            continue
+                    except Exception:
+                        pass
+                from_parsed = parseaddr(msg.get("From", ""))
+                sender_raw = msg.get("From", "")
+                sender_email = (from_parsed[1] or "").lower().strip()
+                subject = _decode_header(msg.get("Subject", ""))
+                if not sender_raw and not subject:
+                    continue
+                total += 1
+                parsed.append((sender_raw, sender_email, subject))
+
+            # Pass 2: classify in parallel (rate-limited via semaphore).
+            async def _classify_sem(s_raw: str, subj: str) -> str:
+                async with _sem:
+                    return await _classify(s_raw, subj, "")
+
+            categories = await asyncio.gather(
+                *[_classify_sem(sr, sj) for sr, _, sj in parsed],
+                return_exceptions=True,
+            )
+
+            today = datetime.date.today().isoformat()
+            for (sender_raw, sender_email, subject), category in zip(parsed, categories):
+                if not isinstance(category, str) or category != "handlungsbedarf":
+                    continue
+                handlungsbedarf_count += 1
+                if sender_email:
+                    if not _pdb.find_by_email(sender_email):
+                        display = parseaddr(sender_raw)[0] or sender_email
+                        _pdb.upsert(PersonProfile(
+                            contact_id=str(_uuid.uuid4()),
+                            name=display,
+                            primary_email=sender_email,
+                            last_contact=today,
+                        ))
+                        contacts_saved += 1
+                try:
+                    doc_id = memory_search.make_doc_id(
+                        "mail", f"{account_name}:{sender_email}:{subject}"
+                    )
+                    memory_search.index_text(
+                        text=f"Mail von {sender_raw}: {subject}",
+                        source="mail",
+                        doc_id=doc_id,
+                        metadata={
+                            "sender_email": sender_email,
+                            "account": account_name,
+                            "category": "handlungsbedarf",
+                        },
+                    )
+                except Exception as e:
+                    log.debug("IMPORT_MAIL_HISTORY: index_text failed: %s", e)
 
         except Exception as e:
             log.warning("IMPORT_MAIL_HISTORY error: %s", e)
