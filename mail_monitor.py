@@ -125,6 +125,8 @@ def _format_for_telegram(account_name: str, sender: str, subject: str, category:
     )
     if category == "handlungsbedarf":
         base += "\n\n→ Mail entwerfen oder Aufgabe anlegen?"
+    elif category == "info":
+        base += "\n\n→ Absender merken?"
     return base
 
 

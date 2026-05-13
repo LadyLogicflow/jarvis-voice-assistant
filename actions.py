@@ -486,6 +486,43 @@ async def execute_action(action: dict) -> str:
             return f"Mail gelöscht (in {folder} verschoben)."
         return f"Löschen fehlgeschlagen: {folder}"
 
+    elif t == "REMEMBER_SENDER":
+        # Fügt den Absender der aktiven Mail als mark_read-Regel in
+        # mail_triage_rules.json ein. Payload: optional "email@domain.tld"
+        # override; default: active_mail.sender.
+        import json as _json
+        import re as _re
+        active = session_state.get("default").active_mail
+        raw_sender = p.strip() if p.strip() else (active.sender if active else "")
+        if not raw_sender:
+            return f"Keinen Absender gefunden, {pick_address()}."
+        # Extract email address from "Name <email>" format
+        m = _re.search(r"<([^>]+)>", raw_sender)
+        email_addr = m.group(1).strip() if m else raw_sender.strip()
+        # Use domain for broader matching, or full address if it's generic
+        domain = email_addr.split("@")[-1] if "@" in email_addr else email_addr
+        rule_match = f"@{domain}" if domain else email_addr
+        rules_path = os.path.join(os.path.dirname(__file__), "mail_triage_rules.json")
+        try:
+            with open(rules_path, encoding="utf-8") as f:
+                rules_data = _json.load(f)
+        except Exception:
+            rules_data = {"rules": []}
+        # Avoid duplicates
+        existing = [r.get("from_contains", "") for r in rules_data.get("rules", [])]
+        if rule_match in existing:
+            return f"Absender {rule_match!r} ist bereits in den Regeln."
+        rules_data.setdefault("rules", []).append({
+            "name": f"auto: {domain}",
+            "from_contains": rule_match,
+            "action": "mark_read",
+        })
+        with open(rules_path, "w", encoding="utf-8") as f:
+            _json.dump(rules_data, f, ensure_ascii=False, indent=2)
+        if active:
+            session_state.clear_active_mail("default")
+        return f"Gemerkt — zukünftige Mails von {rule_match} werden still als gelesen markiert."
+
     elif t == "MARK_MAIL_READ":
         # IMAP \Seen setzen + active_mail leeren. Optional payload
         # "account|uid"; Default: die aktive Mail.
