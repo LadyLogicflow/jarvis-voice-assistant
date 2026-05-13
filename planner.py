@@ -91,7 +91,8 @@ async def _find_free_slot(duration_min: int, start_from: datetime | None = None)
     now = start_from or datetime.now(_TZ)
     candidate = now.replace(second=0, microsecond=0)
 
-    for _ in range(14):  # search up to 2 weeks ahead
+    _max_iters = 14 * 20  # hard cap: 14 days × 20 slots/day max
+    for _iter in range(_max_iters):
         # Skip weekends
         if candidate.weekday() >= 5:
             candidate = (candidate + timedelta(days=1)).replace(
@@ -132,11 +133,17 @@ async def _find_free_slot(duration_min: int, start_from: datetime | None = None)
             ev_e = datetime.fromisoformat(ev_end_str.replace("Z", "+00:00")).astimezone(_TZ)
             # Overlap if slot_start < ev_end AND slot_end > ev_start
             if candidate < ev_e and slot_end > ev_s:
-                # Move candidate to end of conflicting event, rounded to 15 min
-                candidate = ev_e.replace(second=0, microsecond=0)
-                mins = candidate.minute
-                candidate = candidate.replace(minute=((mins + 14) // 15) * 15 % 60,
-                                              hour=candidate.hour + ((mins + 14) // 15) * 15 // 60)
+                # Move candidate to end of conflicting event, rounded up to 15 min
+                new_candidate = ev_e.replace(second=0, microsecond=0)
+                mins = new_candidate.minute
+                new_candidate = new_candidate.replace(
+                    minute=((mins + 14) // 15) * 15 % 60,
+                    hour=new_candidate.hour + ((mins + 14) // 15) * 15 // 60,
+                )
+                # Safety: always advance by at least 15 minutes to prevent oscillation
+                if new_candidate <= candidate:
+                    new_candidate = candidate + timedelta(minutes=15)
+                candidate = new_candidate
                 conflict = True
                 break
 
