@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import datetime
+import os
 
 import settings as S
 
@@ -517,8 +518,10 @@ async def execute_action(action: dict) -> str:
             "from_contains": rule_match,
             "action": "mark_read",
         })
-        with open(rules_path, "w", encoding="utf-8") as f:
+        tmp = rules_path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
             _json.dump(rules_data, f, ensure_ascii=False, indent=2)
+        os.replace(tmp, rules_path)
         if active:
             session_state.clear_active_mail("default")
         return f"Gemerkt — zukünftige Mails von {rule_match} werden still als gelesen markiert."

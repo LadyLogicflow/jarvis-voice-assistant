@@ -161,7 +161,7 @@ async def _lookup_email(name: str) -> str:
                 if prof.primary_email:
                     return prof.primary_email
         # 2. Apple Contacts
-        hits = contacts.find_contacts(name)
+        hits = await contacts.find_contacts_by_name(name)
         if hits:
             for c in hits:
                 if c.emails:
