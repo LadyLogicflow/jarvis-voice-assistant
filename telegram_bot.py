@@ -204,7 +204,7 @@ async def _ask_claude(session_id: str, user_text: str) -> str:
         "ACCEPT_CALENDAR_INVITE", "DECLINE_CALENDAR_INVITE",
         "ACCEPT_PERSON_ACTION", "DECLINE_PERSON_ACTION",
         "WEEKLY_OUTLOOK", "CONTACTS_INFO", "LOOKUP_CONTACT",
-        "PLAN_NOW", "WEATHER",
+        "PLAN_NOW", "WEATHER", "IMPORT_MAIL_HISTORY",
     ):
         return action_result
 

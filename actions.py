@@ -654,6 +654,154 @@ async def execute_action(action: dict) -> str:
         import planner
         return await planner.plan_now()
 
+    elif t == "IMPORT_MAIL_HISTORY":
+        # Parse params: "account=HILO months=3" or just "HILO" or "3"
+        import re as _re
+        import aioimaplib
+        import memory_search
+        import persons_db as _pdb
+        from email.utils import parseaddr
+        from persons_db import PersonProfile
+        from mail_monitor import _classify  # reuse existing classifier
+
+        account_name = "HILO"
+        months = 3
+        if p:
+            m_acc = _re.search(r"account[=\s]+(\S+)", p, _re.I)
+            m_mon = _re.search(r"months?[=\s]+(\d+)", p, _re.I)
+            if m_acc:
+                account_name = m_acc.group(1)
+            elif _re.match(r"[A-Za-z]", p.strip()):
+                account_name = p.strip().split()[0]
+            if m_mon:
+                months = int(m_mon.group(1))
+            else:
+                digits = _re.search(r"\d+", p)
+                if digits:
+                    months = int(digits.group())
+
+        # Find account config (case-insensitive)
+        acc = next(
+            (a for a in S.MAIL_MONITOR_ACCOUNTS
+             if a.get("name", "").lower() == account_name.lower()),
+            None,
+        )
+        if not acc:
+            return (
+                f"Konto '{account_name}' nicht konfiguriert. "
+                f"Verfügbar: {', '.join(a.get('name','?') for a in S.MAIL_MONITOR_ACCOUNTS) or 'keins'}."
+            )
+        if not acc.get("password"):
+            return f"Kein Passwort fuer Konto '{account_name}' in der .env hinterlegt."
+
+        since_date = (datetime.date.today() - datetime.timedelta(days=months * 30)).strftime("%d-%b-%Y")
+
+        cls = aioimaplib.IMAP4_SSL if acc.get("ssl", True) else aioimaplib.IMAP4
+        client = cls(host=acc["host"], port=acc["port"], timeout=30)
+        total = handlungsbedarf_count = contacts_saved = 0
+        try:
+            await client.wait_hello_from_server()
+            login_resp = await client.login(acc["user"], acc["password"])
+            if getattr(login_resp, "result", None) != "OK":
+                return f"Login fehlgeschlagen fuer {acc['user']!r}."
+            folder = acc.get("folder", "INBOX")
+            sel = await client.select(folder)
+            if getattr(sel, "result", None) != "OK":
+                return f"Ordner '{folder}' konnte nicht geöffnet werden."
+
+            resp = await client.uid("search", f"SINCE {since_date}")
+            if getattr(resp, "result", None) != "OK":
+                return "IMAP-Suche fehlgeschlagen."
+            uid_line = next((l for l in resp.lines if l.strip()), b"")
+            if isinstance(uid_line, (bytes, bytearray)):
+                uid_line = uid_line.decode("ascii", errors="ignore")
+            uids = [int(x) for x in uid_line.split() if x.isdigit()]
+            if not uids:
+                return f"Keine Mails in den letzten {months} Monaten in '{account_name}'."
+
+            total = len(uids)
+            BATCH = 50
+            for i in range(0, len(uids), BATCH):
+                batch = uids[i:i + BATCH]
+                uid_set = ",".join(str(u) for u in batch)
+                fetch_resp = await client.uid(
+                    "fetch", uid_set, "(BODY.PEEK[HEADER.FIELDS (FROM SUBJECT DATE)])"
+                )
+                if getattr(fetch_resp, "result", None) != "OK":
+                    continue
+                # Parse header blocks from response lines
+                sender_subj_pairs: list[tuple[str, str]] = []
+                cur_from = cur_subj = ""
+                for raw in fetch_resp.lines:
+                    if isinstance(raw, (bytes, bytearray)):
+                        raw = raw.decode("utf-8", errors="replace")
+                    line = raw.rstrip()
+                    low = line.lower()
+                    if low.startswith("from:"):
+                        cur_from = line[5:].strip()
+                    elif low.startswith("subject:"):
+                        cur_subj = line[8:].strip()
+                    elif line == "" and (cur_from or cur_subj):
+                        sender_subj_pairs.append((cur_from, cur_subj))
+                        cur_from = cur_subj = ""
+                if cur_from or cur_subj:
+                    sender_subj_pairs.append((cur_from, cur_subj))
+
+                for sender_raw, subject in sender_subj_pairs:
+                    if not sender_raw and not subject:
+                        continue
+                    category = await _classify(sender_raw, subject, "")
+                    if category != "handlungsbedarf":
+                        continue
+                    handlungsbedarf_count += 1
+                    sender_email = parseaddr(sender_raw)[1].lower().strip()
+
+                    # Upsert into persons_db if email is new
+                    if sender_email:
+                        existing = _pdb.find_by_email(sender_email)
+                        if not existing:
+                            display = parseaddr(sender_raw)[0] or sender_email
+                            import uuid as _uuid
+                            _pdb.upsert(PersonProfile(
+                                contact_id=str(_uuid.uuid4()),
+                                name=display,
+                                primary_email=sender_email,
+                                last_contact=datetime.date.today().isoformat(),
+                            ))
+                            contacts_saved += 1
+
+                    # Index in memory_search
+                    try:
+                        doc_id = memory_search._make_doc_id(
+                            "mail", f"{account_name}:{sender_email}:{subject}"
+                        )
+                        memory_search.index_text(
+                            text=f"Mail von {sender_raw}: {subject}",
+                            source="mail",
+                            doc_id=doc_id,
+                            metadata={
+                                "sender_email": sender_email,
+                                "account": account_name,
+                                "category": "handlungsbedarf",
+                            },
+                        )
+                    except Exception as e:
+                        log.debug("IMPORT_MAIL_HISTORY: index_text failed: %s", e)
+
+        except Exception as e:
+            log.warning("IMPORT_MAIL_HISTORY error: %s", e)
+            return f"Fehler beim Postfach-Import: {e}"
+        finally:
+            try:
+                await client.logout()
+            except Exception:
+                pass
+
+        return (
+            f"{total} Mails analysiert, {handlungsbedarf_count} Handlungsbedarf, "
+            f"{contacts_saved} neue Kontakte gespeichert."
+        )
+
     elif t == "SYNC_CONTACTS":
         from contacts_carddav import sync_icloud_contacts
         import persons_db
