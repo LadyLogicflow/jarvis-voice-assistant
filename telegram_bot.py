@@ -153,7 +153,7 @@ async def _ask_claude(session_id: str, user_text: str) -> str:
             conversation.load_persistent_history()
         )
 
-    conversation.append_message(session_id, "user", user_text)
+    await conversation.append_message(session_id, "user", user_text)
     history = conversation.conversations[session_id][-16:]
 
     response = await S.ai.messages.create(
@@ -293,7 +293,7 @@ async def _handle_message(update, context, *, source_text: Optional[str] = None)
         if not reply_text.strip():
             reply_text = f"Ich habe keine Antwort erhalten, {pick_address()}."
         # Persist the assistant turn so the next message has full context.
-        conversation.append_message(session_id, "assistant", reply_text)
+        await conversation.append_message(session_id, "assistant", reply_text)
 
         await update.message.reply_text(reply_text)
     except Exception as e:
