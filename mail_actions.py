@@ -121,8 +121,8 @@ async def _connect(account: dict):
     import aioimaplib  # local import; only needed for these actions
     cls = aioimaplib.IMAP4_SSL if account["ssl"] else aioimaplib.IMAP4
     client = cls(host=account["host"], port=account["port"], timeout=30)
-    await client.wait_hello_from_server()
-    resp = await client.login(account["user"], account["password"])
+    await asyncio.wait_for(client.wait_hello_from_server(), timeout=30)
+    resp = await asyncio.wait_for(client.login(account["user"], account["password"]), timeout=30)
     if getattr(resp, "result", None) != "OK":
         raise RuntimeError(f"LOGIN rejected for {account['user']!r}")
     sel = await client.select(account["folder"])
