@@ -188,8 +188,16 @@ async def _sync_once() -> list[str]:
         log.warning("planner: todoist fetch failed: %s", raw)
         return []
 
-    open_ids = {str(t["id"]) for t in raw if not t.get("checked") and not t.get("is_deleted")}
-    task_by_id = {str(t["id"]): t for t in raw}
+    my_id = await todoist_tools._my_id(S.TODOIST_TOKEN)
+
+    mine = [
+        t for t in raw
+        if not t.get("checked")
+        and not t.get("is_deleted")
+        and (not my_id or str(t.get("user_id", "")) == my_id)
+    ]
+    open_ids = {str(t["id"]) for t in mine}
+    task_by_id = {str(t["id"]): t for t in mine}
 
     db = _load_db()
     notifications: list[str] = []
