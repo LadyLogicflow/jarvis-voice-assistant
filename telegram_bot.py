@@ -89,10 +89,6 @@ async def _transcribe(audio_bytes: bytes) -> str:
     return await loop.run_in_executor(None, _do)
 
 
-# Quiet hours helper now lives in settings.is_quiet_hours so the IMAP
-# mail monitor (issue #48) can share it.
-is_quiet_hours = S.is_quiet_hours
-
 
 # Actions that DON'T make sense over Telegram (need the Mac browser /
 # screen / Mail.app). Their tags are stripped and we tell the user.
@@ -244,13 +240,6 @@ async def _handle_message(update, context, *, source_text: Optional[str] = None)
             f"{update.effective_chat.id}"
         )
         return
-    if is_quiet_hours():
-        await update.message.reply_text(
-            f"Schlafenszeit, {pick_address()}. Ich melde mich morgen ab "
-            f"{S.TELEGRAM_QUIET_END} Uhr wieder."
-        )
-        return
-
     # The session_id for Telegram uses the chat-id so that each Telegram
     # conversation shares state with itself (and with 'default' via broadcast).
     session_id = str(update.effective_chat.id)
@@ -328,9 +317,6 @@ async def send_user_text(text: str) -> bool:
         return False
     if _app is None:
         log.warning("send_user_text: bot not yet running")
-        return False
-    if S.is_quiet_hours():
-        log.info(f"send_user_text suppressed by quiet hours: {text[:60]!r}")
         return False
     if len(text) > _TELEGRAM_MAX_LEN:
         text = text[: _TELEGRAM_MAX_LEN - 4] + " ..."
