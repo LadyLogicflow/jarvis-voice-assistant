@@ -119,10 +119,13 @@ def _format_for_telegram(account_name: str, sender: str, subject: str, category:
         "info": "🟡",
         "werbung": "⚪",
     }.get(category, "✉️")
-    return (
-        f"{icon} Neue Mail [{account_name}] ({category})\n"
+    base = (
+        f"{icon} Neue Mail [{account_name}]\n"
         f"Von: {sender}\nBetreff: {subject}"
     )
+    if category == "handlungsbedarf":
+        base += "\n\n→ Mail entwerfen oder Aufgabe anlegen?"
+    return base
 
 
 def _format_for_voice(sender: str, subject: str) -> str:
