@@ -432,13 +432,23 @@ async def weekly_outlook_scheduler() -> None:
         await asyncio.sleep(300)  # alle 5 Min reicht
 
 
+_MORNING_BRIEF_PROMPT = (
+    "Du bist Jarvis. Guten-Morgen-Briefing fuer {addr}. "
+    "Liefere ein vollstaendiges Tages-Briefing mit allen verfuegbaren Bloecken: "
+    "Wochentag + exaktes Datum, Wetter (nur Maximaltemperatur + Regen ja/nein), "
+    "heutige Termine, heutige Aufgaben, Steuerrecht-Schlagzeile (falls vorhanden), "
+    "Politik (falls vorhanden). Unter 6 Saetze, fliessende Sprache, Jarvis-Stil. "
+    "Keine ACTION-Tags."
+)
+
+
 async def morning_brief_scheduler() -> None:
     """Long-running task: fetch the morning brief once per day at or
     after `S.MORNING_HOUR`. Refreshes BOTH the Steuer-Brief and the
-    today's-tasks/events/politik caches so the data is hot when Catrin
-    activates Jarvis in the morning.
+    today's-tasks/events/politik caches, then pushes the brief via the
+    registered proactive handler (Telegram + UI if open).
 
-    Uses '>=' on the hour (not '=='): if the Mac was asleep at exactly
+    Uses '>=' on the hour (not '=='): if the server was asleep at exactly
     7:00 and the loop wakes up at 7:05, the brief still fires today.
     """
     triggered_today = ""
@@ -453,6 +463,40 @@ async def morning_brief_scheduler() -> None:
             except Exception as e:
                 log.warning(f"morning_brief_scheduler: refresh failed: "
                             f"{type(e).__name__}: {e}")
+            if _proactive_handler is None:
+                log.info("morning_brief_scheduler: no handler registered, skipping send")
+            else:
+                try:
+                    addr = pick_address()
+                    system_prompt = _MORNING_BRIEF_PROMPT.format(addr=addr)
+                    today_block = ""
+                    if S.TODAY_TASKS:
+                        today_block += f"\nHeutige Aufgaben:\n{S.TODAY_TASKS}"
+                    if S.TODAY_EVENTS:
+                        today_block += f"\nHeutige Termine:\n{S.TODAY_EVENTS}"
+                    if S.STEUER_BRIEF:
+                        today_block += f"\nSteuerrecht: {S.STEUER_BRIEF}"
+                    if S.WEATHER_INFO:
+                        w = S.WEATHER_INFO
+                        today_block += f"\nWetter: {w.get('temp', '?')} Grad"
+                    user_msg = (
+                        f"Datum: {now.strftime('%A, %d.%m.%Y')}, "
+                        f"Uhrzeit: {now.strftime('%H:%M')}"
+                        + (f"\nAktuelle Tagesdaten:{today_block}" if today_block else "")
+                    )
+                    resp = await S.ai.messages.create(
+                        model="claude-haiku-4-5-20251001",
+                        max_tokens=600,
+                        system=system_prompt,
+                        messages=[{"role": "user", "content": user_msg}],
+                    )
+                    brief = llm_text(resp).strip()
+                    if brief:
+                        log.info(f"morning_brief_scheduler: sending brief: {brief[:80]!r}")
+                        await _proactive_handler(brief)
+                except Exception as e:
+                    log.warning(f"morning_brief_scheduler: send failed: "
+                                f"{type(e).__name__}: {e}")
         await asyncio.sleep(60)
 
 
