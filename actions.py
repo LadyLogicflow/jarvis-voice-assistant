@@ -273,6 +273,33 @@ async def execute_action(action: dict) -> str:
     elif t == "NEWS":
         return await browser_tools.fetch_news(S.NEWS_URL, S.NEWS_SOURCE_NAME)
 
+    elif t == "WEATHER":
+        city = p.strip() or S.CITY
+        try:
+            import httpx as _httpx
+            async with _httpx.AsyncClient(timeout=8) as _c:
+                _r = await _c.get(
+                    f"https://wttr.in/{city}?format=j1",
+                    headers={"User-Agent": "curl"},
+                )
+                _r.raise_for_status()
+                _d = _r.json()
+            _DAYS_DE = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"]
+            _MONTHS_DE = ["Jan", "Feb", "Mär", "Apr", "Mai", "Jun", "Jul", "Aug", "Sep", "Okt", "Nov", "Dez"]
+            lines = [f"Wetter für {city}:"]
+            for i, day in enumerate(_d.get("weather", [])[:3]):
+                from datetime import date as _date, timedelta as _td
+                day_dt = _date.today() + _td(days=i)
+                day_name = "Heute" if i == 0 else ("Morgen" if i == 1 else _DAYS_DE[day_dt.weekday()])
+                max_c = day.get("maxtempC", "?")
+                min_c = day.get("mintempC", "?")
+                desc = day.get("hourly", [{}])[4].get("weatherDesc", [{}])[0].get("value", "") if day.get("hourly") else ""
+                rain = max(int(h.get("chanceofrain", 0)) for h in day.get("hourly", [{}]))
+                lines.append(f"{day_name}: {min_c}–{max_c}°C, {desc}, Regen {rain}%")
+            return "\n".join(lines)
+        except Exception as e:
+            return f"Wetter für {city} konnte nicht abgerufen werden: {e}"
+
     elif t == "MAIL":
         loop = asyncio.get_running_loop()
         if S.MAIL_BACKEND == "imap":

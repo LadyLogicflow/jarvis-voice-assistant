@@ -82,9 +82,10 @@ def _write_history_sync(session_id: str, history: list) -> None:
             pass  # start fresh if file is corrupt
     # Update only our session's slice.
     existing[session_id] = history[-MAX_CONVERSATION_HISTORY:]
-    # Keep a 'default' slot that always holds the most recent session
-    # so load_persistent_history() can seed new tabs quickly.
-    existing["default"] = history[-MAX_CONVERSATION_HISTORY:]
+    # Keep a 'default' slot for web UI sessions only — Telegram sessions
+    # (numeric chat_id) must not overwrite it or they pollute the web context.
+    if not session_id.lstrip("-").isdigit():
+        existing["default"] = history[-MAX_CONVERSATION_HISTORY:]
     tmp = S.HISTORY_PATH + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(existing, f, ensure_ascii=False)

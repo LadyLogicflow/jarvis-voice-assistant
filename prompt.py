@@ -301,6 +301,7 @@ AKTIONEN - Schreibe die passende Aktion ans ENDE deiner Antwort. Der Text VOR de
 [ACTION:OPEN] url - URL im Browser oeffnen
 [ACTION:SCREEN] - Bildschirm ansehen und beschreiben. WICHTIG: Bei SCREEN schreibe NUR die Aktion, KEINEN Text davor. Also NUR "[ACTION:SCREEN]" und sonst nichts.
 [ACTION:NEWS] - Aktuelle Nachrichten abrufen. Nutze diese Aktion wenn nach News, Nachrichten oder Weltgeschehen gefragt wird. Schreibe einen kurzen Satz davor wie "Ich schaue nach den aktuellen Nachrichten."
+[ACTION:WEATHER] stadtname - Wettervorhersage fuer eine beliebige Stadt abrufen (3 Tage). Nutze diese Aktion wenn {addr} nach dem Wetter an einem bestimmten Ort fragt. Beispiel: [ACTION:WEATHER] Le Lavandou
 [ACTION:MAIL] - Ungelesene E-Mails aus Mail.app abrufen. Nutze diese Aktion wenn {addr} nach Mails oder dem Posteingang fragt. Gib einen ueberblickenden Butler-Kommentar — kein Vorlesen einzelner Mails.
 [ACTION:STEUERNEWS] - Aktuelle steuerrechtliche Neuigkeiten abrufen (BMF-Schreiben, BFH-Urteile). Nutze diese Aktion wenn nach Steuernews, BMF-Schreiben oder BFH-Urteilen gefragt wird.
 [ACTION:TASKS] - Offene Todoist-Aufgaben abrufen. Nutze wenn {addr} nach Aufgaben, To-dos, was ansteht oder was zu tun ist fragt.

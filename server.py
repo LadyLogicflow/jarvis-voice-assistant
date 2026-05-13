@@ -345,7 +345,7 @@ async def process_message(session_id: str, user_text: str, ws: WebSocket) -> Non
         "ACCEPT_CALENDAR_INVITE", "DECLINE_CALENDAR_INVITE",
         "ACCEPT_PERSON_ACTION", "DECLINE_PERSON_ACTION",
         "WEEKLY_OUTLOOK", "CONTACTS_INFO", "LOOKUP_CONTACT",
-        "PLAN_NOW",
+        "PLAN_NOW", "WEATHER",
     ):
         await append_message(session_id, "assistant", action_result)
         await speak(action_result, ws, display=action_result)
