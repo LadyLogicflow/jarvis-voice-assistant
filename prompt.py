@@ -17,6 +17,15 @@ import time
 import settings as S
 from holidays import check_free_day
 
+_ACTION_TAG_RE = re.compile(r"\[ACTION:[^\]]*\]", re.I)
+
+
+def _sanitize(text: str) -> str:
+    """Strip [ACTION:...] tags from external input (mail subjects, sender
+    names, body previews) so they cannot be mistaken for Jarvis action
+    directives inside the system prompt."""
+    return _ACTION_TAG_RE.sub("", text or "").strip()
+
 
 def pick_address() -> str:
     """Randomly pick one address per call from USER_ADDRESS_POOL.
@@ -208,14 +217,14 @@ def build_system_prompt() -> str:
         active_mail_block += (
             f"\nAktive Mail (kuerzlich gemeldet — falls {addr} "
             f"\"vorlesen\", \"antworten\" oder \"ignorieren\" sagt, ist diese gemeint):"
-            f"\n  Konto: {_active.account}, Absender: {_active.sender}, "
-            f"Betreff: {_active.subject}"
+            f"\n  Konto: {_active.account}, Absender: {_sanitize(_active.sender)}, "
+            f"Betreff: {_sanitize(_active.subject)}"
         )
     if _pending:
         active_mail_block += (
             f"\nPending-Draft (Antwort-Entwurf zur Freigabe — falls {addr} "
             f"\"freigeben\" / \"Aenderung\" / \"abbrechen\" sagt):"
-            f"\n  An: {_pending.to}, Betreff: {_pending.subject}"
+            f"\n  An: {_sanitize(_pending.to)}, Betreff: {_sanitize(_pending.subject)}"
         )
     _pcal = _state.pending_calendar
     if _pcal:
