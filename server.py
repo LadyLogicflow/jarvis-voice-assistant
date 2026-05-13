@@ -340,7 +340,7 @@ async def process_message(session_id: str, user_text: str, ws: WebSocket) -> Non
         "STEUERNEWS", "ADDTASK", "DONETASK", "ADDCAL", "NOTE",
         "READ_MAIL", "SUMMARIZE_MAIL",
         "DRAFT_REPLY", "DRAFT_REVISE", "DRAFT_APPROVE", "DRAFT_CANCEL",
-        "MAIL_TO_TASK", "MARK_MAIL_READ",
+        "MAIL_TO_TASK", "MARK_MAIL_READ", "DELETE_MAIL",
         "MEMORIZE",
         "ACCEPT_CALENDAR_INVITE", "DECLINE_CALENDAR_INVITE",
         "ACCEPT_PERSON_ACTION", "DECLINE_PERSON_ACTION",

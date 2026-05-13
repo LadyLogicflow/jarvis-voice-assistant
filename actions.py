@@ -476,6 +476,16 @@ async def execute_action(action: dict) -> str:
             f"Soll ich die beantworten?"
         )
 
+    elif t == "DELETE_MAIL":
+        active = session_state.get("default").active_mail
+        if not active:
+            return f"Keine aktive Mail zum Löschen, {pick_address()}."
+        ok, folder = await mail_actions.delete_mail(active.account, active.uid)
+        session_state.clear_active_mail("default")
+        if ok:
+            return f"Mail gelöscht (in {folder} verschoben)."
+        return f"Löschen fehlgeschlagen: {folder}"
+
     elif t == "MARK_MAIL_READ":
         # IMAP \Seen setzen + active_mail leeren. Optional payload
         # "account|uid"; Default: die aktive Mail.

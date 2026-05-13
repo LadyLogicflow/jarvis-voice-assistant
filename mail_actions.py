@@ -195,6 +195,15 @@ DRAFTS_FOLDER_GUESSES = (
     "INBOX.Entwürfe",
 )
 
+TRASH_FOLDER_GUESSES = (
+    "Deleted Messages",   # iCloud
+    "Trash",
+    "Papierkorb",
+    "Gelöschte Elemente",
+    "INBOX.Trash",
+    "[Gmail]/Trash",
+)
+
 
 def build_reply_message(
     from_addr: str,
@@ -388,6 +397,16 @@ async def move_mail(account_name: str, uid: int, target_folder: str) -> bool:
                 await client.logout()
             except Exception:
                 pass
+
+
+async def delete_mail(account_name: str, uid: int) -> tuple[bool, str]:
+    """Move a mail to the Trash folder. Tries common folder names.
+    Returns (success, folder_or_error)."""
+    for folder in TRASH_FOLDER_GUESSES:
+        ok = await move_mail(account_name, uid, folder)
+        if ok:
+            return True, folder
+    return False, "Kein Papierkorb-Ordner gefunden"
 
 
 async def forward_mail(account_name: str, uid: int, to_addr: str) -> bool:
