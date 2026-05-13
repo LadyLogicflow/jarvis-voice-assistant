@@ -113,7 +113,7 @@ async def get_tasks(
         t for t in all_tasks
         if not t.get("checked")
         and not t.get("is_deleted")
-        and (not my_id or str(t.get("user_id", "")) == my_id)
+        and (not my_id or str(t.get("creator_id", "")) == my_id or str(t.get("assignee_id", "")) == my_id)
         and _task_in_scope(t, pid_set, sec_sets)
     ]
 
@@ -181,7 +181,7 @@ async def complete_task(
 
     Filters that the previous version was missing — and that caused a
     real risk on shared HILO/DIHAG projects:
-    - user_id == my_id  (don't close colleagues' tasks)
+    - creator_id or assignee_id == my_id  (don't close colleagues' tasks)
     - project_id in scoped set  (don't close tasks in projects Catrin
       doesn't normally see)
     - section filter inside the HILO project
@@ -210,7 +210,7 @@ async def complete_task(
         t for t in all_tasks
         if not t.get("checked")
         and not t.get("is_deleted")
-        and (not my_id or str(t.get("user_id", "")) == my_id)
+        and (not my_id or str(t.get("creator_id", "")) == my_id or str(t.get("assignee_id", "")) == my_id)
         and _task_in_scope(t, pid_set, sec_sets)
         and needle in t.get("content", "").lower()
     ]

@@ -194,7 +194,7 @@ async def _sync_once() -> list[str]:
         t for t in raw
         if not t.get("checked")
         and not t.get("is_deleted")
-        and (not my_id or str(t.get("user_id", "")) == my_id)
+        and (not my_id or str(t.get("creator_id", "")) == my_id or str(t.get("assignee_id", "")) == my_id)
     ]
     open_ids = {str(t["id"]) for t in mine}
     task_by_id = {str(t["id"]): t for t in mine}
