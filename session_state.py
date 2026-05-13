@@ -20,6 +20,7 @@ Issue #59 (Milestone Gedaechtnis).
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 from dataclasses import asdict, dataclass, field
@@ -161,15 +162,24 @@ def _save(session_id: str) -> None:
     state = _states.get(session_id)
     if state is None:
         return
+    serialized = _serialize(state)  # fast, no I/O — do on calling thread
+
+    def _write() -> None:
+        try:
+            path = _state_path(session_id)
+            tmp = path + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(serialized, f, ensure_ascii=False, indent=2)
+            os.replace(tmp, path)
+        except Exception as e:
+            log.warning(f"session_state save failed for {session_id}: "
+                        f"{type(e).__name__}: {e}")
+
     try:
-        path = _state_path(session_id)
-        tmp = path + ".tmp"
-        with open(tmp, "w", encoding="utf-8") as f:
-            json.dump(_serialize(state), f, ensure_ascii=False, indent=2)
-        os.replace(tmp, path)
-    except Exception as e:
-        log.warning(f"session_state save failed for {session_id}: "
-                    f"{type(e).__name__}: {e}")
+        loop = asyncio.get_running_loop()
+        loop.run_in_executor(None, _write)
+    except RuntimeError:
+        _write()
 
 
 def load_all() -> None:
