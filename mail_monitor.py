@@ -113,7 +113,33 @@ async def _classify(sender: str, subject: str, body_preview: str) -> str:
         return "unknown"
 
 
-def _format_for_telegram(account_name: str, sender: str, subject: str, category: str) -> str:
+_SUMMARY_PROMPT = (
+    "Du bist Jarvis. Fasse diese E-Mail in 1-2 knappen deutschen Saetzen zusammen. "
+    "Nenne den Kerninhalt und falls vorhanden die gewuenschte Aktion. "
+    "Kein 'Die E-Mail handelt von...', direkt zum Punkt. Keine Anrede, kein Schluss."
+)
+
+
+async def _summarize_body(sender: str, subject: str, body: str) -> str:
+    """Return a 1-2 sentence German summary of the mail body, or '' on failure."""
+    try:
+        resp = await S.ai.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=120,
+            system=_SUMMARY_PROMPT,
+            messages=[{"role": "user", "content":
+                        f"Von: {sender}\nBetreff: {subject}\n\n{body[:2000]}"}],
+        )
+        return llm_text(resp).strip()
+    except Exception as e:
+        log.warning(f"mail_monitor: summarize failed: {type(e).__name__}: {e}")
+        return ""
+
+
+def _format_for_telegram(
+    account_name: str, sender: str, subject: str,
+    category: str, summary: str = "",
+) -> str:
     icon = {
         "handlungsbedarf": "🔴",
         "info": "🟡",
@@ -123,6 +149,8 @@ def _format_for_telegram(account_name: str, sender: str, subject: str, category:
         f"{icon} Neue Mail [{account_name}]\n"
         f"Von: {sender}\nBetreff: {subject}"
     )
+    if summary:
+        base += f"\n\n{summary}"
     if category == "handlungsbedarf":
         base += "\n\n→ Mail entwerfen oder Aufgabe anlegen?"
     elif category == "info":
@@ -405,7 +433,15 @@ async def _process_new_uids(account: dict, client, uids: list[int]) -> None:
                 tg_quiet = S.is_quiet_hours()
                 mac_quiet = S.is_mac_quiet_hours()
                 spoken = _format_for_voice(sender, subject)
-                caption = _format_for_telegram(name, sender, subject, category)
+                # Fetch body + summarize so Catrin can decide Mail/Aufgabe/Absender
+                summary = ""
+                try:
+                    body_data = await mail_actions.read_mail_body(name, uid)
+                    if "text" in body_data and body_data["text"]:
+                        summary = await _summarize_body(sender, subject, body_data["text"])
+                except Exception as e:
+                    log.warning(f"mail_monitor[{name}] summary fetch failed: {type(e).__name__}: {e}")
+                caption = _format_for_telegram(name, sender, subject, category, summary=summary)
                 # Telegram: voice-note + caption, sofern nicht in
                 # Telegram-Quiet-Hours.
                 if tg_quiet:
