@@ -139,6 +139,10 @@ def _make_doc_id(source: str, content: str) -> str:
     return f"{source}_{h}"
 
 
+# Public alias so external callers don't depend on the private name.
+make_doc_id = _make_doc_id
+
+
 # ---------------------------------------------------------------------------
 # Öffentliche API
 # ---------------------------------------------------------------------------
