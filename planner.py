@@ -240,10 +240,14 @@ async def _sync_once() -> list[str]:
                 f"Lohnsteuerhilfeverein HILO e.V., Beratungsstelle Neuss"
                 f"{placeholder}"
             )
-            result = mail_tools.create_draft(
-                to=recipient,
-                subject="Telefontermin Lohnsteuerhilfeverein HILO",
-                body=body,
+            loop = asyncio.get_running_loop()
+            result = await loop.run_in_executor(
+                None,
+                lambda: mail_tools.create_draft(
+                    to=recipient,
+                    subject="Telefontermin Lohnsteuerhilfeverein HILO",
+                    body=body,
+                ),
             )
             db[task_id] = {"type": "callback", "event_id": "", "title": title}
             if email:
