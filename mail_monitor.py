@@ -36,6 +36,85 @@ log = S.log
 _max_seen: dict[str, int] = {}
 
 
+# ---------------------------------------------------------------------------
+# Passive learning (Issue #102)
+# ---------------------------------------------------------------------------
+
+def _learn_from_mail(
+    account: str,
+    uid: int,
+    sender: str,
+    sender_email: str,
+    subject: str,
+    msg,
+) -> None:
+    """Update persons_db and memory index from a handlungsbedarf mail.
+
+    Called for every handlungsbedarf mail that reaches the notification
+    path (triage action == "none").  Failures are logged at DEBUG level
+    and never propagate to the caller.
+
+    Args:
+        account:      IMAP account name.
+        uid:          IMAP UID of the mail.
+        sender:       Display name of the sender.
+        sender_email: Normalised sender e-mail address (may be empty).
+        subject:      Decoded mail subject.
+        msg:          email.message.Message object (headers already parsed).
+    """
+    import datetime as _dt
+
+    # persons_db: update last_contact timestamp for known senders.
+    if sender_email:
+        try:
+            import persons_db
+            profile = persons_db.find_by_email(sender_email)
+            if profile is not None:
+                profile.last_contact = _dt.date.today().isoformat()
+                persons_db.upsert(profile)
+                log.debug(
+                    "mail_monitor[%s] learn: updated last_contact for %s (%s)",
+                    account, profile.name, sender_email,
+                )
+        except Exception as exc:
+            log.debug(
+                "mail_monitor[%s] learn: persons_db update failed: %s: %s",
+                account, type(exc).__name__, exc,
+            )
+
+    # memory_search: index sender + subject so future draft-reply context
+    # retrieval can surface relevant prior correspondence.
+    try:
+        import memory_search
+        date_str = msg.get("Date", "")
+        display = sender or sender_email or "Unbekannt"
+        text = f"Mail von {display}: {subject}"
+        doc_id = memory_search._make_doc_id(
+            "mail", f"{account}:{uid}:{sender_email}:{subject}"
+        )
+        memory_search.index_text(
+            text=text,
+            source="mail",
+            doc_id=doc_id,
+            metadata={
+                "type": "mail",
+                "account": account,
+                "uid": str(uid),
+                "sender": sender_email,
+                "date": date_str,
+            },
+        )
+        log.debug(
+            "mail_monitor[%s] learn: indexed mail uid=%s in memory_search",
+            account, uid,
+        )
+    except Exception as exc:
+        log.debug(
+            "mail_monitor[%s] learn: memory_search index failed: %s: %s",
+            account, type(exc).__name__, exc,
+        )
+
+
 def _state_path(account_name: str) -> str:
     safe = "".join(c if c.isalnum() else "_" for c in account_name)
     return os.path.join(os.path.dirname(__file__), f".jarvis_mail_seen_{safe}.json")
@@ -420,6 +499,13 @@ async def _process_new_uids(account: dict, client, uids: list[int]) -> None:
                 continue
 
             if category in S.MAIL_MONITOR_FORWARD:
+                # Passive learning (Issue #102): index sender + subject so
+                # future draft replies have better context.
+                try:
+                    _learn_from_mail(name, uid, sender, sender_email, subject, msg)
+                except Exception as e:
+                    log.debug(f"mail_monitor[{name}] learn failed: {type(e).__name__}: {e}")
+
                 # Egal ob's geforwarded wird oder nicht: in den Session-
                 # State, damit Catrin gleich darauf referenzieren kann
                 # ("vorlesen", "antworten", "Aufgabe daraus").
