@@ -227,15 +227,24 @@ def build_system_prompt() -> str:
             f"\n  An: {_sanitize(_pending.to)}, Betreff: {_sanitize(_pending.subject)}"
         )
     _pcal = _state.pending_calendar
+    _pper = _state.pending_person
+    _both_pending = _pcal is not None and _pper is not None
     if _pcal:
+        # When a person action is ALSO pending, require an explicit keyword for
+        # the calendar so that a bare "ja" (which typically answers the most
+        # recently asked question — the person action) is not misrouted.
+        cal_yes = (
+            '"Termin eintragen" / "annehmen" / "eintragen"'
+            if _both_pending
+            else '"eintragen" / "annehmen" / "ja"'
+        )
         active_mail_block += (
             f"\nPending-Termin-Einladung (in der aktiven Mail erkannt):"
             f"\n  Titel: {_pcal.summary}, Wann: {_pcal.when_human or _pcal.dtstart}"
             + (f", Ort: {_pcal.location}" if _pcal.location else "") +
-            f"\n  Wenn {addr} \"eintragen\" / \"annehmen\" / \"ja\" sagt -> [ACTION:ACCEPT_CALENDAR_INVITE]"
+            f"\n  Wenn {addr} {cal_yes} sagt -> [ACTION:ACCEPT_CALENDAR_INVITE]"
             f"\n  Wenn {addr} \"ablehnen\" / \"nein\" / \"nicht eintragen\" sagt -> [ACTION:DECLINE_CALENDAR_INVITE]"
         )
-    _pper = _state.pending_person
     if _pper:
         if _pper.kind == "new_person":
             desc_pp = f"Neue Person {_pper.name} (Mail {_pper.new_email}) in Kontakte anlegen"
