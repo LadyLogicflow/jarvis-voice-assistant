@@ -382,9 +382,12 @@ async def execute_action(action: dict) -> str:
             vac = _json.loads(p) if p.strip().startswith("{") else {}
         except _json.JSONDecodeError:
             vac = {}
+        enabled = bool(vac.get("enabled", True))
+        if enabled and not vac.get("subject", "").strip():
+            return "Abwesenheitsnotiz kann nicht aktiviert werden — Betreff fehlt. Bitte noch einmal mit Betreff und Text angeben."
         try:
             return await gmail_tools.set_vacation(
-                enabled=bool(vac.get("enabled", True)),
+                enabled=enabled,
                 subject=vac.get("subject", ""),
                 body=vac.get("body", ""),
                 start_date=vac.get("start", ""),
