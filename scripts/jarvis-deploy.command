@@ -10,9 +10,9 @@
 #   PI_REPO  → Pfad zum JARVIS-Ordner auf dem Pi
 # ─────────────────────────────────────────────────────────────────────────────
 
-PI_HOST="jarvis.local"
-PI_USER="pi"
-PI_REPO="$HOME/jarvis-voice-assistant-master"
+PI_HOST="100.126.130.74"   # Tailscale-IP des Pi
+PI_USER="Caterina"
+PI_REPO="/home/Caterina/jarvis-voice-assistant-master"
 
 echo "╔══════════════════════════════════════╗"
 echo "║        JARVIS Deploy                 ║"
