@@ -1,13 +1,14 @@
 """
-JARVIS Task Planner (Issue #98)
+JARVIS Task Planner (Issue #98, #114)
 
-Hourly background loop that syncs Todoist tasks to Google Calendar:
+Daily background loop (07:00 Berlin) that syncs Todoist tasks to Google Calendar:
 - Callback tasks ("Rückruf" etc.) → Mail draft with booking link
 - Known task types (Steuererklärung etc.) → fixed-duration calendar block
 - Unknown tasks → flagged for Catrin to provide duration
 
 Scheduling window: Mon–Fri 17:00–19:00 Europe/Berlin.
-Notifications only when something actually happened.
+Blocked events listed in _IGNORE_TITLES are treated as free slots.
+Notifications sent via Telegram when tasks are scheduled or no slot is found.
 """
 from __future__ import annotations
 
@@ -16,7 +17,7 @@ import json
 import logging
 import os
 import re
-from datetime import datetime, timedelta, date
+from datetime import datetime, timedelta
 
 import pytz
 
@@ -25,6 +26,11 @@ log = logging.getLogger("jarvis.planner")
 _TZ = pytz.timezone("Europe/Berlin")
 _DB_PATH = os.path.join(os.path.dirname(__file__), ".jarvis_planner.json")
 _BOOKING_LINK = "https://hiloneuss.simplybook.it/v2/#book/service/4/count/1/provider/5/"
+
+# Calendar event titles treated as free (scheduling window unblocked).
+# Issue #114: "Urlaub", "FFH Neuss", "geblockt" may fill the 17-19 window
+# but Catrin explicitly wants tasks scheduled there anyway.
+_IGNORE_TITLES: frozenset[str] = frozenset({"urlaub", "ffh neuss", "geblockt"})
 
 # ── Duration rules (keyword → minutes) ────────────────────────────────────────
 _DURATION_RULES: list[tuple[re.Pattern, int]] = [
@@ -122,9 +128,11 @@ async def _find_free_slot(duration_min: int, start_from: datetime | None = None)
         day_end = candidate.replace(hour=19, minute=0, second=0, microsecond=0)
         events = await cal.get_events_raw(day_start, day_end)
 
-        # Check for overlap
+        # Check for overlap (skip ignored event types — treated as free)
         conflict = False
         for ev in events:
+            if ev.get("summary", "").strip().lower() in _IGNORE_TITLES:
+                continue
             ev_start_str = ev["start"].get("dateTime", "")
             ev_end_str = ev["end"].get("dateTime", "")
             if not ev_start_str or not ev_end_str:
@@ -317,11 +325,23 @@ async def _notify(lines: list[str]) -> None:
         log.warning("planner: telegram send failed: %s", e)
 
 
+# ── Daily 07:00 trigger ────────────────────────────────────────────────────────
+async def _sleep_until_seven() -> None:
+    """Sleep until 07:00 Berlin time (next occurrence)."""
+    now = datetime.now(_TZ)
+    target = now.replace(hour=7, minute=0, second=0, microsecond=0)
+    if now >= target:
+        target += timedelta(days=1)
+    await asyncio.sleep((target - now).total_seconds())
+
+
 # ── Background loop ────────────────────────────────────────────────────────────
 async def planner_loop() -> None:
-    """Long-running asyncio task. Spawned by server.lifespan."""
-    log.info("planner: loop started")
+    """Long-running asyncio task. Spawned by server.lifespan.
+    Runs once at 07:00 Berlin time every day (Issue #114)."""
+    log.info("planner: loop started — waiting for 07:00")
     while True:
+        await _sleep_until_seven()
         try:
             notifications = await _sync_once()
             await _notify(notifications)
@@ -329,7 +349,6 @@ async def planner_loop() -> None:
             raise
         except Exception as e:
             log.warning("planner: sync_once failed: %s", e)
-        await asyncio.sleep(3600)
 
 
 # ── Manual trigger ─────────────────────────────────────────────────────────────
