@@ -1273,7 +1273,10 @@ async def execute_action(action: dict) -> str:
             return f"{pending.name} ist angelegt{extra_str}."
 
         if pending.kind == "email_drift":
-            # Email an Apple-Kontakt anhaengen + persons_db updaten
+            # Email an Kontakt anhaengen + persons_db updaten
+            import telegram_bot
+            old_emails = getattr(pending, "old_emails", [])
+            old_repr = old_emails[0] if old_emails else "(unbekannt)"
             await contacts.add_email_to_contact(pending.contact_id, pending.new_email)
             existing = persons_db.get(pending.contact_id)
             if existing:
@@ -1285,9 +1288,16 @@ async def execute_action(action: dict) -> str:
                     primary_email=pending.new_email,
                 ))
             session_state.clear_pending_person("default")
+            # Telegram-Bestaetigung (Issue #115)
+            tg_msg = (
+                f"✅ Kontakt aktualisiert: {pending.name}\n"
+                f"Alt: {old_repr} → Neu: {pending.new_email}"
+            )
+            await telegram_bot.send_user_text(tg_msg)
             return f"Adresse aktualisiert. {pending.new_email} ist die neue primaere Mail von {pending.name}."
 
         if pending.kind == "phone_drift":
+            import telegram_bot
             await contacts.add_phone_to_contact(pending.contact_id, pending.new_phone)
             existing = persons_db.get(pending.contact_id)
             if existing:
@@ -1299,6 +1309,12 @@ async def execute_action(action: dict) -> str:
                     primary_phone=pending.new_phone,
                 ))
             session_state.clear_pending_person("default")
+            # Telegram-Bestaetigung (Issue #115)
+            tg_msg = (
+                f"✅ Kontakt aktualisiert: {pending.name}\n"
+                f"Neue Telefonnummer: {pending.new_phone}"
+            )
+            await telegram_bot.send_user_text(tg_msg)
             return f"Nummer {pending.new_phone} bei {pending.name} eingetragen."
 
         session_state.clear_pending_person("default")

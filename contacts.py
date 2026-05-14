@@ -1,17 +1,23 @@
 """
-Apple Kontakte.app-Bridge via AppleScript (Issue #55).
+Kontakte-Bridge fuer Jarvis (Issue #55, #115).
 
-Liest und schreibt in Catrins Kontakte-Datenbank ueber osascript. Lese-
-Operationen sind sicher und werden frei aufgerufen; Schreib-Operationen
-brauchen Catrins Bestaetigung im Decision-Tree (siehe contact_sync.py).
+Primaeres Backend: Google Contacts (People API) — plattformuebergreifend,
+funktioniert auf Raspberry Pi (Linux) und macOS.
+Fallback: Apple Kontakte.app via AppleScript (nur macOS, wenn Google nicht
+verfuegbar).
+
+Google Contacts erfordert einmalige OAuth-Autorisierung via
+scripts/google-auth.py mit dem Scope https://www.googleapis.com/auth/contacts.
+Catrin muss token.json einmalig loeschen und scripts/google-auth.py neu
+ausfuehren damit der neue Scope aktiv wird.
 
 API:
 - read_all_contacts() -> list[Contact]
 - find_contacts_by_name(query) -> list[Contact]  (substring match)
 - find_contact_by_email(email) -> Contact | None
 - find_contact_by_phone(normalized_phone) -> Contact | None
-- update_contact_email(contact_id, new_email, label="") -> bool
-- update_contact_phone(contact_id, new_phone, label="") -> bool
+- add_email_to_contact(contact_id, new_email, label="") -> bool
+- add_phone_to_contact(contact_id, new_phone, label="") -> bool
 - create_contact(name, emails, phones) -> contact_id | None
 
 Telefonnummern werden vor Vergleichen normalisiert (alle Nicht-Ziffern
@@ -22,11 +28,13 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import re
 import subprocess
 import sys
 import time
 from dataclasses import dataclass, field
+from typing import Optional
 
 import settings as S
 
@@ -36,10 +44,34 @@ _MACOS = sys.platform == "darwin"
 
 log = S.log
 
+# ---------------------------------------------------------------------------
+# Backend-Auswahl: Google Contacts bevorzugt (plattformuebergreifend).
+# Voraussetzung: google-api-python-client installiert UND token.json vorhanden.
+# ---------------------------------------------------------------------------
+_TOKEN_PATH = os.path.join(os.path.dirname(__file__), "token.json")
+
+try:
+    import google_contacts_tools as _google_contacts
+    _USE_GOOGLE = os.path.exists(_TOKEN_PATH)
+    if _USE_GOOGLE:
+        log.info("contacts: Google Contacts Backend aktiv")
+    else:
+        log.info(
+            "contacts: google_contacts_tools importiert, aber token.json "
+            "fehlt — Apple Contacts Fallback"
+        )
+except ImportError:
+    _google_contacts = None  # type: ignore[assignment]
+    _USE_GOOGLE = False
+    log.info("contacts: google_contacts_tools nicht verfuegbar — Apple Contacts Fallback")
+
 
 @dataclass
 class Contact:
-    """Ein Apple-Kontakt mit den Feldern, die Jarvis braucht."""
+    """Ein Kontakt mit den Feldern, die Jarvis braucht.
+
+    id: Apple Contacts UUID oder Google People-API resourceName.
+    """
     id: str
     name: str
     emails: list[str] = field(default_factory=list)
@@ -71,7 +103,7 @@ def normalize_phone(phone: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# AppleScript-Helper
+# AppleScript-Helper (Fallback fuer macOS ohne Google-Tokens)
 # ---------------------------------------------------------------------------
 async def _run_osascript(script: str, timeout: float = 15.0) -> str:
     """Run osascript and return stdout. Raises RuntimeError on non-zero."""
@@ -176,19 +208,33 @@ _cache_lock = asyncio.Lock()
 
 
 async def read_all_contacts(force_refresh: bool = False) -> list[Contact]:
-    """Hol alle Apple-Kontakte. Cache fuer 5 Minuten — der Lookup
-    waehrend Mail-Drift-Detection darf nicht jeden Mail-Eingang ein
-    osascript triggern (~200ms Overhead).
+    """Hol alle Kontakte. Cache fuer 5 Minuten.
+
+    Primaeres Backend: Google Contacts (plattformuebergreifend, Pi + Mac).
+    Fallback: Apple Kontakte.app via AppleScript (nur macOS).
 
     Verwendet asyncio.Lock mit Double-Checked Locking (Issue #97):
     Der schnelle Pfad (Cache gueltig) prueft ohne Lock. Nur beim
     tatsaechlichen Refresh wird der Lock gehalten, damit gleichzeitige
     async-Aufrufe (z.B. Mail-Klassifikation + Drift-Detection) keinen
-    doppelten osascript-Aufruf ausloesen.
-
-    On non-macOS (Raspberry Pi / Linux) osascript is unavailable — return
-    empty list immediately so callers treat all persons as "unknown".
+    doppelten API-Aufruf ausloesen.
     """
+    if _USE_GOOGLE:
+        # Google Contacts: Contact-Objekte sind strukturell identisch
+        google_contacts = await _google_contacts.read_all_contacts(
+            force_refresh=force_refresh
+        )
+        return [
+            Contact(
+                id=c.id,
+                name=c.name,
+                emails=c.emails,
+                phones=c.phones,
+                organization=c.organization,
+            )
+            for c in google_contacts
+        ]
+
     if not _MACOS:
         return []
     global _CONTACTS_CACHE, _CACHE_TIMESTAMP
@@ -251,24 +297,47 @@ async def find_contacts_by_name(query: str) -> list[Contact]:
 
     Firmen-Kontakte haben oft keinen Personennamen — deshalb wird zusaetzlich
     auf c.organization gematcht (Issue #71).
-    Liefert ALLE Treffer — Disambiguation macht der Aufrufer."""
+    Liefert ALLE Treffer — Disambiguation macht der Aufrufer.
+
+    Delegiert an Google Contacts wenn verfuegbar.
+    """
+    if _USE_GOOGLE:
+        google_contacts = await _google_contacts.find_contacts_by_name(query)
+        return [
+            Contact(
+                id=c.id, name=c.name, emails=c.emails,
+                phones=c.phones, organization=c.organization,
+            )
+            for c in google_contacts
+        ]
     if not query:
         return []
     q = query.lower().strip()
-    contacts = await read_all_contacts()
+    all_contacts = await read_all_contacts()
     return [
-        c for c in contacts
+        c for c in all_contacts
         if q in c.name.lower() or q in c.organization.lower()
     ]
 
 
 async def find_contact_by_email(email: str) -> Contact | None:
-    """Exakter Match auf Email-Adresse (case-insensitive)."""
+    """Exakter Match auf Email-Adresse (case-insensitive).
+
+    Delegiert an Google Contacts wenn verfuegbar.
+    """
+    if _USE_GOOGLE:
+        gc = await _google_contacts.find_contact_by_email(email)
+        if gc is None:
+            return None
+        return Contact(
+            id=gc.id, name=gc.name, emails=gc.emails,
+            phones=gc.phones, organization=gc.organization,
+        )
     if not email:
         return None
     target = email.lower().strip()
-    contacts = await read_all_contacts()
-    for c in contacts:
+    all_contacts = await read_all_contacts()
+    for c in all_contacts:
         if target in c.emails:
             return c
     return None
@@ -281,8 +350,8 @@ async def find_contact_by_phone(phone: str) -> Contact | None:
     target = normalize_phone(phone)
     if not target:
         return None
-    contacts = await read_all_contacts()
-    for c in contacts:
+    all_contacts = await read_all_contacts()
+    for c in all_contacts:
         for p in c.phones:
             if normalize_phone(p) == target:
                 return c
@@ -299,7 +368,15 @@ def _escape_as(s: str) -> str:
 
 async def add_email_to_contact(contact_id: str, new_email: str,
                                 label: str = "work") -> bool:
-    """Haengt eine Mail-Adresse an einen Kontakt an (vorhandene bleiben)."""
+    """Haengt eine Mail-Adresse an einen Kontakt an (vorhandene bleiben).
+
+    Delegiert an Google Contacts wenn verfuegbar, sonst Apple Contacts.
+    """
+    if _USE_GOOGLE:
+        # update_contact_email mit leerem old_email = Append-Modus
+        return await _google_contacts.update_contact_email(
+            contact_id, "", new_email
+        )
     if not contact_id or not new_email:
         return False
     script = f'''
@@ -324,6 +401,12 @@ end tell
 
 async def add_phone_to_contact(contact_id: str, new_phone: str,
                                 label: str = "mobile") -> bool:
+    """Haengt eine Telefonnummer an einen Kontakt an (vorhandene bleiben).
+
+    Delegiert an Google Contacts wenn verfuegbar, sonst Apple Contacts.
+    """
+    if _USE_GOOGLE:
+        return await _google_contacts.update_contact_phone(contact_id, new_phone)
     if not contact_id or not new_phone:
         return False
     script = f'''
@@ -351,7 +434,17 @@ async def create_contact(
     phones: list[str] | None = None,
     organization: str = "",
 ) -> Optional[str]:
-    """Legt einen neuen Kontakt an. Liefert die ID oder None."""
+    """Legt einen neuen Kontakt an. Liefert die ID oder None.
+
+    Delegiert an Google Contacts wenn verfuegbar, sonst Apple Contacts.
+    """
+    if _USE_GOOGLE:
+        primary_email = (emails or [""])[0]
+        return await _google_contacts.create_contact(
+            name=name,
+            email=primary_email,
+            phones=phones or [],
+        )
     if not name:
         return None
     parts = name.split(None, 1)
