@@ -11,8 +11,8 @@
 # ─────────────────────────────────────────────────────────────────────────────
 
 PI_HOST="100.126.130.74"   # Tailscale-IP des Pi
-PI_USER="Caterina"
-PI_REPO="/home/Caterina/jarvis-voice-assistant-master"
+PI_USER="caterina"
+PI_REPO="/home/caterina/jarvis-voice-assistant-master"
 
 echo "╔══════════════════════════════════════╗"
 echo "║        JARVIS Deploy                 ║"
