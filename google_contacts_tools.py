@@ -328,20 +328,22 @@ def _update_contact_email_sync(
     ).execute()
 
     email_list = person.get("emailAddresses", [])
-    old_lower = old_email.lower().strip()
     new_lower = new_email.lower().strip()
 
-    # Alle Eintraege beibehalten, alten Wert ersetzen
-    updated = False
-    for entry in email_list:
-        if entry.get("value", "").lower().strip() == old_lower:
-            entry["value"] = new_lower
-            updated = True
-            break
-
-    if not updated:
-        # Old email nicht gefunden — einfach anhaengen
+    if not old_email:
+        # Append-Modus: immer als neue Adresse hinzufügen
         email_list.append({"value": new_lower})
+    else:
+        # Ersetze-Modus: alten Wert suchen und austauschen
+        old_lower = old_email.lower().strip()
+        replaced = False
+        for entry in email_list:
+            if entry.get("value", "").lower().strip() == old_lower:
+                entry["value"] = new_lower
+                replaced = True
+                break
+        if not replaced:
+            email_list.append({"value": new_lower})
 
     person["emailAddresses"] = email_list
 
@@ -418,6 +420,7 @@ async def create_contact(
     name: str,
     email: str,
     phones: list[str],
+    organization: str = "",
 ) -> Optional[str]:
     """Legt einen neuen Google-Kontakt an.
 
@@ -425,6 +428,7 @@ async def create_contact(
         name: Vollstaendiger Name.
         email: Primaere Email-Adresse.
         phones: Liste von Telefonnummern (kann leer sein).
+        organization: Firma / Organisation (optional).
 
     Returns:
         resourceName des neuen Kontakts, oder None bei Fehler.
@@ -440,6 +444,7 @@ async def create_contact(
             name,
             email,
             phones,
+            organization,
         )
         if resource_name:
             _invalidate_cache()
@@ -456,6 +461,7 @@ def _create_contact_sync(
     name: str,
     email: str,
     phones: list[str],
+    organization: str = "",
 ) -> Optional[str]:
     service = _get_service()
 
@@ -466,6 +472,8 @@ def _create_contact_sync(
         body["emailAddresses"] = [{"value": email.lower().strip()}]
     if phones:
         body["phoneNumbers"] = [{"value": p} for p in phones if p]
+    if organization:
+        body["organizations"] = [{"name": organization}]
 
     created = service.people().createContact(body=body).execute()
     resource_name = created.get("resourceName")

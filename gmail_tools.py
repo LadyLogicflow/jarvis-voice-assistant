@@ -130,7 +130,10 @@ def _set_vacation_sync(
         if start_ms is not None:
             vacation_body["startTime"] = str(start_ms)
         if end_ms is not None:
-            vacation_body["endTime"] = str(end_ms)
+            # Gmail endTime is exclusive — add one day so the user's
+            # stated end date is fully included (e.g. "bis 30. Mai"
+            # means the responder is active through end of May 30).
+            vacation_body["endTime"] = str(end_ms + 24 * 60 * 60 * 1000)
 
     try:
         service.users().settings().updateVacation(

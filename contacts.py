@@ -444,6 +444,7 @@ async def create_contact(
             name=name,
             email=primary_email,
             phones=phones or [],
+            organization=organization,
         )
     if not name:
         return None
