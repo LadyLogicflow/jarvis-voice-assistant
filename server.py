@@ -389,6 +389,19 @@ async def process_message(session_id: str, user_text: str, ws: WebSocket) -> Non
             f"WICHTIG: jeden Satz mit Punkt beenden, keinen Satz abbrechen. "
             f"Sprich {addr} an. KEINE Begruessung. KEINE Tags."
         )
+    elif action["type"] in ("SEARCH", "BROWSE"):
+        # Research prompt: comprehensive enough that follow-up questions work.
+        # Raw result also stored in conversation history below so the LLM can
+        # reference specifics in subsequent turns.
+        summary_system = (
+            f"Du bist Jarvis, der britisch-hoefliche KI-Butler und Recherche-Assistent. "
+            f"Fasse die folgenden Recherche-Ergebnisse auf Deutsch zusammen. "
+            f"Ziel: {addr} soll nach dieser Zusammenfassung Folgefragen stellen koennen. "
+            f"Strukturiere die Antwort so: Was ist das Thema? Wer oder was steckt dahinter? "
+            f"Welche Kernfakten sind relevant? Falls vorhanden: Gruender, Produkt, Standort, Preis. "
+            f"Umfang: 4-6 vollstaendige Saetze, fliessend, keine Aufzaehlungen. "
+            f"Ton: trocken, praezise, Butler-Stil. KEINE Begruessung. KEINE Tags."
+        )
     else:
         summary_system = (
             f"Du bist Jarvis, der britisch-hoefliche KI-Butler. Fasse die folgenden "
@@ -396,9 +409,11 @@ async def process_message(session_id: str, user_text: str, ws: WebSocket) -> Non
             f"Ton: trocken, knapp, leicht sarkastisch, Butler-Stil. Sprich {addr} an. "
             f"KEINE Begruessung. KEINE Tags in eckigen Klammern. KEINE ACTION-Tags."
         )
+    # Research actions get more tokens; others stay at 400.
+    summary_max_tokens = 700 if action["type"] in ("SEARCH", "BROWSE") else 400
     summary_resp = await S.ai.messages.create(
         model="claude-haiku-4-5-20251001",
-        max_tokens=400,
+        max_tokens=summary_max_tokens,
         system=summary_system,
         messages=[{"role": "user", "content": f"Fasse zusammen:\n\n{action_result}"}],
     )
@@ -406,6 +421,10 @@ async def process_message(session_id: str, user_text: str, ws: WebSocket) -> Non
     # Defense: if the LLM ended mid-sentence, trim back to the last
     # complete sentence so the user doesn't hear truncated content.
     summary = scheduler.trim_to_complete_sentences(summary)
+    # Store raw search content in history so follow-up questions have
+    # access to the full source material, not just the spoken summary.
+    if action["type"] in ("SEARCH", "BROWSE"):
+        await append_message(session_id, "user", f"[Recherche-Ergebnis]\n{action_result}")
     await append_message(session_id, "assistant", summary)
     await speak(summary, ws, display=summary)
 
