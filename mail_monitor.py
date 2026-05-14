@@ -428,6 +428,23 @@ async def _process_new_uids(account: dict, client, uids: list[int]) -> None:
                                 log.warning(f"mail_monitor[{name}] mac alert (drift) failed: "
                                             f"{type(e).__name__}: {e}")
                         log.info(f"mail_monitor[{name}] uid={uid}: drift {drift['kind']} pending")
+                        # Issue #116: Mail-Inhalt zusaetzlich zur Kontaktfrage zeigen
+                        try:
+                            body_data = await mail_actions.read_mail_body(name, uid)
+                            if body_data.get("text"):
+                                body_summary = await _summarize_body(
+                                    sender, subject, body_data["text"]
+                                )
+                                if body_summary:
+                                    summary_msg = (
+                                        f"📧 {sender} | {subject}\n{body_summary}"
+                                    )
+                                    await telegram_bot.send_user_text(summary_msg)
+                        except Exception as e:
+                            log.warning(
+                                f"mail_monitor[{name}] drift body summary failed: "
+                                f"{type(e).__name__}: {e}"
+                            )
                         continue
 
             # Kalender-Einladung erkannt? (Stage 5)
