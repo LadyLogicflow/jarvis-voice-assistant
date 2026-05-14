@@ -1,57 +1,36 @@
 #!/bin/bash
-# ─────────────────────────────────────────────────────────────────────────────
-# jarvis-deploy.command
-# Doppelklick auf dem Mac: verbindet mit dem Pi, beendet JARVIS, zieht die
-# neuesten Änderungen aus Git und startet JARVIS neu.
-#
-# EINMALIG ANPASSEN:
-#   PI_HOST  → IP-Adresse oder Hostname des Pi (z.B. 192.168.1.42 oder jarvis.local)
-#   PI_USER  → SSH-Benutzername auf dem Pi (z.B. catrin oder pi)
-#   PI_REPO  → Pfad zum JARVIS-Ordner auf dem Pi
-# ─────────────────────────────────────────────────────────────────────────────
+# Doppelklick auf dem Mac: beendet JARVIS auf dem Pi, zieht Updates, startet neu.
 
-PI_HOST="100.126.130.74"   # Tailscale-IP des Pi
+PI_HOST="100.126.130.74"
 PI_USER="caterina"
 PI_REPO="/home/caterina/jarvis-voice-assistant-master"
 
-echo "╔══════════════════════════════════════╗"
-echo "║        JARVIS Deploy                 ║"
-echo "╚══════════════════════════════════════╝"
+echo "==== JARVIS Deploy ===="
 echo ""
-echo "▶ Verbinde mit $PI_USER@$PI_HOST …"
 
-ssh -t "$PI_USER@$PI_HOST" bash <<REMOTE
-  set -e
-  cd "$PI_REPO"
+ssh -t "$PI_USER@$PI_HOST" "
+  cd $PI_REPO
 
-  echo ""
-  echo "■ Stoppe JARVIS …"
-  sudo systemctl stop jarvis
-  echo "  ✓ gestoppt"
-
-  echo ""
-  echo "■ Hole neueste Änderungen …"
-  git pull origin main
-  echo "  ✓ aktuell"
-
-  echo ""
-  echo "■ Starte JARVIS neu …"
-  sudo systemctl start jarvis
+  echo '■ Stoppe JARVIS...'
+  pkill -f 'python.*server.py' || true
   sleep 2
-  STATUS=\$(systemctl is-active jarvis)
-  if [ "\$STATUS" = "active" ]; then
-    echo "  ✓ JARVIS läuft"
-  else
-    echo "  ✗ JARVIS konnte nicht starten — Status: \$STATUS"
-    echo "    Logs: sudo journalctl -u jarvis -n 30"
-    exit 1
-  fi
 
-  echo ""
-  echo "═══════════════════════════════════════"
-  echo "  Fertig. JARVIS ist aktuell und läuft."
-  echo "═══════════════════════════════════════"
-REMOTE
+  echo '■ Hole neueste Aenderungen...'
+  git pull origin main
+
+  echo '■ Starte JARVIS neu...'
+  nohup .venv/bin/python -u server.py >> jarvis.log 2>&1 &
+  sleep 3
+
+  if pgrep -f 'python.*server.py' > /dev/null; then
+    echo ''
+    echo '==== JARVIS laeuft. ===='
+  else
+    echo ''
+    echo '==== FEHLER: Start fehlgeschlagen ===='
+    tail -20 jarvis.log
+  fi
+"
 
 echo ""
-read -r -p "Enter drücken zum Schließen …"
+read -rp "Enter zum Schliessen..."
