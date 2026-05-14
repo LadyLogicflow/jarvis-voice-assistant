@@ -94,8 +94,63 @@ async def _get_browser():  # type: ignore[no-untyped-def]  # playwright BrowserC
         return _context
 
 
+async def _search_httpx(query: str) -> dict:
+    """Search via DuckDuckGo Lite + httpx — no browser needed (works on Pi/Linux).
+
+    DDG Lite encodes result links as /l/?uddg=URL_ENCODED_TARGET so we decode
+    them, fetch the first result page with httpx and strip the HTML to plain text.
+    """
+    from urllib.parse import quote
+    search_url = f"https://lite.duckduckgo.com/lite/?q={quote(query, safe='')}"
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (X11; Linux aarch64) AppleWebKit/537.36 "
+            "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        ),
+        "Accept": "text/html,application/xhtml+xml",
+        "Accept-Language": "de-DE,de;q=0.9,en;q=0.8",
+    }
+    try:
+        async with httpx.AsyncClient(follow_redirects=True, timeout=15.0) as client:
+            resp = await client.get(search_url, headers=headers)
+            resp.raise_for_status()
+            html = resp.text
+
+        # DDG Lite encodes links as uddg=PERCENT_ENCODED_URL
+        uddg_hits = re.findall(r'uddg=([^&"\']+)', html)
+        if not uddg_hits:
+            return {"title": "Keine Ergebnisse", "url": search_url, "content": "Keine Ergebnisse gefunden."}
+
+        first_url = unquote(uddg_hits[0])
+
+        async with httpx.AsyncClient(follow_redirects=True, timeout=10.0) as client:
+            page_resp = await client.get(first_url, headers=headers)
+            page_html = page_resp.text
+
+        # Strip scripts/styles/tags, collapse whitespace
+        page_text = re.sub(r'<script[^>]*>.*?</script>', '', page_html, flags=re.DOTALL | re.IGNORECASE)
+        page_text = re.sub(r'<style[^>]*>.*?</style>', '', page_text, flags=re.DOTALL | re.IGNORECASE)
+        page_text = re.sub(r'<[^>]+>', ' ', page_text)
+        page_text = re.sub(r'\s+', ' ', page_text).strip()
+
+        title_m = re.search(r'<title[^>]*>(.*?)</title>', page_html, re.IGNORECASE | re.DOTALL)
+        title = re.sub(r'<[^>]+>', '', title_m.group(1)).strip() if title_m else first_url
+
+        return {"title": title, "url": first_url, "content": page_text[:3000]}
+    except Exception as e:
+        log.warning("_search_httpx failed: %s: %s", type(e).__name__, e)
+        return {"error": str(e), "url": search_url}
+
+
 async def search_and_read(query: str) -> dict:
-    """Search DuckDuckGo in visible browser, click first result, read the page."""
+    """Search DuckDuckGo and return the first result.
+
+    On macOS: uses Playwright (visible browser, JS-capable).
+    On Linux/Pi: uses httpx + DDG Lite (no browser needed, more reliable headless).
+    """
+    if not IS_MAC:
+        return await _search_httpx(query)
+
     from urllib.parse import quote
     ctx = await _get_browser()
     page = await ctx.new_page()
