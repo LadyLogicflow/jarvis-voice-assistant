@@ -372,6 +372,28 @@ async def execute_action(action: dict) -> str:
             log.warning("ADDCAL fehlgeschlagen: %s: %s", type(e).__name__, e)
             return f"Termin konnte nicht angelegt werden: {e}"
 
+    elif t == "VACATION":
+        # Issue #111: Abwesenheitsnotiz via Gmail Settings API setzen/deaktivieren.
+        # Payload ist ein JSON-Objekt: {"enabled": bool, "subject": str,
+        # "body": str, "start": "YYYY-MM-DD", "end": "YYYY-MM-DD"}.
+        import json as _json
+        import gmail_tools
+        try:
+            vac = _json.loads(p) if p.strip().startswith("{") else {}
+        except _json.JSONDecodeError:
+            vac = {}
+        try:
+            return await gmail_tools.set_vacation(
+                enabled=bool(vac.get("enabled", True)),
+                subject=vac.get("subject", ""),
+                body=vac.get("body", ""),
+                start_date=vac.get("start", ""),
+                end_date=vac.get("end", ""),
+            )
+        except Exception as e:
+            log.warning("VACATION fehlgeschlagen: %s: %s", type(e).__name__, e)
+            return f"Abwesenheitsnotiz konnte nicht gesetzt werden: {e}"
+
     elif t == "NOTE":
         parts = p.split("|", 1)
         title = parts[0].strip()

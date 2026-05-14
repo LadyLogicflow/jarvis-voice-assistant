@@ -20,7 +20,10 @@ import settings as S
 
 log = logging.getLogger("jarvis.calendar")
 
-SCOPES = ["https://www.googleapis.com/auth/calendar"]
+SCOPES = [
+    "https://www.googleapis.com/auth/calendar",
+    "https://www.googleapis.com/auth/gmail.settings.basic",
+]
 TOKEN_PATH = os.path.join(os.path.dirname(__file__), "token.json")
 CREDS_PATH = os.path.join(os.path.dirname(__file__), "credentials.json")
 

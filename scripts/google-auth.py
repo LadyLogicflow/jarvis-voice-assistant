@@ -27,7 +27,7 @@ flow.redirect_uri = f"http://localhost:{PORT}/"
 
 auth_url, state = flow.authorization_url(prompt="consent", access_type="offline")
 
-print("\n>>> Google-Kalender Autorisierung")
+print("\n>>> Google-Kalender und Gmail-Autorisierung")
 print(f">>> URL:\n{auth_url}\n", flush=True)
 
 # Open browser on macOS
@@ -76,4 +76,7 @@ with open(TOKEN_PATH, "w") as f:
     f.write(creds.to_json())
 
 print(f"\n✓ Token gespeichert: {TOKEN_PATH}")
-print("Jarvis kann jetzt auf den Google-Kalender zugreifen.")
+print("Jarvis kann jetzt auf den Google-Kalender und Gmail (Abwesenheitsnotiz) zugreifen.")
+print("Hinweis: Scope 'gmail.settings.basic' wurde ergaenzt (Issue #111).")
+print("Falls 'Zugriff nicht genehmigt' erscheint, bitte die App in der Google")
+print("Cloud Console erneut freigeben oder den Scope in der OAuth-Einwilligung bestaetigen.")

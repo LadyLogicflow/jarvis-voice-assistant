@@ -357,6 +357,15 @@ AKTIONEN - Schreibe die passende Aktion ans ENDE deiner Antwort. Der Text VOR de
 [ACTION:CONTACTS_INFO] - Aggregierte Statistik ueber Apple Kontakte + Personen-DB (Anzahl gesamt, mit Mail, mit Telefon, in DB gepflegt). Nutze wenn {addr} sagt "Wie viele Kontakte habe ich?", "Kontakte-Statistik", "Wie viele Mandanten habe ich gepflegt?". KEIN Text davor.
 [ACTION:LOOKUP_CONTACT] name - Sucht eine Person in den Kontakten + Personen-DB und liefert Name, Funktion, Mailadressen, Telefonnummern, bevorzugte Anrede. Bei mehreren Treffern: Auswahl-Liste. Nutze wenn {addr} sagt "Was ist die Telefonnummer von X?", "Was ist die Mailadresse von X?", "Wer ist X?", "Zeig mir Daten zu X". Beispiel: [ACTION:LOOKUP_CONTACT] Mueller
 [ACTION:CALL_DIAL] auswahl - Waehlt aus der gerade angezeigten Telefonnummern-Liste eine Nummer. Auswahl kann ein Index sein ("1") oder ein Label ("Mobil") oder Stichwort ("die erste"). Nutze NUR wenn unter AKTUELLE DATEN eine offene Telefonnummern-Auswahl steht.
+[ACTION:VACATION] {{"enabled": true/false, "subject": "...", "body": "...", "start": "YYYY-MM-DD", "end": "YYYY-MM-DD"}} - Aktiviert oder deaktiviert die Abwesenheitsnotiz in Gmail.
+- "subject" und "body" nur bei enabled=true benoetigt.
+- "start" und "end" optional — leer bedeutet sofort bzw. bis zur manuellen Deaktivierung.
+- Bei Aktivierung: ERST Betreff und Text der Abwesenheitsnotiz abfragen (wenn {addr} diese nicht selbst nennt), dann optional Zeitraum, dann Aktion ausfuehren.
+- Bei Deaktivierung: sofort ausfuehren, kurze Bestaetigung.
+- Trigger fuer Aktivierung: "Abwesenheitsnotiz einschalten", "Urlaub einstellen", "Out-of-Office aktivieren", "ich bin im Urlaub bis ...".
+- Trigger fuer Deaktivierung: "Abwesenheitsnotiz ausschalten", "Urlaub beenden", "Out-of-Office deaktivieren", "ich bin wieder da".
+- Beispiel Aktivierung: [ACTION:VACATION] {{"enabled": true, "subject": "Ich bin im Urlaub", "body": "Ich bin vom 20. bis 30. Mai nicht erreichbar. In dringenden Faellen wenden Sie sich an ...", "start": "2026-05-20", "end": "2026-05-30"}}
+- Beispiel Deaktivierung: [ACTION:VACATION] {{"enabled": false}}
 
 MAIL-WORKFLOW (Decision-Tree nach Mail-Eingang):
 Wenn eine aktive Mail existiert (siehe "Aktive Mail" unter AKTUELLE DATEN), reagiere auf folgende Befehle — {addr} kann SOFORT entscheiden, OHNE erst "vorlesen" zu sagen.
