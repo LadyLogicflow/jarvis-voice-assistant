@@ -19,7 +19,11 @@ import email.header
 import json
 import os
 import re
+import sys
 from email.utils import parseaddr
+
+# Apple Contacts (osascript) only works on macOS.
+_MACOS = sys.platform == "darwin"
 
 import contact_sync
 import mail_actions
@@ -303,11 +307,14 @@ async def _process_new_uids(account: dict, client, uids: list[int]) -> None:
             sender_email = (from_parsed[1] or "").lower()
             subject = _decode_header(msg.get("Subject"))
             if not sender and not subject:
-                # Parser came back empty — log the raw header so we can
-                # see what we got from Apple.
+                # Parser came back empty — this is a system/protocol message
+                # (e.g. IMAP server notification, DSN with no envelope).
+                # Skip it entirely — forwarding it produces a useless
+                # "no subject, no content" notification.
                 preview = raw[:300].decode(errors="replace")
-                log.warning(f"mail_monitor[{name}] uid={uid} empty headers; "
+                log.warning(f"mail_monitor[{name}] uid={uid} empty headers, skipping; "
                             f"raw[0:300]={preview!r}")
+                continue
             # We only fetch BODY.PEEK[HEADER] (Apple-strict-parser-friendly),
             # so the classifier runs on sender + subject only. Empty body
             # preview by design.
@@ -319,7 +326,10 @@ async def _process_new_uids(account: dict, client, uids: list[int]) -> None:
             # forward-eligible Mails, sonst flutet Werbung den Kontakt-
             # Vorschlag. Wenn Drift erkannt: spezielle Voice-Note +
             # pending_person_action setzen, normalen Push ueberspringen.
-            if category in S.MAIL_MONITOR_FORWARD:
+            # On non-macOS (Raspberry Pi) Apple Contacts is inaccessible,
+            # so drift detection is skipped to avoid spurious "Soll ich
+            # anlegen?" questions for contacts that already exist.
+            if category in S.MAIL_MONITOR_FORWARD and _MACOS:
                 try:
                     drift = await contact_sync.check_mail_for_drift(
                         msg, sender_email, sender,

@@ -24,10 +24,15 @@ import asyncio
 import json
 import re
 import subprocess
+import sys
 import time
 from dataclasses import dataclass, field
 
 import settings as S
+
+# Apple Contacts is only accessible on macOS via osascript.
+# On Raspberry Pi / Linux all operations return empty results gracefully.
+_MACOS = sys.platform == "darwin"
 
 log = S.log
 
@@ -180,7 +185,12 @@ async def read_all_contacts(force_refresh: bool = False) -> list[Contact]:
     tatsaechlichen Refresh wird der Lock gehalten, damit gleichzeitige
     async-Aufrufe (z.B. Mail-Klassifikation + Drift-Detection) keinen
     doppelten osascript-Aufruf ausloesen.
+
+    On non-macOS (Raspberry Pi / Linux) osascript is unavailable — return
+    empty list immediately so callers treat all persons as "unknown".
     """
+    if not _MACOS:
+        return []
     global _CONTACTS_CACHE, _CACHE_TIMESTAMP
     now = time.time()
     # Fast path: Cache gueltig — kein Lock noetig.
