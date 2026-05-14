@@ -156,7 +156,7 @@ BROWSER_HEADLESS = bool(config.get("browser_headless", _no_display))
 # Which categories trigger a Telegram push. Default: only mails the
 # classifier flagged as "handlungsbedarf". Set to ["handlungsbedarf",
 # "info"] to also forward FYI mails.
-MAIL_MONITOR_FORWARD = config.get("mail_monitor_forward", ["handlungsbedarf"])
+MAIL_MONITOR_FORWARD = [c.lower() for c in config.get("mail_monitor_forward", ["handlungsbedarf"])]
 MAIL_MONITOR_FOLDER = config.get("mail_monitor_folder", "INBOX")
 
 # Multi-account mail monitor (e.g. Apple iCloud + HILO at the same time).
