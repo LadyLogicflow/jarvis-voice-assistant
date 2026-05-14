@@ -75,6 +75,19 @@ async def _broadcast_proactive(text: str) -> None:
     await speak(text, target, display=text)
 
 
+async def _mac_alert(text: str) -> None:
+    """Mac-UI-only alert: bring Chrome to front + speak + display.
+    Does NOT send to Telegram — mail_monitor already does that via
+    send_user_voice so that the message_id can be tracked for reply-context.
+    Registered as the mail alert handler to avoid duplicate Telegram sends."""
+    if not active_clients:
+        return
+    target = active_clients[-1]
+    loop = asyncio.get_running_loop()
+    await loop.run_in_executor(None, _show_chrome)
+    await speak(text, target, display=text)
+
+
 async def broadcast_to_all_sessions(text: str) -> None:
     """Send a text-only status message to all connected WebSocket clients
     (display only, no TTS). Used by the planner for silent notifications."""
@@ -94,7 +107,7 @@ async def _lifespan(_app):  # type: ignore[no-untyped-def]  # AsyncGenerator
     await refresh_data()
     session_state.load_all()
     scheduler.register_proactive_handler(_broadcast_proactive)
-    register_mail_alert_handler(_broadcast_proactive)
+    register_mail_alert_handler(_mac_alert)
     # Startet Reindex beim Boot (im Hintergrund, blockiert nicht)
     import memory_search
     task_reindex = asyncio.create_task(memory_search.reindex_all())
