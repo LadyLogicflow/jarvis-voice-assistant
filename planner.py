@@ -205,17 +205,24 @@ async def _sync_once() -> list[str]:
 
     my_id = await todoist_tools._my_id(S.TODOIST_TOKEN)
 
-    # Only plan tasks from the configured personal project (todoist_projects.privat).
-    # Without this filter the planner picks up all Mandanten work tasks (EST 2025 ...)
-    # and tries to schedule them as calendar blocks — which is not what Catrin wants.
-    _privat_id = str(S.TODOIST_PROJECTS.get("privat", "")).strip()
+    # Personal project whitelist — plan tasks from DIHAG and Privat projects.
+    # my_id is fetched automatically from the API token, no manual config needed.
+    _personal_project_ids = {
+        str(v).strip()
+        for k, v in S.TODOIST_PROJECTS.items()
+        if k in ("privat", "dihag") and str(v).strip()
+    }
 
     mine = [
         t for t in raw
         if not t.get("checked")
         and not t.get("is_deleted")
-        and (not my_id or str(t.get("creator_id", "")) == my_id or str(t.get("assignee_id", "")) == my_id)
-        and (not _privat_id or str(t.get("project_id", "")) == _privat_id)
+        and (
+            # Explicitly assigned to Catrin (works across all projects)
+            (my_id and str(t.get("assignee_id", "")) == my_id)
+            # Or in a configured personal project (Privat, DIHAG)
+            or (_personal_project_ids and str(t.get("project_id", "")) in _personal_project_ids)
+        )
     ]
     open_ids = {str(t["id"]) for t in mine}
     task_by_id = {str(t["id"]): t for t in mine}
