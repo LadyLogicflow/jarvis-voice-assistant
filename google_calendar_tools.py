@@ -20,10 +20,9 @@ import settings as S
 
 log = logging.getLogger("jarvis.calendar")
 
-SCOPES = [
-    "https://www.googleapis.com/auth/calendar",
-    "https://www.googleapis.com/auth/gmail.settings.basic",
-]
+# Single source of truth for OAuth scopes — all Google modules must use the
+# same list so token.json stays consistent across refreshes.
+from google_contacts_tools import SCOPES
 TOKEN_PATH = os.path.join(os.path.dirname(__file__), "token.json")
 CREDS_PATH = os.path.join(os.path.dirname(__file__), "credentials.json")
 
