@@ -109,6 +109,11 @@ async def get_tasks(
         if section_ids_per_project else None
     )
 
+    # Debug: log unique project IDs seen in API response so mismatches are visible.
+    if pid_set and all_tasks:
+        seen_pids = {str(t.get("project_id", "")) for t in all_tasks[:20]}
+        log.info("todoist get_tasks: pid_set=%s seen_pids_sample=%s", pid_set, seen_pids)
+
     tasks = [
         t for t in all_tasks
         if not t.get("checked")
