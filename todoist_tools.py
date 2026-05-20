@@ -113,7 +113,11 @@ async def get_tasks(
         t for t in all_tasks
         if not t.get("checked")
         and not t.get("is_deleted")
-        and (not my_id or str(t.get("creator_id", "")) == my_id or str(t.get("assignee_id", "")) == my_id)
+        # Project filter alone is enough when active — Todoist API v1 may not
+        # return creator_id, causing the creator check to filter out all tasks.
+        and (pid_set or not my_id
+             or str(t.get("creator_id", "")) == my_id
+             or str(t.get("assignee_id", "")) == my_id)
         and _task_in_scope(t, pid_set, sec_sets)
     ]
 
@@ -210,7 +214,9 @@ async def complete_task(
         t for t in all_tasks
         if not t.get("checked")
         and not t.get("is_deleted")
-        and (not my_id or str(t.get("creator_id", "")) == my_id or str(t.get("assignee_id", "")) == my_id)
+        and (pid_set or not my_id
+             or str(t.get("creator_id", "")) == my_id
+             or str(t.get("assignee_id", "")) == my_id)
         and _task_in_scope(t, pid_set, sec_sets)
         and needle in t.get("content", "").lower()
     ]
