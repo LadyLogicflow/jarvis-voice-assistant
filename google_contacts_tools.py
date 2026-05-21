@@ -32,8 +32,9 @@ log = logging.getLogger("jarvis.contacts_google")
 # (Issue #115) alle mit demselben Token funktionieren.
 SCOPES = [
     "https://www.googleapis.com/auth/calendar",
-    "https://www.googleapis.com/auth/gmail.settings.basic",
     "https://www.googleapis.com/auth/contacts",
+    # gmail.settings.basic is a restricted scope — requires Google app verification.
+    # Removing it until the app is verified to prevent invalid_scope on token refresh.
 ]
 
 TOKEN_PATH = os.path.join(os.path.dirname(__file__), "token.json")
