@@ -97,9 +97,9 @@ def read_obsidian_tasks_sync() -> list[str]:
         with open(tasks_path, "r", encoding="utf-8") as f:
             lines = f.readlines()
         return [
-            l.strip().replace("- [ ]", "").strip()
-            for l in lines
-            if l.strip().startswith("- [ ]")
+            line.strip().replace("- [ ]", "").strip()
+            for line in lines
+            if line.strip().startswith("- [ ]")
         ]
     except Exception as e:
         log.warning(f"read_obsidian_tasks_sync failed: {type(e).__name__}: {e}")
