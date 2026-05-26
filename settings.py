@@ -292,3 +292,13 @@ WEEKLY_OFFERS: str = ""  # populated Monday morning by refresh_offers()
 # wenn leer wird die erste Liste des Accounts automatisch ermittelt.
 BRING_LIST_UUID: str = config.get("bring_list_uuid", "")
 BRING_LIST_UUID_CACHE: str = ""  # wird beim ersten bring_login() befuellt
+
+# Speiseplanung (Issue #125).
+MEAL_PLAN_SERVINGS_DEFAULT = int(config.get("meal_plan_servings_default", 4))
+MEAL_PLAN_DIABETES_MODE = bool(config.get("meal_plan_diabetes_mode", True))
+MEAL_PLAN_REMINDER_TIME: str = config.get("meal_plan_reminder_time", "17:30")
+
+# Mutable state: aktueller Wochenplan.
+# Format: {date_str: {"dish": str, "recipe": str, "servings": int,
+#                     "ingredients": list[str], "cook_time_minutes": int}}
+MEAL_PLAN_WEEK: dict = {}

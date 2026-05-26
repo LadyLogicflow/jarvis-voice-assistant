@@ -1031,6 +1031,98 @@ async def proactive_briefs_scheduler() -> None:
 # und Angebots-Treffer proaktiv melden.
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Speiseplanung (Issue #125): Wochenplan donnerstags + taegliche Rezepterinnerung
+# ---------------------------------------------------------------------------
+
+async def meal_plan_scheduler() -> None:
+    """Long-running task: jeden Donnerstag um 07:30 Uhr Speisenplan generieren
+    und per Telegram versenden.
+
+    Nutzt das gleiche '>= HH:MM'-Muster wie proactive_briefs_scheduler:
+    falls der Server beim exakten Trigger-Zeitpunkt schlaeft und spaeter
+    aufwacht, wird der Plan dennoch erzeugt.
+    """
+    triggered_for_week = ""  # ISO-Woche ("2026-W18") als Dedup-Guard
+    _TRIGGER_WEEKDAY = 3   # Donnerstag
+    _TRIGGER_TIME = "07:30"
+
+    while True:
+        try:
+            now = datetime.datetime.now()
+            iso_week = f"{now.isocalendar().year}-W{now.isocalendar().week:02d}"
+            current_hhmm = now.strftime("%H:%M")
+
+            if (now.weekday() == _TRIGGER_WEEKDAY
+                    and current_hhmm >= _TRIGGER_TIME
+                    and triggered_for_week != iso_week):
+                triggered_for_week = iso_week
+                log.info("meal_plan_scheduler: Donnerstag-Trigger — Speisenplan wird generiert")
+                try:
+                    import meal_plan as _mp
+                    import telegram_bot
+                    plan = await _mp.generate_meal_plan()
+                    if plan:
+                        text = _mp.format_meal_plan_telegram()
+                        await telegram_bot.send_user_text(text)
+                        log.info("meal_plan_scheduler: Plan per Telegram versendet")
+                    else:
+                        log.warning("meal_plan_scheduler: Plan-Generierung lieferte leeres Ergebnis")
+                except Exception as e:
+                    log.warning(
+                        f"meal_plan_scheduler: Fehler beim Generieren/Senden: "
+                        f"{type(e).__name__}: {e}"
+                    )
+        except Exception as e:
+            log.warning(f"meal_plan_scheduler loop error: {type(e).__name__}: {e}")
+        await asyncio.sleep(60)
+
+
+async def meal_plan_reminder_scheduler() -> None:
+    """Long-running task: taeglich um S.MEAL_PLAN_REMINDER_TIME Uhr (Standard
+    17:30) das heutige Rezept per Telegram versenden.
+
+    Sendet nur wenn ein Speisenplan vorhanden ist und ein Eintrag fuer
+    heute existiert. Kein Push wenn quiet hours aktiv.
+    """
+    triggered_today = ""
+
+    while True:
+        try:
+            now = datetime.datetime.now()
+            today = datetime.date.today().isoformat()
+            current_hhmm = now.strftime("%H:%M")
+
+            if (current_hhmm >= S.MEAL_PLAN_REMINDER_TIME
+                    and triggered_today != today):
+                triggered_today = today
+                log.info("meal_plan_reminder_scheduler: taegliche Rezept-Erinnerung")
+                try:
+                    import meal_plan as _mp
+                    import telegram_bot
+                    recipe_text = await _mp.get_today_recipe()
+                    if recipe_text:
+                        await telegram_bot.send_user_text(recipe_text)
+                        log.info(
+                            "meal_plan_reminder_scheduler: Rezept per Telegram gesendet"
+                        )
+                    else:
+                        log.info(
+                            "meal_plan_reminder_scheduler: kein Rezept fuer heute "
+                            "— kein Push"
+                        )
+                except Exception as e:
+                    log.warning(
+                        f"meal_plan_reminder_scheduler: Fehler: "
+                        f"{type(e).__name__}: {e}"
+                    )
+        except Exception as e:
+            log.warning(
+                f"meal_plan_reminder_scheduler loop error: {type(e).__name__}: {e}"
+            )
+        await asyncio.sleep(60)
+
+
 _bring_known_items: set[str] = set()
 _BRING_MONITOR_INTERVAL = 15 * 60  # 15 Minuten in Sekunden
 
