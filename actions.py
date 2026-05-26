@@ -27,7 +27,7 @@ import imap_mail_tools
 import mail_actions
 import mail_tools
 import notes_tools
-from prompt import llm_text, pick_address
+from prompt import _sanitize, llm_text, pick_address
 import screen_capture
 import session_state
 import todoist_tools
@@ -155,17 +155,17 @@ async def _generate_draft_body(mail_data: dict, instruction: str = "") -> str:
     )
     if instruction:
         user_msg = (
-            f"Original-Mail von: {mail_data.get('sender', '')}\n"
-            f"Betreff: {mail_data.get('subject', '')}\n"
-            f"Inhalt:\n{(mail_data.get('text', '') or '')[:1500]}\n\n"
+            f"Original-Mail von: {_sanitize(mail_data.get('sender', ''))}\n"
+            f"Betreff: {_sanitize(mail_data.get('subject', ''))}\n"
+            f"Inhalt:\n{_sanitize((mail_data.get('text', '') or '')[:1500])}\n\n"
             f"---\n"
             f"Konkrete Anweisung von {S.USER_NAME} fuer die Antwort: {instruction}"
         )
     else:
         user_msg = (
-            f"Original-Mail von: {mail_data.get('sender', '')}\n"
-            f"Betreff: {mail_data.get('subject', '')}\n"
-            f"Inhalt:\n{(mail_data.get('text', '') or '')[:1500]}\n\n"
+            f"Original-Mail von: {_sanitize(mail_data.get('sender', ''))}\n"
+            f"Betreff: {_sanitize(mail_data.get('subject', ''))}\n"
+            f"Inhalt:\n{_sanitize((mail_data.get('text', '') or '')[:1500])}\n\n"
             f"---\n"
             f"Schlage proaktiv eine sinnvolle Antwort vor — nutze dazu den "
             f"GESCHAEFTLICHEN KONTEXT oben falls die Mail einen darin "
@@ -501,7 +501,7 @@ async def execute_action(action: dict) -> str:
             "Ton: trocken, knapp, Butler-Stil. KEINE Begruessung, KEINE direkte Anrede, "
             "KEINE eckigen Klammern. NUR die Zusammenfassung."
         )
-        user_msg = f"Von: {sender}\nBetreff: {subject}\n\n{body}"
+        user_msg = f"Von: {_sanitize(sender)}\nBetreff: {_sanitize(subject)}\n\n{_sanitize(body)}"
         try:
             resp = await S.ai.messages.create(
                 model="claude-haiku-4-5-20251001",
@@ -1414,9 +1414,9 @@ async def execute_action(action: dict) -> str:
             + (f" — {profile.funktion}" if profile and profile.funktion else "")
         )
         user_msg = (
-            f"{sender_block}\n"
-            f"Betreff: {mail_data['subject']}\n"
-            f"Inhalt: {mail_data['text'][:600]}"
+            f"{_sanitize(sender_block)}\n"
+            f"Betreff: {_sanitize(mail_data['subject'])}\n"
+            f"Inhalt: {_sanitize(mail_data['text'][:600])}"
         )
         try:
             resp = await S.ai.messages.create(
