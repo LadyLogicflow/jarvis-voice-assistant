@@ -196,10 +196,13 @@ DRAFTS_FOLDER_GUESSES = (
 )
 
 TRASH_FOLDER_GUESSES = (
-    "Deleted Messages",   # iCloud
+    "Deleted Messages",   # iCloud (English)
+    "Gelöschte E-Mails",  # iCloud (German)
     "Trash",
     "Papierkorb",
     "Gelöschte Elemente",
+    "Deleted Items",
+    "Bin",
     "INBOX.Trash",
     "[Gmail]/Trash",
 )
@@ -399,14 +402,99 @@ async def move_mail(account_name: str, uid: int, target_folder: str) -> bool:
                 pass
 
 
+async def _discover_trash_folder(client) -> str | None:
+    """Find Trash folder via IMAP LIST, checking \\Trash special-use
+    attribute first (RFC 6154), then name patterns. Returns folder name
+    or None if not found."""
+    try:
+        typ, lines = await client.list('""', '"*"')
+        if typ != "OK":
+            return None
+        for line in lines:
+            if not isinstance(line, (bytes, bytearray)):
+                continue
+            decoded = line.decode("utf-8", errors="replace")
+            # RFC 6154 special-use attribute takes priority
+            if r"\Trash" in decoded:
+                m = re.search(r'"[^"]*"\s+"?([^"]+)"?\s*$', decoded)
+                if m:
+                    return m.group(1).strip('"')
+        # Second pass: name heuristics
+        for line in lines:
+            if not isinstance(line, (bytes, bytearray)):
+                continue
+            decoded = line.decode("utf-8", errors="replace").lower()
+            for pattern in ("trash", "papierkorb", "deleted messages",
+                            "deleted items", "gelöscht", "bin"):
+                if pattern in decoded:
+                    m = re.search(r'"[^"]*"\s+"?([^"]+)"?\s*$',
+                                  line.decode("utf-8", errors="replace"))
+                    if m:
+                        return m.group(1).strip('"')
+    except Exception as e:
+        log.debug(f"_discover_trash_folder: {type(e).__name__}: {e}")
+    return None
+
+
 async def delete_mail(account_name: str, uid: int) -> tuple[bool, str]:
-    """Move a mail to the Trash folder. Tries common folder names.
-    Returns (success, folder_or_error)."""
-    for folder in TRASH_FOLDER_GUESSES:
-        ok = await move_mail(account_name, uid, folder)
-        if ok:
-            return True, folder
-    return False, "Kein Papierkorb-Ordner gefunden"
+    """Move a mail to the Trash folder using a single IMAP connection.
+    Discovers the trash folder via LIST first, then tries known names.
+    Last resort: permanent deletion via \\Deleted + EXPUNGE.
+    Returns (success, folder_name_or_error)."""
+    acc = _account_by_name(account_name)
+    if not acc or not acc["password"]:
+        return False, "Konto nicht konfiguriert"
+    client = None
+    try:
+        client = await _connect(acc)
+        # Build candidate list: discovered folder first, then known guesses
+        discovered = await _discover_trash_folder(client)
+        candidates = ([discovered] if discovered else []) + list(TRASH_FOLDER_GUESSES)
+        seen: set[str] = set()
+        for folder in candidates:
+            if folder in seen:
+                continue
+            seen.add(folder)
+            # IMAP requires quoting for folder names that contain spaces
+            folder_arg = f'"{folder}"' if " " in folder else folder
+            try:
+                typ, _ = await client.uid("move", str(uid), folder_arg)
+                if typ == "OK":
+                    log.info(f"delete_mail[{account_name}] uid={uid} -> {folder!r}")
+                    return True, folder
+            except Exception:
+                pass
+            try:
+                typ, _ = await client.uid("copy", str(uid), folder_arg)
+                if typ == "OK":
+                    await client.uid("store", str(uid), "+FLAGS", "(\\Deleted)")
+                    await client.expunge()
+                    log.info(
+                        f"delete_mail[{account_name}] uid={uid} -> {folder!r} (copy+delete)"
+                    )
+                    return True, folder
+            except Exception:
+                pass
+        # Last resort: permanent deletion
+        try:
+            await client.uid("store", str(uid), "+FLAGS", "(\\Deleted)")
+            await client.expunge()
+            log.info(f"delete_mail[{account_name}] uid={uid} permanently deleted")
+            return True, "(permanent)"
+        except Exception as e:
+            log.warning(
+                f"delete_mail[{account_name}] uid={uid} permanent delete failed: {e}"
+            )
+        return False, "Kein Papierkorb-Ordner gefunden"
+    except Exception as e:
+        log.warning(f"delete_mail[{account_name}] uid={uid}: {type(e).__name__}: {e}")
+        return False, f"Fehler: {type(e).__name__}"
+    finally:
+        if client is not None:
+            try:
+                await client.logout()
+            except Exception:
+                pass
 
 
 async def forward_mail(account_name: str, uid: int, to_addr: str) -> bool:
