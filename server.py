@@ -99,6 +99,19 @@ async def broadcast_to_all_sessions(text: str) -> None:
             pass
 
 
+async def _extract_and_save_promises(user_text: str) -> None:
+    """Hintergrund-Task: extrahiert offene Vorhaben aus user_text und
+    speichert sie. Wird nur aufgerufen wenn has_obligation_markers() True ist.
+    Fehler werden geloggt aber nicht weitergereicht."""
+    try:
+        import promise_tracker as _pt
+        promises = await _pt.extract_promises(user_text)
+        for promise in promises:
+            await _pt.save_promise(promise, source="conversation")
+    except Exception as e:
+        log.warning(f"_extract_and_save_promises failed: {type(e).__name__}: {e}")
+
+
 @asynccontextmanager
 async def _lifespan(_app):  # type: ignore[no-untyped-def]  # AsyncGenerator
     """Startup: prime weather/tasks + spawn the morning-brief task and
@@ -238,6 +251,12 @@ async def process_message(session_id: str, user_text: str, ws: WebSocket) -> Non
     await append_message(session_id, "user", user_text)
     history = conversations[session_id][-16:]
 
+    # Promise-Extraktion (Issue #117): im Hintergrund, blockiert nicht.
+    # Nur wenn der Text Verpflichtungs-Marker enthaelt (schneller Regex-Check).
+    import promise_tracker as _pt
+    if _pt.has_obligation_markers(user_text):
+        asyncio.create_task(_extract_and_save_promises(user_text))
+
     response = await S.ai.messages.create(
         model="claude-haiku-4-5-20251001",
         max_tokens=1024,
@@ -309,6 +328,7 @@ async def process_message(session_id: str, user_text: str, ws: WebSocket) -> Non
         "DRAFT_APPROVE", "DRAFT_CANCEL",
         "ACCEPT_CALENDAR_INVITE", "DECLINE_CALENDAR_INVITE",
         "ACCEPT_PERSON_ACTION", "DECLINE_PERSON_ACTION",
+        "PROMISE_DONE",
     }
     if action["type"] in _SILENT_ON_SUCCESS and spoken_text:
         if "?" not in action_result and "fehlgeschlagen" not in action_result:
@@ -354,7 +374,7 @@ async def process_message(session_id: str, user_text: str, ws: WebSocket) -> Non
         "READ_MAIL", "SUMMARIZE_MAIL",
         "DRAFT_REPLY", "DRAFT_REVISE", "DRAFT_APPROVE", "DRAFT_CANCEL",
         "MAIL_TO_TASK", "MARK_MAIL_READ", "DELETE_MAIL", "REMEMBER_SENDER",
-        "MEMORIZE",
+        "MEMORIZE", "PROMISE_DONE",
         "ACCEPT_CALENDAR_INVITE", "DECLINE_CALENDAR_INVITE",
         "ACCEPT_PERSON_ACTION", "DECLINE_PERSON_ACTION",
         "WEEKLY_OUTLOOK", "CONTACTS_INFO", "LOOKUP_CONTACT",

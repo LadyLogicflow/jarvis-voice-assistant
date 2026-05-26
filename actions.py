@@ -1422,4 +1422,29 @@ async def execute_action(action: dict) -> str:
             return f"Aufgabe im Eingang angelegt: {task_text}. Mail ist abgehakt."
         return f"Aufgabe vermerkt — {result}"
 
+    elif t == "PROMISE_DONE":
+        # Markiert ein offenes Vorhaben als erledigt (Issue #117).
+        # Payload: entweder eine ID ("42") oder der Text des Vorhabens.
+        import promise_tracker
+        promise_id_str = p.strip()
+        if promise_id_str.isdigit():
+            await promise_tracker.mark_promise_done(int(promise_id_str))
+            return f"Vorhaben als erledigt markiert, {pick_address()}."
+        # Text-Matching: offenes Vorhaben anhand des Texts finden
+        open_promises = await promise_tracker.get_open_promises(max_age_days=3)
+        if not open_promises:
+            return f"Ich habe keine offenen Vorhaben gespeichert, {pick_address()}."
+        q = promise_id_str.lower()
+        matched = [pr for pr in open_promises if q in pr["text"].lower()]
+        if not matched:
+            return (
+                f"Ich finde kein Vorhaben das zu '{promise_id_str}' passt, "
+                f"{pick_address()}."
+            )
+        for pr in matched:
+            await promise_tracker.mark_promise_done(pr["id"])
+        if len(matched) == 1:
+            return f"'{matched[0]['text']}' ist erledigt — gut gemacht, {pick_address()}."
+        return f"{len(matched)} Vorhaben als erledigt markiert, {pick_address()}."
+
     return ""
