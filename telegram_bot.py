@@ -317,7 +317,10 @@ _TELEGRAM_MAX_LEN = 4096
 async def send_user_text(text: str) -> bool:
     """Push a text message to Catrin's Telegram chat from anywhere in
     the server. Returns True on success, False if not configured /
-    bot not running / send failed. Quiet-hours aware."""
+    bot not running / send failed. Quiet-hours aware (Issue #133)."""
+    if S.is_quiet_hours():
+        log.info("send_user_text: quiet hours, skipping Telegram")
+        return False
     if not S.TELEGRAM_BOT_TOKEN or not S.TELEGRAM_CHAT_ID:
         return False
     if _app is None:
