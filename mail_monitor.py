@@ -93,7 +93,7 @@ def _learn_from_mail(
         date_str = msg.get("Date", "")
         display = sender or sender_email or "Unbekannt"
         text = f"Mail von {display}: {subject}"
-        doc_id = memory_search._make_doc_id(
+        doc_id = memory_search.make_doc_id(
             "mail", f"{account}:{uid}:{sender_email}:{subject}"
         )
         memory_search.index_text(
