@@ -25,16 +25,16 @@ if str(ROOT) not in sys.path:
 # ---------------------------------------------------------------------------
 
 def _make_fresh_cache(offers: dict) -> dict:
-    """Erstellt einen frischen Cache-Dict (Timestamp: jetzt)."""
+    """Erstellt einen frischen Cache-Dict (Timestamp: jetzt, timezone-aware)."""
     return {
-        "timestamp": datetime.datetime.utcnow().isoformat(),
+        "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
         "offers": offers,
     }
 
 
 def _make_stale_cache(offers: dict) -> dict:
-    """Erstellt einen veralteten Cache-Dict (Timestamp: vor 8 Stunden)."""
-    old_ts = datetime.datetime.utcnow() - datetime.timedelta(hours=8)
+    """Erstellt einen veralteten Cache-Dict (Timestamp: vor 8 Stunden, timezone-aware)."""
+    old_ts = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=8)
     return {
         "timestamp": old_ts.isoformat(),
         "offers": offers,
