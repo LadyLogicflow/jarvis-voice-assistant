@@ -27,14 +27,12 @@ import settings as S
 
 log = logging.getLogger("jarvis.contacts_google")
 
-# OAuth-Scopes — alle drei Scopes muessen in einem token.json stehen damit
-# Kalender (Issue #55), Gmail-Einstellungen (Issue #111) und Contacts
-# (Issue #115) alle mit demselben Token funktionieren.
+# OAuth-Scopes — muss exakt den Scopes im token.json entsprechen, sonst
+# schlaegt der Token-Refresh mit invalid_scope fehl.
+# Contacts-Scope wird erst hinzugefuegt wenn ein neues token.json mit
+# beiden Scopes generiert und deployed wurde (Re-Auth erforderlich).
 SCOPES = [
     "https://www.googleapis.com/auth/calendar",
-    "https://www.googleapis.com/auth/contacts",
-    # gmail.settings.basic is a restricted scope — requires Google app verification.
-    # Removing it until the app is verified to prevent invalid_scope on token refresh.
 ]
 
 TOKEN_PATH = os.path.join(os.path.dirname(__file__), "token.json")
