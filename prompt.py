@@ -455,4 +455,4 @@ WENN {S.USER_NAME} "Jarvis activate" sagt AB {S.MORNING_BRIEF_UNTIL_HOUR}:00 Uhr
 
 
 def get_system_prompt() -> str:
-    return build_system_prompt().replace("{time}", time.strftime("%H:%M"))
+    return build_system_prompt()

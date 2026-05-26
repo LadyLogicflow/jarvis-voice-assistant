@@ -933,10 +933,10 @@ async def execute_action(action: dict) -> str:
         # Kind detection
         lower = text.lower()
         kind = "notiz"
-        if any(p_ in lower for p_ in ("ich mag", "ich bevorzuge", "ich liebe",
+        if any(phrase in lower for phrase in ("ich mag", "ich bevorzuge", "ich liebe",
                                       "ich trinke gerne", "ich esse gerne")):
             kind = "vorliebe"
-        elif any(p_ in lower for p_ in ("ich hasse", "ich mag nicht", "ich kann nicht",
+        elif any(phrase in lower for phrase in ("ich hasse", "ich mag nicht", "ich kann nicht",
                                         "ich vertrage nicht", "ich brauche nicht")):
             kind = "abneigung"
         # Aufgaben-Charakter heuristisch erkennen
