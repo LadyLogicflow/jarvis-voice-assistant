@@ -34,6 +34,11 @@ import todoist_tools
 
 log = S.log
 
+# Issue #131: Lock fuer atomaren Read-Modify-Write auf TASKS_COMPLETED_TODAY.
+# Schuetzt den Date-Check + Reset + Inkrement gegen gleichzeitige DONETASK-
+# Requests (z.B. WebSocket und Telegram parallel).
+_tasks_completed_lock = asyncio.Lock()
+
 
 def _format_phone_tts(number: str) -> str:
     """Format a phone number for natural TTS output.
@@ -358,13 +363,17 @@ async def execute_action(action: dict) -> str:
         )
         # Abschluss-Ritual (Issue #121): Tageszaehler fuer abgeschlossene Tasks.
         # Reset automatisch wenn der erste DONETASK eines neuen Tages kommt.
+        # Issue #131: Lock schuetzt den atomaren Date-Check + Reset + Inkrement.
+        # Die Todoist-API-Anfrage (oben) laeuft bewusst AUSSERHALB des Locks,
+        # damit bei parallelen Requests kein Lock-Contention auf I/O entsteht.
         import datetime as _dt
         _today = _dt.date.today().isoformat()
-        if S._tasks_completed_date != _today:
-            S.TASKS_COMPLETED_TODAY = 0
-            S._tasks_completed_date = _today
-        if result and "fehlgeschlagen" not in result.lower() and "nicht gefunden" not in result.lower():
-            S.TASKS_COMPLETED_TODAY += 1
+        async with _tasks_completed_lock:
+            if S._tasks_completed_date != _today:
+                S.TASKS_COMPLETED_TODAY = 0
+                S._tasks_completed_date = _today
+            if result and "fehlgeschlagen" not in result.lower() and "nicht gefunden" not in result.lower():
+                S.TASKS_COMPLETED_TODAY += 1
         return result
 
     elif t == "CALENDAR":
