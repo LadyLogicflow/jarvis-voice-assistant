@@ -1024,3 +1024,62 @@ async def proactive_briefs_scheduler() -> None:
         except Exception as e:
             log.warning(f"proactive scheduler loop error: {type(e).__name__}: {e}")
         await asyncio.sleep(30)
+
+
+# ---------------------------------------------------------------------------
+# Bring!-Monitor (Issue #123): alle 15 Minuten neue Einkaufsartikel pruefen
+# und Angebots-Treffer proaktiv melden.
+# ---------------------------------------------------------------------------
+
+_bring_known_items: set[str] = set()
+_BRING_MONITOR_INTERVAL = 15 * 60  # 15 Minuten in Sekunden
+
+
+async def bring_monitor_scheduler() -> None:
+    """Long-running task: alle 15 Minuten die Bring!-Liste pruefen.
+
+    Vergleicht die aktuelle Liste mit den bekannten Eintraegen. Neue
+    Artikel werden gegen S.WEEKLY_OFFERS geprueft; bei Treffer wird eine
+    proaktive Benachrichtigung ueber _proactive_handler gesendet.
+
+    Wird nur gestartet wenn BRING_EMAIL und BRING_PASSWORD konfiguriert
+    sind. Fehler werden geloggt und uebersprungen — kein Crash.
+    """
+    global _bring_known_items
+
+    if not S.BRING_EMAIL or not S.BRING_PASSWORD:
+        log.info("bring_monitor_scheduler: BRING_EMAIL/PASSWORD fehlt — Scheduler inaktiv")
+        return
+
+    log.info("bring_monitor_scheduler: gestartet (alle 15 Minuten)")
+    while True:
+        try:
+            import bring_tools
+            current_items = await bring_tools.bring_get_items()
+            current_set = {item.strip() for item in current_items if item.strip()}
+
+            if _bring_known_items:
+                # Neue Artikel = in current aber nicht im letzten bekannten Stand
+                new_items = list(current_set - _bring_known_items)
+                if new_items and S.WEEKLY_OFFERS and _proactive_handler is not None:
+                    offer_hint = await bring_tools.bring_check_offers(new_items)
+                    if offer_hint:
+                        msg = (
+                            f"Neue Artikel auf der Einkaufsliste: "
+                            f"{', '.join(new_items)}. {offer_hint}."
+                        )
+                        log.info(f"bring_monitor_scheduler: Angebots-Treffer: {msg[:120]}")
+                        try:
+                            await _proactive_handler(msg)
+                        except Exception as e:
+                            log.warning(
+                                f"bring_monitor_scheduler: _proactive_handler failed: "
+                                f"{type(e).__name__}: {e}"
+                            )
+
+            _bring_known_items = current_set
+
+        except Exception as e:
+            log.warning(f"bring_monitor_scheduler: {type(e).__name__}: {e}")
+
+        await asyncio.sleep(_BRING_MONITOR_INTERVAL)

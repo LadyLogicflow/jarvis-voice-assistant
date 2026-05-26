@@ -65,6 +65,8 @@ ANTHROPIC_API_KEY = _required_env("ANTHROPIC_API_KEY")
 ELEVENLABS_API_KEY = _required_env("ELEVENLABS_API_KEY")
 TODOIST_TOKEN = os.environ.get("TODOIST_API_TOKEN", "").strip()
 JARVIS_AUTH_TOKEN = os.environ.get("JARVIS_AUTH_TOKEN", "").strip()
+BRING_EMAIL = os.environ.get("BRING_EMAIL", "").strip()
+BRING_PASSWORD = os.environ.get("BRING_PASSWORD", "").strip()
 IMAP_PASSWORD = os.environ.get("IMAP_PASSWORD", "").strip()
 ICLOUD_APPLE_ID = os.environ.get("ICLOUD_APPLE_ID", "").strip()
 ICLOUD_APP_PASSWORD = os.environ.get("ICLOUD_APP_PASSWORD", "").strip()
@@ -285,3 +287,8 @@ _tasks_completed_date: str = ""  # ISO date — reset guard
 OFFER_WATCHLIST: list = config.get("offer_watchlist", [])
 OFFER_PLZ: str = config.get("offer_plz", "")
 WEEKLY_OFFERS: str = ""  # populated Monday morning by refresh_offers()
+
+# Bring!-Integration (Issue #123). Optionale Listen-UUID aus config.json;
+# wenn leer wird die erste Liste des Accounts automatisch ermittelt.
+BRING_LIST_UUID: str = config.get("bring_list_uuid", "")
+BRING_LIST_UUID_CACHE: str = ""  # wird beim ersten bring_login() befuellt

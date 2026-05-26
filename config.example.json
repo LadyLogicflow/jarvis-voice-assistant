@@ -76,5 +76,8 @@
 
   "_comment_offers": "Angebote-Monitor (issue #122). offer_watchlist: Artikel die Jarvis jede Woche bei Rewe, Lidl, Aldi, Edeka und Trinkgut abfragt. offer_plz: Postleitzahl fuer die Marktsuche. Montags im Morgen-Briefing und per [ACTION:OFFERS] abrufbar.",
   "offer_watchlist": [],
-  "offer_plz": ""
+  "offer_plz": "",
+
+  "_comment_bring": "Bring!-Integration (issue #123). bring_list_uuid: optionale UUID der Bring!-Liste. Wenn leer, wird die erste Liste des Accounts automatisch verwendet. Login-Daten (BRING_EMAIL, BRING_PASSWORD) gehen in .env.",
+  "bring_list_uuid": ""
 }

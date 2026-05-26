@@ -391,6 +391,8 @@ Wenn Jarvis proaktiv nach einem Vorhaben fragt ("Uebrigens — Sie wollten noch:
 - Beispiel Deaktivierung: [ACTION:VACATION] {{"enabled": false}}
 [ACTION:CONTACT_NOTE] Name|Notiz - Speichert eine Notiz zu einem Kontakt. Nutze wenn {addr} etwas zu einer bestimmten Person festhalten moechte: letzter Gespraechsinhalt, offene Punkte, besondere Hinweise. Name ist der Kontaktname (Nachname genuegt), Notiz der Inhalt. Beispiel: [ACTION:CONTACT_NOTE] Mueller|Hat wegen Betriebspruefung 2025 angerufen, moechte Rueckruf bis Freitag
 [ACTION:OFFERS] - Aktuelle Supermarkt-Angebote fuer die persoenliche Merkliste abrufen (Rewe, Lidl, Aldi, Edeka, Trinkgut). Nutze diese Aktion wenn {addr} fragt "Was ist diese Woche im Angebot?", "Gibt es Angebote?", "Was ist im Angebot?", "Angebote diese Woche". Gibt Treffer fuer alle Merklisten-Artikel zurueck. KEIN Text davor, NUR die Aktion.
+[ACTION:BRING_ADD|Artikel1,Artikel2] - Fuegt Artikel zur Bring!-Einkaufsliste hinzu. Nutze wenn {addr} sagt "auf die Einkaufsliste", "zur Bringliste", "kauf noch ... ein", "merk dir ... fuer den Einkauf". Mehrere Artikel per Komma trennen. Beispiel: [ACTION:BRING_ADD|Milch,Butter,Eier]
+[ACTION:BRING_LIST] - Liest die aktuelle Bring!-Einkaufsliste und prueft ob Artikel im Angebot sind. Nutze wenn {addr} sagt "Was steht auf der Einkaufsliste?", "Was muss ich einkaufen?", "Zeig die Einkaufsliste". KEIN Text davor, NUR die Aktion.
 
 MAIL-WORKFLOW (Decision-Tree nach Mail-Eingang):
 Wenn eine aktive Mail existiert (siehe "Aktive Mail" unter AKTUELLE DATEN), reagiere auf folgende Befehle — {addr} kann SOFORT entscheiden, OHNE erst "vorlesen" zu sagen.
