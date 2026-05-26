@@ -492,19 +492,11 @@ async def morning_brief_scheduler() -> None:
                         today_block += f"\nHeutige Aufgaben:\n{S.TODAY_TASKS}"
                     if S.TODAY_EVENTS:
                         today_block += f"\nHeutige Termine:\n{S.TODAY_EVENTS}"
-                    # Offene Vorhaben (Issue #117)
-                    try:
-                        import promise_tracker
-                        promises_block = await promise_tracker.format_promises_block(
-                            max_age_days=3
-                        )
-                        if promises_block:
-                            today_block += f"\n{promises_block}"
-                    except Exception as _pe:
-                        log.warning(
-                            f"morning_brief: promise_tracker failed: "
-                            f"{type(_pe).__name__}: {_pe}"
-                        )
+                    # Offene Vorhaben (Issue #117) — aus Cache lesen statt
+                    # erneuten DB-Call (refresh_morning_brief_data hat bereits
+                    # refresh_open_promises() ausgefuehrt und S.OPEN_PROMISES befuellt)
+                    if S.OPEN_PROMISES:
+                        today_block += f"\n{S.OPEN_PROMISES}"
                     if S.STEUER_RECENT:
                         today_block += f"\nSteuerrecht aktuell (3 Tage): {S.STEUER_RECENT[:400]}"
                     elif S.STEUER_BRIEF:

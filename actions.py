@@ -1431,7 +1431,7 @@ async def execute_action(action: dict) -> str:
             await promise_tracker.mark_promise_done(int(promise_id_str))
             return f"Vorhaben als erledigt markiert, {pick_address()}."
         # Text-Matching: offenes Vorhaben anhand des Texts finden
-        open_promises = await promise_tracker.get_open_promises(max_age_days=7)
+        open_promises = await promise_tracker.get_open_promises(max_age_days=3)
         if not open_promises:
             return f"Ich habe keine offenen Vorhaben gespeichert, {pick_address()}."
         q = promise_id_str.lower()
