@@ -184,10 +184,17 @@ def _save(session_id: str) -> None:
             log.warning(f"session_state save failed for {session_id}: "
                         f"{type(e).__name__}: {e}")
 
+    def _on_done(fut: asyncio.Future) -> None:
+        exc = fut.exception()
+        if exc:
+            log.warning(f"_save({session_id}): executor write failed: {exc}")
+
     try:
         loop = asyncio.get_running_loop()
-        loop.run_in_executor(None, _write)
+        fut = loop.run_in_executor(None, _write)
+        fut.add_done_callback(_on_done)
     except RuntimeError:
+        # No running event loop (e.g. tests or interpreter shutdown) — write synchronously
         _write()
 
 
