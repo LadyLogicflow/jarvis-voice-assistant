@@ -148,16 +148,6 @@ async def fetch_all_sources(mark_seen: bool = False) -> str:
     return text
 
 
-def mark_steuer_news_seen(result_text: str) -> None:
-    """Persistiert die gesehenen Hashes nachtraeglich -- aufzurufen
-    nachdem Jarvis die Nachrichten vorgelesen hat (Issue #75)."""
-    # Wir koennen die Titel nicht mehr aus dem formatierten Text
-    # rekonstruieren. Daher beim naechsten fetch_all_sources-Aufruf
-    # mit mark_seen=True persistieren. Diese Funktion ist ein No-op-
-    # Placeholder fuer moegliche kuenftige Erweiterungen.
-    pass
-
-
 async def fetch_recent(days: int = 3) -> str:
     """Return BFH news items published within the last `days` days
     (used in the morning greeting)."""
