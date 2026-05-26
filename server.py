@@ -65,7 +65,12 @@ log = S.log
 async def _broadcast_proactive(text: str) -> None:
     """Push a server-generated message to the UI and Telegram.
     Brings Chrome to the foreground first so the user sees + hears it.
-    Telegram delivery is quiet-hours aware (handled by send_user_text)."""
+    Telegram delivery is quiet-hours aware (handled by send_user_text).
+    Skips entirely during Mac quiet hours so proactive briefs stay silent
+    when the user is not at the desk (Issue #133)."""
+    if S.is_mac_quiet_hours():
+        log.info("_broadcast_proactive: mac quiet hours, skipping")
+        return
     await telegram_send(text)
     if not active_clients:
         log.info("proactive: no clients connected, skipping UI broadcast")
