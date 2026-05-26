@@ -109,10 +109,17 @@ async def get_tasks(
         if section_ids_per_project else None
     )
 
-    # Debug: log unique project IDs seen in API response so mismatches are visible.
+    # Debug: log project IDs seen in API response so mismatches are visible.
     if pid_set and all_tasks:
         seen_pids = {str(t.get("project_id", "")) for t in all_tasks[:20]}
         log.info("todoist get_tasks: pid_set=%s seen_pids_sample=%s", pid_set, seen_pids)
+    elif all_tasks:
+        sample = [
+            {"creator": t.get("creator_id"), "assignee": t.get("assignee_id"),
+             "content": t.get("content", "")[:30]}
+            for t in all_tasks[:5]
+        ]
+        log.info("todoist get_tasks: no pid_set, my_id=%s sample=%s", my_id, sample)
 
     tasks = [
         t for t in all_tasks
@@ -120,9 +127,12 @@ async def get_tasks(
         and not t.get("is_deleted")
         # Project filter alone is enough when active — Todoist API v1 may not
         # return creator_id, causing the creator check to filter out all tasks.
+        # If neither creator_id nor assignee_id is present in the response, the
+        # task is treated as belonging to the user (API omission, not a mismatch).
         and (pid_set or not my_id
              or str(t.get("creator_id", "")) == my_id
-             or str(t.get("assignee_id", "")) == my_id)
+             or str(t.get("assignee_id", "")) == my_id
+             or (not t.get("creator_id") and not t.get("assignee_id")))
         and _task_in_scope(t, pid_set, sec_sets)
     ]
 

@@ -89,8 +89,9 @@ async def get_events(days: int = 7, max_results: int = 10) -> str:
 def _fetch_events(days: int, max_results: int) -> str:
     try:
         service = _get_service()
-    except RuntimeError as e:
-        return str(e)
+    except Exception as e:
+        log.warning("calendar _get_service failed: %s: %s", type(e).__name__, e)
+        return f"Kalender nicht erreichbar: {type(e).__name__}"
 
     now = datetime.now(timezone.utc)
     end = now + timedelta(days=days)
