@@ -331,6 +331,7 @@ def update_stress_level(session_id: str, message_length: int, now: float) -> Non
     # Inaktivitaets-Reset
     if prev_ts > 0 and (now - prev_ts) >= _STRESS_INACTIVITY_SECS:
         state.stress_level = 0
+        _save(session_id)
         return
 
     is_first_message = prev_ts == 0
@@ -338,6 +339,7 @@ def update_stress_level(session_id: str, message_length: int, now: float) -> Non
         state.stress_level = min(2, state.stress_level + 1)
     elif message_length > _STRESS_LONG_MSG_CHARS:
         state.stress_level = max(0, state.stress_level - 1)
+    _save(session_id)
 
 
 def register_session(session_id: str) -> None:
