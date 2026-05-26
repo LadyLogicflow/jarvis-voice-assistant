@@ -100,6 +100,11 @@ class SessionState:
     pending_calendar: Optional[PendingCalendar] = None
     pending_person: Optional[PendingPersonAction] = None
     recent_mails: list[MailRef] = field(default_factory=list)
+    # Issue #118: Emotionale Kalibrierung
+    # 0 = normal, 1 = erhoehter Stress, 2 = hoher Stress
+    stress_level: int = 0
+    # Zeitstempel der letzten Nachricht (Unix-Epoch) fuer Inaktivitaets-Reset
+    last_message_ts: float = 0.0
 
 
 # In-memory store: session_id -> SessionState. Beim Server-Boot mit den
@@ -140,6 +145,8 @@ def _serialize(state: SessionState) -> dict:
         "pending_calendar": asdict(state.pending_calendar) if state.pending_calendar else None,
         "pending_person": asdict(state.pending_person) if state.pending_person else None,
         "recent_mails": [asdict(m) for m in state.recent_mails],
+        "stress_level": state.stress_level,
+        "last_message_ts": state.last_message_ts,
     }
 
 
@@ -155,6 +162,8 @@ def _deserialize(raw: dict) -> SessionState:
         pending_calendar=PendingCalendar(**{k: v for k, v in pc.items() if k in PendingCalendar.__dataclass_fields__}) if pc else None,
         pending_person=PendingPersonAction(**{k: v for k, v in pp.items() if k in PendingPersonAction.__dataclass_fields__}) if pp else None,
         recent_mails=[MailRef(**{k: v for k, v in m.items() if k in MailRef.__dataclass_fields__}) for m in rm if isinstance(m, dict)],
+        stress_level=int(raw.get("stress_level", 0)),
+        last_message_ts=float(raw.get("last_message_ts", 0.0)),
     )
 
 
@@ -294,6 +303,43 @@ def find_recent_mail(session_id: str, query: str) -> Optional[MailRef]:
         if q in mail.sender.lower() or q in mail.subject.lower():
             return mail
     return None
+
+
+_STRESS_INACTIVITY_SECS = 30 * 60  # 30 Minuten Inaktivitaets-Reset
+_STRESS_SHORT_MSG_CHARS = 15       # Kurznachrichten-Schwelle (Stress +1)
+_STRESS_LONG_MSG_CHARS = 80        # Lange Nachricht -> Stress -1
+
+
+def update_stress_level(session_id: str, message_length: int, now: float) -> None:
+    """Passt stress_level basierend auf der Laenge der letzten Nutzernachricht an.
+
+    Regeln (Issue #118):
+    - Inaktivitaet > 30 Min seit letzter Nachricht -> Reset auf 0
+    - Kurznachricht (< 15 Zeichen) und nicht erste Nachricht -> +1 (max 2)
+    - Lange Nachricht (> 80 Zeichen) -> -1 (min 0)
+    - Ansonsten: unveraendert
+
+    Args:
+        session_id: ID der Session.
+        message_length: Laenge der Nutzernachricht in Zeichen.
+        now: Aktueller Unix-Timestamp (time.time()).
+    """
+    state = get(session_id)
+    prev_ts = state.last_message_ts
+    state.last_message_ts = now
+
+    # Inaktivitaets-Reset
+    if prev_ts > 0 and (now - prev_ts) >= _STRESS_INACTIVITY_SECS:
+        state.stress_level = 0
+        _save(session_id)
+        return
+
+    is_first_message = prev_ts == 0
+    if not is_first_message and message_length < _STRESS_SHORT_MSG_CHARS:
+        state.stress_level = min(2, state.stress_level + 1)
+    elif message_length > _STRESS_LONG_MSG_CHARS:
+        state.stress_level = max(0, state.stress_level - 1)
+    _save(session_id)
 
 
 def register_session(session_id: str) -> None:
