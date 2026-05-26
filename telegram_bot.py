@@ -173,6 +173,14 @@ async def _ask_claude(session_id: str, user_text: str) -> str:
     if not action:
         return spoken_text or reply
 
+    # Action follows: persist the LLM's pre-announcement *before* executing
+    # the action, mirroring server.process_message (line ~288) so that
+    # multi-turn follow-ups see spoken_text and the action result as two
+    # separate history entries rather than a single merged string.
+    # _handle_message will append the final action reply afterwards.
+    if spoken_text:
+        await conversation.append_message(session_id, "assistant", spoken_text)
+
     a_type = action["type"]
 
     if a_type in _TELEGRAM_BAD_ACTIONS:
