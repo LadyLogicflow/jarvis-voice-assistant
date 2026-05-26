@@ -195,7 +195,7 @@ async def mark_promise_done(promise_id: int) -> None:
     log.info(f"promise_tracker: promise #{promise_id} als erledigt markiert")
 
 
-_FOLLOWUP_DATE_FILE = os.path.expanduser("~/.jarvis_promise_followup_date")
+_FOLLOWUP_DATE_FILE = os.path.join(os.path.dirname(__file__), ".jarvis_promise_followup_date")
 
 
 async def get_oldest_overdue_promise(min_age_days: int = 2) -> dict | None:
