@@ -1742,6 +1742,25 @@ async def execute_action(action: dict) -> str:
             )
         return recipe_text
 
+    elif t == "LIDL_ANGEBOTE":
+        # Alle aktuellen Lidl-Lebensmittelangebote abrufen (kein Watchlist-Filter).
+        try:
+            import offer_monitor
+            items = await offer_monitor.fetch_offers_for_market("Lidl", "")
+            if not items:
+                return (
+                    f"Ich konnte diese Woche keine Angebote von Lidl abrufen, "
+                    f"{pick_address()}. Bitte spaeter nochmal versuchen."
+                )
+            lines = [f"Aktuelle Lidl-Angebote ({len(items)} Artikel):"]
+            lines.extend(f"- {item}" for item in items[:40])
+            if len(items) > 40:
+                lines.append(f"... und {len(items) - 40} weitere.")
+            return "\n".join(lines)
+        except Exception as e:
+            log.warning(f"LIDL_ANGEBOTE: {type(e).__name__}: {e}")
+            return f"Lidl-Angebote konnten nicht abgerufen werden: {type(e).__name__}"
+
     elif t == "OFFERS":
         # Issue #122: Aktuelle Supermarkt-Angebote fuer die Watchlist abrufen.
         # Nutzt den offer_monitor mit 6h-Cache.
