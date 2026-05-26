@@ -280,3 +280,8 @@ BIRTHDAY_REMINDERS: str = ""  # Geburtstage dieser Woche (Issue #120), cache
 # Wird in actions.py inkrementiert, in settings damit alle Module drauf zugreifen.
 TASKS_COMPLETED_TODAY: int = 0
 _tasks_completed_date: str = ""  # ISO date — reset guard
+
+# Angebote-Monitor (Issue #122)
+OFFER_WATCHLIST: list = config.get("offer_watchlist", [])
+OFFER_PLZ: str = config.get("offer_plz", "")
+WEEKLY_OFFERS: str = ""  # populated Monday morning by refresh_offers()
