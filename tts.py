@@ -177,6 +177,29 @@ async def _tts_one(text: str) -> bytes:
     return b""
 
 
+async def tts_chunks(text: str) -> list[bytes]:
+    """Split text and synthesize each chunk. Returns list of non-empty audio
+    byte chunks in order.
+
+    Public interface for callers (e.g. telegram_bot.py) that need chunked TTS
+    without importing private symbols. The text is pre-normalized before
+    splitting so chunk boundaries fall on clean token boundaries; each chunk
+    is then synthesized via _tts_one (which also normalizes internally before
+    the ElevenLabs call).
+
+    Args:
+        text: The text to synthesize. May be arbitrarily long.
+
+    Returns:
+        A list of raw MP3/audio byte objects, one per successfully synthesized
+        chunk. Empty or failed chunks are omitted.
+    """
+    text = normalize_for_tts(text)
+    if not text:
+        return []
+    return [audio for chunk in _split_text(text) if (audio := await _tts_one(chunk))]
+
+
 async def speak(text: str, ws: WebSocket, display: str = "") -> bool:
     """Generate TTS and send each chunk immediately. Returns False if connection lost."""
     if not text.strip():
