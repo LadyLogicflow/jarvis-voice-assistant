@@ -94,6 +94,77 @@ async def get_servings_for_date(date: datetime.date) -> int:
     return S.MEAL_PLAN_SERVINGS_DEFAULT
 
 
+def _season_produce() -> str:
+    """Saisonales Gemüse/Obst für den aktuellen Monat (Deutschland)."""
+    month = datetime.date.today().month
+    produce = {
+        1:  "Wurzelgemüse (Karotten, Pastinaken), Grünkohl, Lauch, Äpfel",
+        2:  "Feldsalat, Lauch, Rotkohl, Äpfel, Birnen",
+        3:  "Spinat, Feldsalat, Lauch, frühe Radieschen",
+        4:  "Spinat, Rucola, Radieschen, frühe Erdbeeren",
+        5:  "Spargel, Erdbeeren, Radieschen, Spinat, Pak Choi, Rhabarber",
+        6:  "Erbsen, Kohlrabi, Zucchini, Erdbeeren, Kirschen, junger Spinat",
+        7:  "Tomaten, Gurken, Paprika, Zucchini, Himbeeren, Johannisbeeren",
+        8:  "Tomaten, Auberginen, Mais, Paprika, Pflaumen, Melonen",
+        9:  "Kürbis, Wirsing, Äpfel, Birnen, Weintrauben, Fenchel",
+        10: "Kürbis, Rotkohl, Wirsing, Äpfel, Birnen, Rote Bete",
+        11: "Grünkohl, Rotkohl, Rosenkohl, Kohlrabi, Äpfel",
+        12: "Grünkohl, Rotkohl, Rosenkohl, Lauch, Äpfel",
+    }
+    return produce.get(month, "")
+
+
+def _weather_hint() -> str:
+    """Wetter-basierter Hinweis für die Speiseplanung."""
+    if not S.WEATHER_INFO:
+        return ""
+    try:
+        temp = int(S.WEATHER_INFO.get("temp", 0))
+        desc = S.WEATHER_INFO.get("description", "").lower()
+        warm_keywords = ("sunny", "clear", "sonnig", "heiter", "klar", "warm")
+        is_warm_sunny = temp >= 22 and any(kw in desc for kw in warm_keywords)
+        if is_warm_sunny:
+            return (
+                f"Das Wetter ist warm und sonnig (aktuell {temp}°C). "
+                "Bevorzuge leichte Sommerkost: Grill-Gerichte, Salate, "
+                "kalte Küche, frische Sommersalate. Weniger Schmorgerichte "
+                "oder schwere Eintöpfe."
+            )
+        if temp <= 10:
+            return (
+                f"Das Wetter ist kühl (aktuell {temp}°C). "
+                "Wärmende Gerichte sind willkommen: Suppen, Eintöpfe, "
+                "Aufläufe, herzhafte Pfannengerichte."
+            )
+    except (ValueError, TypeError):
+        pass
+    return ""
+
+
+def _offers_hint() -> str:
+    """Angebots-Kontext aus S.WEEKLY_OFFERS für den Plan-Prompt."""
+    if not S.WEEKLY_OFFERS:
+        return ""
+    return (
+        "Diese Woche im Angebot (bitte diese Zutaten bevorzugt einplanen):\n"
+        + S.WEEKLY_OFFERS
+    )
+
+
+def _preferred_market() -> str:
+    """Ermittelt bevorzugten Markt (Lidl/Rewe) anhand der Angebotsanzahl."""
+    if not S.WEEKLY_OFFERS:
+        return ""
+    text = S.WEEKLY_OFFERS.lower()
+    lidl_count = text.count("lidl")
+    rewe_count = text.count("rewe")
+    if lidl_count > rewe_count:
+        return f"Lidl (diese Woche {lidl_count} relevante Angebote)"
+    if rewe_count > 0:
+        return f"Rewe (diese Woche {rewe_count} relevante Angebote)"
+    return ""
+
+
 async def generate_meal_plan() -> dict:
     """Generiert einen 7-tägigen Speisenplan (Samstag bis Freitag) via Claude.
 
@@ -137,6 +208,14 @@ async def generate_meal_plan() -> dict:
         else ""
     )
 
+    season = _season_produce()
+    weather = _weather_hint()
+    offers = _offers_hint()
+
+    context_blocks = "\n\n".join(
+        block for block in [diabetes_hint, weather, offers] if block
+    )
+
     days_block = "\n".join(
         f"- {d['date']} ({d['weekday_de']}): {d['servings']} Personen"
         for d in days_info
@@ -145,13 +224,14 @@ async def generate_meal_plan() -> dict:
     system_prompt = (
         "Du bist Jarvis, der britisch-hoefliche KI-Butler. Du planst den "
         "woechentlichen Speisenplan fuer Catrin.\n\n"
-        f"{diabetes_hint}\n\n"
+        f"{context_blocks}\n\n"
         "Weitere Anforderungen:\n"
         "- Maximale Kochzeit: 60 Minuten pro Gericht\n"
         "- Abwechslungsreich: kein Gericht zweimal in einer Woche\n"
         "- Mischung aus Fleisch (1-2x), Fisch (1-2x), vegetarisch (Rest)\n"
-        "- Saisonale Zutaten bevorzugen\n"
-        "- Einfache, alltagstaugliche Gerichte\n\n"
+        + (f"- Saisonales Gemüse/Obst bevorzugen, aktuell verfuegbar: {season}\n"
+           if season else "- Saisonale Zutaten bevorzugen\n")
+        + "- Einfache, alltagstaugliche Gerichte\n\n"
         "Antworte AUSSCHLIESSLICH mit einem gueltigen JSON-Objekt. "
         "Kein Text davor oder dahinter. Format:\n"
         "{\n"
@@ -218,7 +298,7 @@ async def generate_meal_plan() -> dict:
             "cook_time_minutes": int(entry.get("cook_time_minutes", 45)),
         }
 
-    S.MEAL_PLAN_WEEK = result
+    S.MEAL_PLAN_WEEK.update(result)
     log.info(
         f"generate_meal_plan: Plan fuer {len(result)} Tage generiert "
         f"({list(result.keys())[0] if result else 'leer'} .. "
@@ -325,6 +405,9 @@ def format_meal_plan_telegram() -> str:
             f"({servings} Pers., ca. {cook_time} Min.)"
         )
 
+    market = _preferred_market()
+    if market:
+        lines.append(f"\nEmpfohlener Einkaufsmarkt diese Woche: {market}")
     lines.append(
         "\nSende [ACTION:SPEISEPLAN_SWAP] Tag|Neues Gericht zum Tauschen "
         "oder [ACTION:EINKAUF_FREIGEBEN] zum Übertragen auf die Einkaufsliste."
