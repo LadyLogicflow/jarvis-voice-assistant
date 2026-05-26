@@ -437,6 +437,8 @@ async def refresh_morning_brief_data() -> None:
         refresh_open_promises(),
         refresh_birthday_reminders(),
     )
+    # Second pass: deadline check needs tasks + events already in S.*
+
     await refresh_upcoming_deadlines()
 
 
@@ -808,6 +810,7 @@ async def memory_reindex_scheduler() -> None:
         except Exception as e:
             log.warning(f"memory_reindex_scheduler loop error: {type(e).__name__}: {e}")
         await asyncio.sleep(60)
+
 
 
 # ---------------------------------------------------------------------------
