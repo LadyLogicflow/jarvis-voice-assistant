@@ -56,6 +56,7 @@ class Contact:
     phones: list[str] = field(default_factory=list)
     organization: str = ""
     birthday: Optional[dict] = None  # {"year": int|None, "month": int, "day": int}
+    birthday: Optional[dict] = None  # {"year": int|None, "month": int, "day": int}
 
 
 # ---------------------------------------------------------------------------

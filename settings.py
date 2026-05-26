@@ -272,6 +272,7 @@ TODAY_EVENTS: str = ""        # Google Calendar events for today
 POLITIK_BRIEF: str = ""       # Tagesschau Inland summary
 POLITIK_BRIEF_DATE: str = ""
 OPEN_PROMISES: str = ""       # Offene Vorhaben (Issue #117), cache
+
 UPCOMING_DEADLINES: str = ""  # Anstehende Fristen (Issue #119), cache
 BIRTHDAY_REMINDERS: str = ""  # Geburtstage dieser Woche (Issue #120), cache
 

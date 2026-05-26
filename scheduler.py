@@ -15,6 +15,7 @@ from __future__ import annotations
 import asyncio
 import datetime
 import os
+import re
 import time
 
 import httpx
@@ -284,11 +285,9 @@ async def refresh_birthday_reminders() -> None:
             bd = c.birthday.get("day")
             if not bm or not bd:
                 continue
-            # Naechstes Geburtstags-Datum (dieses oder naechstes Jahr)
             try:
                 next_bd = datetime.date(today.year, bm, bd)
             except ValueError:
-                # 29.02 in nicht-Schaltjahr -> ueberspringen
                 continue
             if next_bd < today:
                 try:
@@ -305,10 +304,9 @@ async def refresh_birthday_reminders() -> None:
                 else:
                     when = f"in {delta} Tagen"
                 hits.append(f"• {c.name} ({when}, {date_str})")
-        if hits:
-            S.BIRTHDAY_REMINDERS = "Geburtstage diese Woche: " + ", ".join(hits)
-        else:
-            S.BIRTHDAY_REMINDERS = ""
+        S.BIRTHDAY_REMINDERS = (
+            "Geburtstage diese Woche: " + ", ".join(hits) if hits else ""
+        )
         log.info(f"refresh_birthday_reminders: {len(hits)} Treffer")
     except Exception as e:
         log.warning(f"refresh_birthday_reminders failed: {type(e).__name__}: {e}")
@@ -328,10 +326,110 @@ async def refresh_open_promises() -> None:
         S.OPEN_PROMISES = ""
 
 
+# Issue #119 -- Fristen-Bewusstsein ----------------------------------------
+
+_DEADLINE_KEYWORDS = ["frist", "abgabe", "deadline", "faellig", "ablauf"]
+
+
+def get_upcoming_deadlines(days: int = 3) -> str:
+    """Prueffe anstehende Fristen der naechsten `days` Tage.
+
+    Quellen: S.TODAY_EVENTS (Kalender), S.TODAY_TASKS (Todoist),
+    feste Steuerfristen (31.05, 31.07, 31.10, 10.01).
+
+    Returns:
+        Formatierter Text mit Frist-Hinweisen oder leerer String.
+    """
+    today = datetime.date.today()
+    lines: list[str] = []
+
+    # Kalender-Events aus S.TODAY_EVENTS
+    try:
+        for line in (S.TODAY_EVENTS or "").splitlines():
+            low = line.lower()
+            if not any(kw in low for kw in _DEADLINE_KEYWORDS):
+                continue
+            m = re.search(r"(\d{2})\.(\d{2})\.", line)
+            if not m:
+                continue
+            try:
+                ev = datetime.date(today.year, int(m.group(2)), int(m.group(1)))
+                delta = (ev - today).days
+                if 0 <= delta <= days:
+                    lines.append(_deadline_hint(line.strip().lstrip("•").strip(), delta))
+            except ValueError:
+                pass
+    except Exception as exc:
+        log.warning(f"get_upcoming_deadlines calendar: {exc}")
+
+    # Todoist-Aufgaben aus S.TODAY_TASKS
+    try:
+        for line in (S.TODAY_TASKS or "").splitlines():
+            low = line.lower()
+            if not any(kw in low for kw in _DEADLINE_KEYWORDS):
+                continue
+            title = line.strip().lstrip("•").strip()
+            if "ueberfaellig" in low or "⚠" in line:
+                lines.append(f"Ueberfaellige Frist: {title}")
+            else:
+                lines.append(f"Frist heute: {title}")
+    except Exception as exc:
+        log.warning(f"get_upcoming_deadlines todoist: {exc}")
+
+    # Feste Steuerfristen
+    for month, day, label in [
+        (5, 31, "Abgabefrist Steuererklaerung (31. Mai)"),
+        (7, 31, "Abgabefrist Steuererklaerung (31. Juli)"),
+        (10, 31, "Abgabefrist Steuererklaerung (31. Oktober)"),
+        (1, 10, "Lohnsteuer-Anmeldung (10. Januar)"),
+    ]:
+        try:
+            fixed = datetime.date(today.year, month, day)
+            delta = (fixed - today).days
+            if 0 <= delta <= days:
+                lines.append(_deadline_hint(label, delta))
+        except Exception:
+            pass
+
+    if not lines:
+        return ""
+    return "Anstehende Fristen:\n" + "\n".join(f"• {ln}" for ln in lines)
+
+
+def _deadline_hint(title: str, delta_days: int) -> str:
+    """Hilfsfunktion: lesbarer Frist-Hinweis anhand Restlaufzeit."""
+    if delta_days == 0:
+        return f"Heute laeuft ab: {title}"
+    if delta_days == 1:
+        return f"Morgen laeuft ab: {title}"
+    if delta_days == 2:
+        return f"Uebermorgen laeuft ab: {title}"
+    return f"In {delta_days} Tagen laeuft ab: {title}"
+
+
+async def refresh_upcoming_deadlines() -> None:
+    """Berechne anstehende Fristen und speichere als S.UPCOMING_DEADLINES.
+
+    Muss NACH refresh_today_tasks() + refresh_today_events() laufen,
+    da es S.TODAY_TASKS / S.TODAY_EVENTS als Eingabe nutzt (Issue #119).
+    """
+    try:
+        S.UPCOMING_DEADLINES = get_upcoming_deadlines(days=3)
+        log.info(f"refresh_upcoming_deadlines: {len(S.UPCOMING_DEADLINES)} Zeichen")
+    except Exception as exc:
+        log.warning(f"refresh_upcoming_deadlines failed: {type(exc).__name__}: {exc}")
+        S.UPCOMING_DEADLINES = ""
+
+
+# ---------------------------------------------------------------------------
+
 async def refresh_morning_brief_data() -> None:
     """Refresh all the extra data needed for the full morning briefing
     (today's tasks, today's calendar, politik news, birthday reminders).
-    Called from the activate path before MORNING_BRIEF_UNTIL_HOUR."""
+    Called from the activate path before MORNING_BRIEF_UNTIL_HOUR.
+
+    refresh_upcoming_deadlines() runs after the first gather because it
+    reads S.TODAY_TASKS / S.TODAY_EVENTS which must be populated first."""
     await asyncio.gather(
         refresh_today_tasks(),
         refresh_today_events(),
@@ -339,6 +437,7 @@ async def refresh_morning_brief_data() -> None:
         refresh_open_promises(),
         refresh_birthday_reminders(),
     )
+    await refresh_upcoming_deadlines()
 
 
 async def refresh_steuer_recent() -> None:
