@@ -153,6 +153,10 @@ def build_system_prompt() -> str:
     if S.UPCOMING_DEADLINES:
         upcoming_deadlines_block = f"\n{S.UPCOMING_DEADLINES}"
 
+    birthday_block = ""
+    if S.BIRTHDAY_REMINDERS:
+        birthday_block = f"\n{S.BIRTHDAY_REMINDERS}"
+
     today_events_block = ""
     if S.TODAY_EVENTS:
         # Annotate each event line with a fresh "(in Xh Ymin)" hint
@@ -279,6 +283,15 @@ Du hast eine zusaetzliche Pflicht: {addr} soll sich erholen. Arbeiten nach 18 Uh
 - Wenn {addr} arbeitsrelevante Fragen stellt (Steuer, Mandanten, Dokumente, E-Mails, Recherche), weise sie hoeflich aber bestimmt darauf hin, dass die Arbeitszeit vorbei ist. Ein kurzer, trockener Satz genuegt — dann beantworte die Frage trotzdem, aber mit einem Seitenblick auf die Uhrzeit.
 - Beim Aktivieren abends: Betone dass Feierabend ist und Erholung Pflicht — im Jarvis-Stil, nicht predighaft.
 - Du darfst maximal einmal pro Gespraech mahnen. Beim zweiten Mal schweigst du und hilfst einfach.""" if is_evening else ""
+
+    # Issue #118: Stress-Kalibrierung — Ton an Stresslevel anpassen
+    _stress = _state.stress_level
+    if _stress == 1:
+        stress_rule = f"\n{S.USER_NAME} scheint gerade beschaeftigt — kurze, direkte Antworten ohne Fuellwoerter."
+    elif _stress >= 2:
+        stress_rule = f"\n{S.USER_NAME} ist unter Zeitdruck — maximale Kueze, nur das Wesentliche, kein Small Talk."
+    else:
+        stress_rule = ""
 
     freeday_rules = f"""
 ERHOLUNGSTAG (heute ist {free_day_name} — aktiv):
@@ -437,6 +450,7 @@ WENN {S.USER_NAME} "Jarvis activate" sagt VOR {S.MORNING_BRIEF_UNTIL_HOUR}:00 Uh
   (f) Politik — wenn ein Politik-Brief vorhanden, fasse 1–2 wichtige Themen kurz.
   (g) Offene Vorhaben — wenn "Offene Vorhaben" unter AKTUELLE DATEN stehen, erwaehne sie kurz: "Ausserdem hatten Sie noch vor: X und Y." Nur wenn vorhanden, kein leerer Block.
   (h) Anstehende Fristen — wenn "Anstehende Fristen" unter AKTUELLE DATEN stehen, weise mit einem Satz darauf hin: "Übermorgen läuft die Abgabefrist für X ab." Nur wenn vorhanden.
+  (i) Geburtstage diese Woche — wenn "Geburtstage diese Woche" unter AKTUELLE DATEN steht, erwaehne es in einem Halbsatz: "Herr Mueller hat uebermorgen Geburtstag." Nur wenn vorhanden.
 - Halte das gesamte Briefing unter ~6 Saetzen. Keine Aufzaehlung, sondern fliessende Sprache.
 - Du brauchst KEINE [ACTION:TASKS] / [ACTION:CALENDAR] / [ACTION:STEUERNEWS] / [ACTION:NEWS] aufzurufen — alles ist schon unter AKTUELLE DATEN.
 
@@ -445,7 +459,7 @@ WENN {S.USER_NAME} "Jarvis activate" sagt AB {S.MORNING_BRIEF_UNTIL_HOUR}:00 Uhr
 - Wenn ein Termin / eine Aufgabe in der naechsten Stunde wartet, darfst du das mit einem Halbsatz erwaehnen — sonst nichts.
 - Wenn heute Wochenende/Feiertag ist (siehe Erholungstag-Modus), entsprechend kommentieren.
 
-=== AKTUELLE DATEN ==={date_block}{greeting_block}{weather_block}{today_events_block}{today_tasks_block}{task_block}{steuer_block}{steuer_recent_block}{politik_block}{open_promises_block}{upcoming_deadlines_block}{address_pool_block}{active_mail_block}
+=== AKTUELLE DATEN ==={date_block}{greeting_block}{weather_block}{today_events_block}{today_tasks_block}{task_block}{steuer_block}{steuer_recent_block}{politik_block}{open_promises_block}{upcoming_deadlines_block}{birthday_block}{address_pool_block}{active_mail_block}
 ==="""
 
 

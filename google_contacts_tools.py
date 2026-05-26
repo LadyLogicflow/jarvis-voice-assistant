@@ -47,12 +47,15 @@ class Contact:
     """Ein Google-Kontakt mit den Feldern, die Jarvis braucht.
 
     id entspricht dem People-API resourceName (z.B. 'people/c12345').
+    birthday ist ein dict {"year": int|None, "month": int, "day": int}
+    oder None wenn kein Geburtstag gespeichert ist.
     """
     id: str           # resourceName, z.B. "people/c1234567890"
     name: str
     emails: list[str] = field(default_factory=list)
     phones: list[str] = field(default_factory=list)
     organization: str = ""
+    birthday: Optional[dict] = None  # {"year": int|None, "month": int, "day": int}
 
 
 # ---------------------------------------------------------------------------
@@ -141,12 +144,27 @@ def _parse_contact(person: dict) -> Contact:
     orgs = person.get("organizations", [])
     organization = orgs[0].get("name", "").strip() if orgs else ""
 
+    # Geburtstag (People API liefert {"year": int|None, "month": int, "day": int})
+    birthday: Optional[dict] = None
+    bdays = person.get("birthdays", [])
+    if bdays:
+        bd = bdays[0].get("date", {})
+        month = bd.get("month")
+        day = bd.get("day")
+        if month and day:
+            birthday = {
+                "year": bd.get("year"),  # kann None sein wenn nur Tag/Monat gespeichert
+                "month": int(month),
+                "day": int(day),
+            }
+
     return Contact(
         id=resource_name,
         name=display_name,
         emails=emails,
         phones=phones,
         organization=organization,
+        birthday=birthday,
     )
 
 
@@ -209,7 +227,7 @@ def _fetch_all_contacts_sync() -> list[Contact]:
         kwargs: dict = {
             "resourceName": "people/me",
             "pageSize": 1000,
-            "personFields": "names,emailAddresses,phoneNumbers,organizations",
+            "personFields": "names,emailAddresses,phoneNumbers,organizations,birthdays",
         }
         if page_token:
             kwargs["pageToken"] = page_token

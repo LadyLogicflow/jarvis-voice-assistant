@@ -10,6 +10,7 @@
   "obsidian_inbox_path": "/Users/YOUR_USER/Documents/Obsidian/inbox",
   "apps": ["obsidian://open"],
   "morning_hour": 7,
+  "evening_hour": 18,
 
   "_comment_runtime": "Optional runtime tunables. Defaults shown.",
   "server_port": 8340,
@@ -71,5 +72,9 @@
   "clap_threshold": 0.15,
   "clap_min_gap": 0.1,
   "clap_max_gap": 1.2,
-  "clap_cooldown": 20.0
+  "clap_cooldown": 20.0,
+
+  "_comment_offers": "Angebote-Monitor (issue #122). offer_watchlist: Artikel die Jarvis jede Woche bei Rewe, Lidl, Aldi, Edeka und Trinkgut abfragt. offer_plz: Postleitzahl fuer die Marktsuche. Montags im Morgen-Briefing und per [ACTION:OFFERS] abrufbar.",
+  "offer_watchlist": [],
+  "offer_plz": ""
 }

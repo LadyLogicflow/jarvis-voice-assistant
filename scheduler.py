@@ -27,6 +27,7 @@ from tenacity import (
 
 import browser_tools  # for fetch_news (politik feed)
 import google_calendar_tools
+import offer_monitor
 from prompt import llm_text, pick_address
 import settings as S
 import steuer_news
@@ -264,6 +265,56 @@ async def refresh_politik_brief() -> None:
         S.POLITIK_BRIEF = ""
 
 
+async def refresh_birthday_reminders() -> None:
+    """Pruefe Geburtstage der Google-Kontakte in den naechsten 7 Tagen.
+
+    Ergebnis wird in S.BIRTHDAY_REMINDERS gespeichert (Issue #120).
+    Format: "Geburtstage diese Woche: • Max Mueller (morgen, 15.06.)"
+    Bei nicht verfuegbarer API: stille Degradation (leerer String).
+    """
+    try:
+        import google_contacts_tools
+        contacts = await google_contacts_tools.read_all_contacts()
+        today = datetime.date.today()
+        hits: list[str] = []
+        for c in contacts:
+            if not c.birthday:
+                continue
+            bm = c.birthday.get("month")
+            bd = c.birthday.get("day")
+            if not bm or not bd:
+                continue
+            # Naechstes Geburtstags-Datum (dieses oder naechstes Jahr)
+            try:
+                next_bd = datetime.date(today.year, bm, bd)
+            except ValueError:
+                # 29.02 in nicht-Schaltjahr -> ueberspringen
+                continue
+            if next_bd < today:
+                try:
+                    next_bd = datetime.date(today.year + 1, bm, bd)
+                except ValueError:
+                    continue
+            delta = (next_bd - today).days
+            if 0 <= delta <= 7:
+                date_str = next_bd.strftime("%d.%m.")
+                if delta == 0:
+                    when = "heute"
+                elif delta == 1:
+                    when = "morgen"
+                else:
+                    when = f"in {delta} Tagen"
+                hits.append(f"• {c.name} ({when}, {date_str})")
+        if hits:
+            S.BIRTHDAY_REMINDERS = "Geburtstage diese Woche: " + ", ".join(hits)
+        else:
+            S.BIRTHDAY_REMINDERS = ""
+        log.info(f"refresh_birthday_reminders: {len(hits)} Treffer")
+    except Exception as e:
+        log.warning(f"refresh_birthday_reminders failed: {type(e).__name__}: {e}")
+        S.BIRTHDAY_REMINDERS = ""
+
+
 async def refresh_open_promises() -> None:
     """Lade offene Vorhaben aus der DB und speichere als S.OPEN_PROMISES
     (Issue #117). Wird beim Morgen-Briefing und bei Activate aufgerufen."""
@@ -279,13 +330,14 @@ async def refresh_open_promises() -> None:
 
 async def refresh_morning_brief_data() -> None:
     """Refresh all the extra data needed for the full morning briefing
-    (today's tasks, today's calendar, politik news). Called from the
-    activate path before MORNING_BRIEF_UNTIL_HOUR."""
+    (today's tasks, today's calendar, politik news, birthday reminders).
+    Called from the activate path before MORNING_BRIEF_UNTIL_HOUR."""
     await asyncio.gather(
         refresh_today_tasks(),
         refresh_today_events(),
         refresh_politik_brief(),
         refresh_open_promises(),
+        refresh_birthday_reminders(),
     )
 
 
@@ -446,6 +498,19 @@ async def weekly_outlook_scheduler() -> None:
         await asyncio.sleep(300)  # alle 5 Min reicht
 
 
+async def refresh_offers() -> None:
+    """Fetch supermarket offers and cache in S.WEEKLY_OFFERS (Issue #122).
+    Called Monday-only from morning_brief_scheduler."""
+    try:
+        S.WEEKLY_OFFERS = await offer_monitor.format_offers_block(
+            S.OFFER_WATCHLIST, S.OFFER_PLZ
+        )
+        log.info(f"refresh_offers: {len(S.WEEKLY_OFFERS)} Zeichen")
+    except Exception as e:
+        log.warning(f"refresh_offers failed: {type(e).__name__}: {e}")
+        S.WEEKLY_OFFERS = ""
+
+
 _MORNING_BRIEF_PROMPT = (
     "Du bist Jarvis. Guten-Morgen-Briefing fuer {addr}. "
     "Liefere ein vollstaendiges Tages-Briefing mit allen verfuegbaren Bloecken: "
@@ -501,9 +566,15 @@ async def morning_brief_scheduler() -> None:
                     # refresh_open_promises() ausgefuehrt und S.OPEN_PROMISES befuellt)
                     if S.OPEN_PROMISES:
                         today_block += f"\n{S.OPEN_PROMISES}"
+                    # Geburtstage diese Woche (Issue #120)
+                    if S.BIRTHDAY_REMINDERS:
+                        today_block += f"\n{S.BIRTHDAY_REMINDERS}"
                     # Supermarkt-Angebote (Issue #122) — nur montags, wenn vorhanden
                     if now.weekday() == 0 and S.WEEKLY_OFFERS:
                         today_block += f"\n{S.WEEKLY_OFFERS}"
+                    # Anstehende Fristen (Issue #119)
+                    if S.UPCOMING_DEADLINES:
+                        today_block += f"\n{S.UPCOMING_DEADLINES}"
                     if S.STEUER_RECENT:
                         today_block += f"\nSteuerrecht aktuell (3 Tage): {S.STEUER_RECENT[:400]}"
                     elif S.STEUER_BRIEF:
@@ -637,6 +708,142 @@ async def memory_reindex_scheduler() -> None:
                     )
         except Exception as e:
             log.warning(f"memory_reindex_scheduler loop error: {type(e).__name__}: {e}")
+        await asyncio.sleep(60)
+
+
+# ---------------------------------------------------------------------------
+# Abschluss-Ritual (Issue #121): Tagesabschluss-Briefing um EVENING_HOUR.
+# Fires at most once per day and only when JARVIS was actually used today
+# (at least one user interaction tracked via session history).
+# ---------------------------------------------------------------------------
+
+_EVENING_BRIEF_PROMPT = (
+    "Du bist Jarvis. Tagesabschluss-Briefing fuer {addr}. "
+    "Ton: warm, anerkennend, leicht butlerhaft — so wie am Ende eines langen Arbeitstages. "
+    "Pflicht-Elemente in dieser Reihenfolge, ALLE in fliessender Sprache ohne Aufzaehlung:\n"
+    "1. Kurze Bilanz: wie viele Aufgaben erledigt (falls > 0), "
+    "wie viele Mails beantwortet (falls bekannt).\n"
+    "2. Falls noch offene Aufgaben vorhanden: EINE hervorheben "
+    "('Ein offener Punkt bleibt: ...').\n"
+    "3. Falls ein Termin morgen frueh: knapp erwaehnen.\n"
+    "4. Abschluss-Satz im Jarvis-Stil: 'Gute Arbeit heute — schoenen Abend, {addr}.' "
+    "(oder aequivalent, leicht variiert).\n"
+    "NICHT mehr als 4-5 Saetze gesamt. KEINE ACTION-Tags."
+)
+
+
+async def build_evening_brief() -> str:
+    """Sammle die Tageszusammenfassung und formuliere das Abschluss-Ritual.
+
+    Returns:
+        Formulierter Text fuer das Abschluss-Briefing, oder leerer String
+        bei Fehler.
+    """
+    addr = pick_address()
+
+    # 1. Erledigte Aufgaben heute (aus Zaehler in settings)
+    tasks_done = S.TASKS_COMPLETED_TODAY
+
+    # 2. Noch offene Aufgaben (aus Cache — refresh_today_tasks wurde vorher
+    #    aufgerufen, sodass der Cache aktuell ist)
+    open_tasks = S.TODAY_TASKS  # bereits gefiltert: nur heute/ueberfaellig
+
+    # 3. Erster Termin morgen
+    tomorrow_event = ""
+    try:
+        events_text = await google_calendar_tools.get_events(days=2, max_results=20)
+        if events_text and events_text != "KEINE_TERMINE":
+            tomorrow = datetime.date.today() + datetime.timedelta(days=1)
+            tomorrow_short = tomorrow.strftime("%d.%m.")
+            for line in events_text.splitlines():
+                if line.startswith("•") and tomorrow_short in line:
+                    tomorrow_event = line.strip().lstrip("•").strip()
+                    break
+    except Exception as e:
+        log.warning(
+            f"build_evening_brief: calendar fetch failed: {type(e).__name__}: {e}"
+        )
+
+    # Kontext fuer den LLM zusammenstellen
+    parts: list[str] = []
+    if tasks_done > 0:
+        parts.append(f"Erledigte Aufgaben heute: {tasks_done}")
+    if open_tasks:
+        first_open = open_tasks.splitlines()[0].strip().lstrip("•").strip()
+        parts.append(f"Offene Aufgabe: {first_open}")
+    if tomorrow_event:
+        parts.append(f"Erster Termin morgen: {tomorrow_event}")
+
+    user_content = (
+        "Tagesdaten:\n" + "\n".join(parts)
+        if parts
+        else "Keine besonderen Tagesdaten vorhanden."
+    )
+
+    system_prompt = _EVENING_BRIEF_PROMPT.format(addr=addr)
+    try:
+        resp = await S.ai.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=400,
+            system=system_prompt,
+            messages=[{"role": "user", "content": user_content}],
+        )
+        return trim_to_complete_sentences(llm_text(resp).strip())
+    except Exception as e:
+        log.warning(
+            f"build_evening_brief: LLM call failed: {type(e).__name__}: {e}"
+        )
+        return ""
+
+
+async def evening_brief_scheduler() -> None:
+    """Long-running task: deliver the Abschluss-Ritual once per day at
+    S.EVENING_HOUR, but only if JARVIS was actually used today.
+
+    Uses the same '>=' pattern as morning_brief_scheduler so the brief
+    still fires if the loop woke up a few minutes after EVENING_HOUR:00.
+    """
+    triggered_today = ""
+    while True:
+        try:
+            now = datetime.datetime.now()
+            today = datetime.date.today().isoformat()
+            if now.hour >= S.EVENING_HOUR and triggered_today != today:
+                triggered_today = today
+                # Only fire when JARVIS was used today.
+                from conversation import conversations
+                used_today = bool(conversations) or S.TASKS_COMPLETED_TODAY > 0
+                if not used_today:
+                    log.info(
+                        "evening_brief_scheduler: JARVIS nicht genutzt heute, "
+                        "Abschluss-Briefing wird uebersprungen"
+                    )
+                elif _proactive_handler is None:
+                    log.info(
+                        "evening_brief_scheduler: kein Handler registriert, skip"
+                    )
+                else:
+                    log.info(
+                        "evening_brief_scheduler: Abschluss-Ritual wird erstellt"
+                    )
+                    try:
+                        # Refresh open tasks so the brief is current.
+                        await refresh_today_tasks()
+                        brief = await build_evening_brief()
+                        if brief:
+                            log.info(
+                                f"evening_brief_scheduler: sending: {brief[:80]!r}"
+                            )
+                            await _proactive_handler(brief)
+                    except Exception as e:
+                        log.warning(
+                            f"evening_brief_scheduler: failed: "
+                            f"{type(e).__name__}: {e}"
+                        )
+        except Exception as e:
+            log.warning(
+                f"evening_brief_scheduler loop error: {type(e).__name__}: {e}"
+            )
         await asyncio.sleep(60)
 
 

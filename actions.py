@@ -351,11 +351,21 @@ async def execute_action(action: dict) -> str:
     elif t == "DONETASK":
         if not S.TODOIST_TOKEN or S.TODOIST_TOKEN == "YOUR_TODOIST_API_TOKEN":
             return "Todoist API-Token nicht konfiguriert."
-        return await todoist_tools.complete_task(
+        result = await todoist_tools.complete_task(
             S.TODOIST_TOKEN, p,
             project_ids=S.TODOIST_PROJECT_IDS or None,
             section_ids_per_project=S.TODOIST_SECTIONS_PER_PROJECT or None,
         )
+        # Abschluss-Ritual (Issue #121): Tageszaehler fuer abgeschlossene Tasks.
+        # Reset automatisch wenn der erste DONETASK eines neuen Tages kommt.
+        import datetime as _dt
+        _today = _dt.date.today().isoformat()
+        if S._tasks_completed_date != _today:
+            S.TASKS_COMPLETED_TODAY = 0
+            S._tasks_completed_date = _today
+        if result and "fehlgeschlagen" not in result.lower() and "nicht gefunden" not in result.lower():
+            S.TASKS_COMPLETED_TODAY += 1
+        return result
 
     elif t == "CALENDAR":
         return await google_calendar_tools.get_events(days=S.CALENDAR_DAYS)
@@ -1446,5 +1456,81 @@ async def execute_action(action: dict) -> str:
         if len(matched) == 1:
             return f"'{matched[0]['text']}' ist erledigt — gut gemacht, {pick_address()}."
         return f"{len(matched)} Vorhaben als erledigt markiert, {pick_address()}."
+
+    elif t == "CONTACT_NOTE":
+        # Speichert eine Notiz zu einem Kontakt (Issue #120).
+        # Payload-Format: "Name|Notiz"
+        import notes_db
+        import google_contacts_tools
+        parts_note = p.split("|", 1)
+        if len(parts_note) != 2 or not parts_note[0].strip() or not parts_note[1].strip():
+            return (
+                f"Bitte im Format 'Name|Notiz' angeben, {pick_address()}. "
+                f"Beispiel: [ACTION:CONTACT_NOTE] Mueller|Hat wegen Betriebspruefung angerufen"
+            )
+        contact_name = parts_note[0].strip()
+        note_text = parts_note[1].strip()
+
+        # Kontakt in Google Contacts suchen um die resourceName-ID zu erhalten
+        contact_id = ""
+        try:
+            hits = await google_contacts_tools.find_contacts_by_name(contact_name)
+            if hits:
+                contact_id = hits[0].id
+        except Exception as e:
+            log.warning(
+                f"CONTACT_NOTE: find_contacts_by_name failed: {type(e).__name__}: {e}"
+            )
+
+        # Notiz in notes_db speichern (person_contact_id verknuepft sie mit dem Kontakt)
+        try:
+            note = notes_db.add(
+                text=f"Zu {contact_name}: {note_text}",
+                kind="notiz",
+                tags=[contact_name.lower()],
+                person_contact_id=contact_id,
+            )
+            log.info(
+                f"CONTACT_NOTE: note {note.id} saved for contact {contact_name!r} "
+                f"(contact_id={contact_id!r})"
+            )
+            addr_str = pick_address()
+            if contact_id:
+                return f"Notiz zu {contact_name} gespeichert, {addr_str}."
+            else:
+                return (
+                    f"Notiz gespeichert, {addr_str}. "
+                    f"Ich konnte {contact_name!r} nicht in den Kontakten finden — "
+                    f"die Notiz ist ohne Kontakt-Verknuepfung abgelegt."
+                )
+        except Exception as e:
+            log.warning(f"CONTACT_NOTE: notes_db.add failed: {type(e).__name__}: {e}")
+            return f"Notiz konnte nicht gespeichert werden: {type(e).__name__}"
+
+    elif t == "OFFERS":
+        # Issue #122: Aktuelle Supermarkt-Angebote fuer die Watchlist abrufen.
+        # Nutzt den offer_monitor mit 6h-Cache.
+        if not S.OFFER_WATCHLIST or not S.OFFER_PLZ:
+            return (
+                f"Der Angebots-Monitor ist nicht konfiguriert, {pick_address()}. "
+                f"Bitte 'offer_watchlist' und 'offer_plz' in der config.json setzen."
+            )
+        try:
+            import offer_monitor
+            matches = await offer_monitor.get_matching_offers(
+                S.OFFER_WATCHLIST, S.OFFER_PLZ
+            )
+            if not matches:
+                return (
+                    f"Keine Angebote gefunden fuer die Merkliste "
+                    f"({', '.join(S.OFFER_WATCHLIST)}) diese Woche, {pick_address()}."
+                )
+            lines = [f"Diese Woche im Angebot (PLZ {S.OFFER_PLZ}):"]
+            for item, markets in matches.items():
+                lines.append(f"{item}: {', '.join(markets)}")
+            return "\n".join(lines)
+        except Exception as e:
+            log.warning(f"OFFERS: offer_monitor failed: {type(e).__name__}: {e}")
+            return f"Angebots-Abfrage fehlgeschlagen: {type(e).__name__}"
 
     return ""
