@@ -145,6 +145,10 @@ def build_system_prompt() -> str:
     if S.TODAY_TASKS:
         today_tasks_block = f"\nHeutige Aufgaben:\n{S.TODAY_TASKS}"
 
+    open_promises_block = ""
+    if S.OPEN_PROMISES:
+        open_promises_block = f"\n{S.OPEN_PROMISES}"
+
     today_events_block = ""
     if S.TODAY_EVENTS:
         # Annotate each event line with a fresh "(in Xh Ymin)" hint
@@ -357,6 +361,7 @@ AKTIONEN - Schreibe die passende Aktion ans ENDE deiner Antwort. Der Text VOR de
 [ACTION:CONTACTS_INFO] - Aggregierte Statistik ueber Apple Kontakte + Personen-DB (Anzahl gesamt, mit Mail, mit Telefon, in DB gepflegt). Nutze wenn {addr} sagt "Wie viele Kontakte habe ich?", "Kontakte-Statistik", "Wie viele Mandanten habe ich gepflegt?". KEIN Text davor.
 [ACTION:LOOKUP_CONTACT] name - Sucht eine Person in den Kontakten + Personen-DB und liefert Name, Funktion, Mailadressen, Telefonnummern, bevorzugte Anrede. Bei mehreren Treffern: Auswahl-Liste. Nutze wenn {addr} sagt "Was ist die Telefonnummer von X?", "Was ist die Mailadresse von X?", "Wer ist X?", "Zeig mir Daten zu X". Beispiel: [ACTION:LOOKUP_CONTACT] Mueller
 [ACTION:CALL_DIAL] auswahl - Waehlt aus der gerade angezeigten Telefonnummern-Liste eine Nummer. Auswahl kann ein Index sein ("1") oder ein Label ("Mobil") oder Stichwort ("die erste"). Nutze NUR wenn unter AKTUELLE DATEN eine offene Telefonnummern-Auswahl steht.
+[ACTION:PROMISE_DONE] text_oder_id - Markiert ein offenes Vorhaben als erledigt. Nutze wenn {addr} sagt "das habe ich erledigt", "das ist passiert", "das habe ich gemacht", "hab ich gemacht" im Kontext eines bekannten offenen Vorhabens. Payload: der Text des Vorhabens (oder die ID). KEIN Text davor, NUR die Aktion.
 [ACTION:VACATION] {{"enabled": true/false, "subject": "...", "body": "...", "start": "YYYY-MM-DD", "end": "YYYY-MM-DD"}} - Aktiviert oder deaktiviert die Abwesenheitsnotiz in Gmail.
 - "subject" und "body" nur bei enabled=true benoetigt.
 - "start" und "end" optional — leer bedeutet sofort bzw. bis zur manuellen Deaktivierung.
@@ -414,6 +419,7 @@ WENN {S.USER_NAME} "Jarvis activate" sagt VOR {S.MORNING_BRIEF_UNTIL_HOUR}:00 Uh
   (d) Heutige Aufgaben — wenn welche unter \"Heutige Aufgaben\" stehen, nenne sie kurz. Wenn keine: "die Aufgabenliste ist heute leer" o.ae.
   (e) Steuerrecht — wenn ein Steuerrecht-Brief vorhanden, fasse die wichtigste Schlagzeile knapp.
   (f) Politik — wenn ein Politik-Brief vorhanden, fasse 1–2 wichtige Themen kurz.
+  (g) Offene Vorhaben — wenn "Offene Vorhaben" unter AKTUELLE DATEN stehen, erwaehne sie kurz: "Ausserdem hatten Sie noch vor: X und Y." Nur wenn vorhanden, kein leerer Block.
 - Halte das gesamte Briefing unter ~6 Saetzen. Keine Aufzaehlung, sondern fliessende Sprache.
 - Du brauchst KEINE [ACTION:TASKS] / [ACTION:CALENDAR] / [ACTION:STEUERNEWS] / [ACTION:NEWS] aufzurufen — alles ist schon unter AKTUELLE DATEN.
 
@@ -422,7 +428,7 @@ WENN {S.USER_NAME} "Jarvis activate" sagt AB {S.MORNING_BRIEF_UNTIL_HOUR}:00 Uhr
 - Wenn ein Termin / eine Aufgabe in der naechsten Stunde wartet, darfst du das mit einem Halbsatz erwaehnen — sonst nichts.
 - Wenn heute Wochenende/Feiertag ist (siehe Erholungstag-Modus), entsprechend kommentieren.
 
-=== AKTUELLE DATEN ==={date_block}{greeting_block}{weather_block}{today_events_block}{today_tasks_block}{task_block}{steuer_block}{steuer_recent_block}{politik_block}{address_pool_block}{active_mail_block}
+=== AKTUELLE DATEN ==={date_block}{greeting_block}{weather_block}{today_events_block}{today_tasks_block}{task_block}{steuer_block}{steuer_recent_block}{politik_block}{open_promises_block}{address_pool_block}{active_mail_block}
 ==="""
 
 

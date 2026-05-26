@@ -264,6 +264,19 @@ async def refresh_politik_brief() -> None:
         S.POLITIK_BRIEF = ""
 
 
+async def refresh_open_promises() -> None:
+    """Lade offene Vorhaben aus der DB und speichere als S.OPEN_PROMISES
+    (Issue #117). Wird beim Morgen-Briefing und bei Activate aufgerufen."""
+    try:
+        import promise_tracker
+        block = await promise_tracker.format_promises_block(max_age_days=3)
+        S.OPEN_PROMISES = block
+        log.info(f"refresh_open_promises: {len(S.OPEN_PROMISES)} Zeichen")
+    except Exception as e:
+        log.warning(f"refresh_open_promises failed: {type(e).__name__}: {e}")
+        S.OPEN_PROMISES = ""
+
+
 async def refresh_morning_brief_data() -> None:
     """Refresh all the extra data needed for the full morning briefing
     (today's tasks, today's calendar, politik news). Called from the
@@ -272,6 +285,7 @@ async def refresh_morning_brief_data() -> None:
         refresh_today_tasks(),
         refresh_today_events(),
         refresh_politik_brief(),
+        refresh_open_promises(),
     )
 
 
@@ -478,6 +492,19 @@ async def morning_brief_scheduler() -> None:
                         today_block += f"\nHeutige Aufgaben:\n{S.TODAY_TASKS}"
                     if S.TODAY_EVENTS:
                         today_block += f"\nHeutige Termine:\n{S.TODAY_EVENTS}"
+                    # Offene Vorhaben (Issue #117)
+                    try:
+                        import promise_tracker
+                        promises_block = await promise_tracker.format_promises_block(
+                            max_age_days=3
+                        )
+                        if promises_block:
+                            today_block += f"\n{promises_block}"
+                    except Exception as _pe:
+                        log.warning(
+                            f"morning_brief: promise_tracker failed: "
+                            f"{type(_pe).__name__}: {_pe}"
+                        )
                     if S.STEUER_RECENT:
                         today_block += f"\nSteuerrecht aktuell (3 Tage): {S.STEUER_RECENT[:400]}"
                     elif S.STEUER_BRIEF:
