@@ -284,15 +284,6 @@ Du hast eine zusaetzliche Pflicht: {addr} soll sich erholen. Arbeiten nach 18 Uh
 - Beim Aktivieren abends: Betone dass Feierabend ist und Erholung Pflicht — im Jarvis-Stil, nicht predighaft.
 - Du darfst maximal einmal pro Gespraech mahnen. Beim zweiten Mal schweigst du und hilfst einfach.""" if is_evening else ""
 
-    # Issue #118: Stress-Kalibrierung — Ton an Stresslevel anpassen
-    _stress = _state.stress_level
-    if _stress == 1:
-        stress_rule = f"\n{S.USER_NAME} scheint gerade beschaeftigt — kurze, direkte Antworten ohne Fuellwoerter."
-    elif _stress >= 2:
-        stress_rule = f"\n{S.USER_NAME} ist unter Zeitdruck — maximale Kueze, nur das Wesentliche, kein Small Talk."
-    else:
-        stress_rule = ""
-
     freeday_rules = f"""
 ERHOLUNGSTAG (heute ist {free_day_name} — aktiv):
 Heute ist kein Arbeitstag. {addr} hat Erholung verdient und soll diese auch nehmen.

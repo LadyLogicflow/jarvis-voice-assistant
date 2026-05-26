@@ -252,7 +252,6 @@ async def process_message(session_id: str, user_text: str, ws: WebSocket) -> Non
             await refresh_morning_brief_data()
 
     await append_message(session_id, "user", user_text)
-    session_state.update_stress_level(session_id, len(user_text), time.time())
     history = conversations[session_id][-16:]
 
     # Emotionale Kalibrierung (Issue #118): Stress-Level nach jeder Nachricht aktualisieren.
