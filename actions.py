@@ -1526,6 +1526,67 @@ async def execute_action(action: dict) -> str:
             log.warning(f"CONTACT_NOTE: notes_db.add failed: {type(e).__name__}: {e}")
             return f"Notiz konnte nicht gespeichert werden: {type(e).__name__}"
 
+    elif t == "BRING_ADD":
+        # Issue #123: Artikel zur Bring!-Einkaufsliste hinzufuegen.
+        # Payload: "Artikel1,Artikel2,..." (kommagetrennt)
+        if not S.BRING_EMAIL or not S.BRING_PASSWORD:
+            return (
+                f"Bring! ist nicht konfiguriert, {pick_address()}. "
+                f"Bitte BRING_EMAIL und BRING_PASSWORD in der .env setzen."
+            )
+        raw = p.strip()
+        if not raw:
+            return f"Welche Artikel soll ich auf die Einkaufsliste setzen, {pick_address()}?"
+        items = [x.strip() for x in raw.split(",") if x.strip()]
+        if not items:
+            return f"Ich konnte keine Artikel erkennen, {pick_address()}."
+        try:
+            import bring_tools
+            count = await bring_tools.bring_add_items(items)
+            if count == 0:
+                return (
+                    f"Die Artikel konnten nicht zur Einkaufsliste hinzugefuegt werden, "
+                    f"{pick_address()}. Bitte Bring!-Zugangsdaten pruefen."
+                )
+            if count == len(items):
+                if count == 1:
+                    return f"'{items[0]}' wurde zur Einkaufsliste hinzugefuegt, {pick_address()}."
+                return (
+                    f"{count} Artikel wurden zur Bring!-Einkaufsliste hinzugefuegt: "
+                    f"{', '.join(items)}."
+                )
+            return (
+                f"{count} von {len(items)} Artikeln wurden hinzugefuegt "
+                f"({', '.join(items[:count])})."
+            )
+        except Exception as e:
+            log.warning(f"BRING_ADD: {type(e).__name__}: {e}")
+            return f"Bring!-Fehler: {type(e).__name__}"
+
+    elif t == "BRING_LIST":
+        # Issue #123: Aktuelle Bring!-Liste abrufen + Angebotsabgleich.
+        if not S.BRING_EMAIL or not S.BRING_PASSWORD:
+            return (
+                f"Bring! ist nicht konfiguriert, {pick_address()}. "
+                f"Bitte BRING_EMAIL und BRING_PASSWORD in der .env setzen."
+            )
+        try:
+            import bring_tools
+            items = await bring_tools.bring_get_items()
+            if not items:
+                return f"Ihre Einkaufsliste ist leer, {pick_address()}."
+            items_text = ", ".join(items)
+            offer_hint = await bring_tools.bring_check_offers(items)
+            if offer_hint:
+                return (
+                    f"Auf der Einkaufsliste: {items_text}. "
+                    f"{offer_hint}."
+                )
+            return f"Auf der Einkaufsliste: {items_text}."
+        except Exception as e:
+            log.warning(f"BRING_LIST: {type(e).__name__}: {e}")
+            return f"Bring!-Fehler: {type(e).__name__}"
+
     elif t == "OFFERS":
         # Issue #122: Aktuelle Supermarkt-Angebote fuer die Watchlist abrufen.
         # Nutzt den offer_monitor mit 6h-Cache.

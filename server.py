@@ -44,6 +44,7 @@ from conversation import (
 from prompt import extract_action, get_system_prompt, llm_text, pick_address
 import scheduler
 from scheduler import (
+    bring_monitor_scheduler,
     evening_brief_scheduler,
     memory_reindex_scheduler,
     morning_brief_scheduler,
@@ -144,11 +145,21 @@ async def _lifespan(_app):  # type: ignore[no-untyped-def]  # AsyncGenerator
     log.info("Wochenausblick aktiv (Sonntag 18:00)")
     log.info("Memory-Reindex-Scheduler aktiv (täglich 03:00 Uhr + Startup)")
     log.info("Task-Planer aktiv (stündlich, Mo–Fr 17–19 Uhr)")
+    # Bring!-Monitor (Issue #123): nur starten wenn Zugangsdaten konfiguriert
+    task_bring: asyncio.Task | None = None
+    if S.BRING_EMAIL and S.BRING_PASSWORD:
+        task_bring = asyncio.create_task(bring_monitor_scheduler())
+        log.info("Bring!-Monitor aktiv (alle 15 Minuten)")
+    else:
+        log.info("Bring!-Monitor inaktiv (BRING_EMAIL/PASSWORD nicht konfiguriert)")
     try:
         yield
     finally:
-        for t in (task_reindex, task_brief, task_evening, task_proactive, task_telegram,
-                  task_mail, task_weekly, task_memory, task_planner):
+        tasks_to_cancel = [task_reindex, task_brief, task_evening, task_proactive,
+                           task_telegram, task_mail, task_weekly, task_memory, task_planner]
+        if task_bring is not None:
+            tasks_to_cancel.append(task_bring)
+        for t in tasks_to_cancel:
             t.cancel()
             try:
                 await t
