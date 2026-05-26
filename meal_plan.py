@@ -231,7 +231,11 @@ async def generate_meal_plan() -> dict:
         "- Mischung aus Fleisch (1-2x), Fisch (1-2x), vegetarisch (Rest)\n"
         + (f"- Saisonales Gemüse/Obst bevorzugen, aktuell verfuegbar: {season}\n"
            if season else "- Saisonale Zutaten bevorzugen\n")
-        + "- Einfache, alltagstaugliche Gerichte\n\n"
+        + "- Einfache, alltagstaugliche Gerichte\n"
+        "- Bevorzuge Thermomix-kompatible Gerichte; formuliere die Zubereitung "
+        "mit Thermomix-Schritten (Temperatur in °C, Stufe, Minuten) wo sinnvoll\n"
+        "- Lass dich von Rezepten auf HelloFresh.de inspirieren — frische, "
+        "ausgewogene Alltagsküche in diesem Stil\n\n"
         "Antworte AUSSCHLIESSLICH mit einem gueltigen JSON-Objekt. "
         "Kein Text davor oder dahinter. Format:\n"
         "{\n"
