@@ -768,18 +768,25 @@ async def execute_action(action: dict) -> str:
             if not all_uids:
                 return f"Keine Mails in den letzten {months} Monaten in '{account_name}'."
 
-            # Pass 1: fetch headers sequentially (one UID at a time — Apple-safe,
-            # same as mail_monitor._process_new_uids). Apply date filter here.
+            # Pass 1: fetch headers concurrently (semaphore-limited, Apple-safe).
+            # Replaces the previous sequential for-loop; reduces ~5000 round-trips
+            # to ~500 elapsed slots at concurrency=10. (#135)
+            _IMPORT_CONCURRENCY = 10
+            _fetch_sem = asyncio.Semaphore(_IMPORT_CONCURRENCY)
+            _classify_sem = asyncio.Semaphore(10)
             parsed: list[tuple[str, str, str]] = []  # (sender_raw, sender_email, subject)
-            _sem = asyncio.Semaphore(10)
+            _parsed_lock = asyncio.Lock()
 
-            for uid in all_uids:
-                typ, data = await client.uid("fetch", str(uid), "BODY.PEEK[HEADER]")
+            async def _fetch_one(uid: int) -> None:
+                async with _fetch_sem:
+                    typ, data = await client.uid(
+                        "fetch", str(uid), "BODY.PEEK[HEADER.FIELDS (FROM SUBJECT DATE)]"
+                    )
                 if typ != "OK" or not data:
-                    continue
+                    return
                 byte_items = [b for b in data if isinstance(b, (bytes, bytearray))]
                 if not byte_items:
-                    continue
+                    return
                 raw = max(byte_items, key=len)
                 msg = _email.message_from_bytes(raw)
                 date_str = msg.get("Date", "")
@@ -789,7 +796,7 @@ async def execute_action(action: dict) -> str:
                         if mail_dt.tzinfo is None:
                             mail_dt = mail_dt.replace(tzinfo=datetime.timezone.utc)
                         if mail_dt < cutoff:
-                            continue
+                            return
                     except Exception:
                         pass
                 from_parsed = parseaddr(msg.get("From", ""))
@@ -797,17 +804,20 @@ async def execute_action(action: dict) -> str:
                 sender_email = (from_parsed[1] or "").lower().strip()
                 subject = _decode_header(msg.get("Subject", ""))
                 if not sender_raw and not subject:
-                    continue
-                total += 1
-                parsed.append((sender_raw, sender_email, subject))
+                    return
+                async with _parsed_lock:
+                    parsed.append((sender_raw, sender_email, subject))
+
+            await asyncio.gather(*[_fetch_one(uid) for uid in all_uids])
+            total = len(parsed)
 
             # Pass 2: classify in parallel (rate-limited via semaphore).
-            async def _classify_sem(s_raw: str, subj: str) -> str:
-                async with _sem:
+            async def _classify_one(s_raw: str, subj: str) -> str:
+                async with _classify_sem:
                     return await _classify(s_raw, subj, "")
 
             categories = await asyncio.gather(
-                *[_classify_sem(sr, sj) for sr, _, sj in parsed],
+                *[_classify_one(sr, sj) for sr, _, sj in parsed],
                 return_exceptions=True,
             )
 
