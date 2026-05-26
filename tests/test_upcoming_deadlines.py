@@ -1,4 +1,4 @@
-"""Tests fuer get_upcoming_deadlines() und _format_deadline_hint() (Issue #119).
+"""Tests fuer get_upcoming_deadlines() und _deadline_hint() (Issue #119).
 
 Testet die Frist-Erkennung aus:
 - S.TODAY_EVENTS (Kalender-Eintraege mit Frist-Keywords)
@@ -94,28 +94,28 @@ def _reset_state():
 
 
 # ---------------------------------------------------------------------------
-# _format_deadline_hint
+# _deadline_hint
 # ---------------------------------------------------------------------------
 
 class TestFormatDeadlineHint:
     def test_today(self):
-        result = scheduler._format_deadline_hint("Abgabe Steuer", 0)
+        result = scheduler._deadline_hint("Abgabe Steuer", 0)
         assert "heute" in result.lower()
 
     def test_tomorrow(self):
-        result = scheduler._format_deadline_hint("Abgabe Steuer", 1)
+        result = scheduler._deadline_hint("Abgabe Steuer", 1)
         assert "morgen" in result.lower()
 
     def test_day_after_tomorrow(self):
-        result = scheduler._format_deadline_hint("Abgabe Steuer", 2)
+        result = scheduler._deadline_hint("Abgabe Steuer", 2)
         assert "morgen" in result.lower()
 
     def test_three_days(self):
-        result = scheduler._format_deadline_hint("Irgendwas", 3)
+        result = scheduler._deadline_hint("Irgendwas", 3)
         assert "3" in result or "drei" in result.lower()
 
     def test_title_included(self):
-        result = scheduler._format_deadline_hint("Steuererklaerung Q1", 1)
+        result = scheduler._deadline_hint("Steuererklaerung Q1", 1)
         assert "Steuererklaerung Q1" in result
 
 
