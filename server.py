@@ -251,6 +251,9 @@ async def process_message(session_id: str, user_text: str, ws: WebSocket) -> Non
     await append_message(session_id, "user", user_text)
     history = conversations[session_id][-16:]
 
+    # Emotionale Kalibrierung (Issue #118): Stress-Level nach jeder Nachricht aktualisieren.
+    session_state.update_stress_level(session_id, len(user_text), time.time())
+
     # Promise-Extraktion (Issue #117): im Hintergrund, blockiert nicht.
     # Nur wenn der Text Verpflichtungs-Marker enthaelt (schneller Regex-Check).
     import promise_tracker as _pt
