@@ -32,51 +32,47 @@ _token_refresh_lock = threading.Lock()
 
 
 def _get_service():  # type: ignore[no-untyped-def]  # googleapiclient Resource
-    creds = None
-    if os.path.exists(TOKEN_PATH):
-        creds = Credentials.from_authorized_user_file(TOKEN_PATH, SCOPES)
-    if not creds or not creds.valid:
-        if creds and creds.expired and creds.refresh_token:
-            # Fix #61: Lock um den Refresh-Block — nur ein Thread darf
-            # gleichzeitig den Token erneuern.
-            with _token_refresh_lock:
-                # Nochmals pruefen ob ein paralleler Thread den Token
-                # inzwischen schon erneuert hat.
-                creds = Credentials.from_authorized_user_file(TOKEN_PATH, SCOPES)
-                if not creds.valid:
-                    # Fix #85: refresh_token kann None sein wenn das OAuth-
-                    # Access widerrufen wurde. In diesem Fall wuerde
-                    # creds.refresh(Request()) mit einem unklaren RefreshError
-                    # fehlschlagen. Stattdessen explizit pruefen und eine
-                    # sprechende Exception werfen.
-                    if creds.expired and creds.refresh_token:
-                        creds.refresh(Request())
-                        # Fix #61: Atomares Schreiben via tmp-Datei + os.replace()
-                        # verhindert korruptes token.json bei Crash mid-write.
-                        tmp_fd, tmp_path = tempfile.mkstemp(
-                            dir=os.path.dirname(TOKEN_PATH), suffix=".tmp"
-                        )
-                        try:
-                            with os.fdopen(tmp_fd, "w") as f:
-                                f.write(creds.to_json())
-                            os.replace(tmp_path, TOKEN_PATH)
-                        except Exception:
-                            try:
-                                os.unlink(tmp_path)
-                            except OSError:
-                                pass
-                            raise
-                    else:
-                        raise RuntimeError(
-                            "Google OAuth-Token abgelaufen und kein refresh_token "
-                            "vorhanden. Bitte 'python3 scripts/google-auth.py' "
-                            "erneut ausführen."
-                        )
-        else:
-            raise RuntimeError(
-                "Google-Kalender nicht autorisiert. "
-                "Bitte 'python3 scripts/google-auth.py' ausfuehren."
-            )
+    # Fix #136: Einziger token.json-Lesevorgang innerhalb des Locks.
+    # Vorher: Lesen + if-Check ausserhalb, dann erneutes Lesen innerhalb
+    # (TOCTOU-Fenster + redundanter Dateizugriff). Jetzt: alles atomar.
+    with _token_refresh_lock:
+        creds = None
+        if os.path.exists(TOKEN_PATH):
+            creds = Credentials.from_authorized_user_file(TOKEN_PATH, SCOPES)
+        if not creds or not creds.valid:
+            # Fix #85: refresh_token kann None sein wenn das OAuth-
+            # Access widerrufen wurde. In diesem Fall wuerde
+            # creds.refresh(Request()) mit einem unklaren RefreshError
+            # fehlschlagen. Stattdessen explizit pruefen und eine
+            # sprechende Exception werfen.
+            if creds and creds.expired and creds.refresh_token:
+                creds.refresh(Request())
+                # Fix #61: Atomares Schreiben via tmp-Datei + os.replace()
+                # verhindert korruptes token.json bei Crash mid-write.
+                tmp_fd, tmp_path = tempfile.mkstemp(
+                    dir=os.path.dirname(TOKEN_PATH), suffix=".tmp"
+                )
+                try:
+                    with os.fdopen(tmp_fd, "w") as f:
+                        f.write(creds.to_json())
+                    os.replace(tmp_path, TOKEN_PATH)
+                except Exception:
+                    try:
+                        os.unlink(tmp_path)
+                    except OSError:
+                        pass
+                    raise
+            elif creds and creds.expired:
+                raise RuntimeError(
+                    "Google OAuth-Token abgelaufen und kein refresh_token "
+                    "vorhanden. Bitte 'python3 scripts/google-auth.py' "
+                    "erneut ausführen."
+                )
+            else:
+                raise RuntimeError(
+                    "Google-Kalender nicht autorisiert. "
+                    "Bitte 'python3 scripts/google-auth.py' ausfuehren."
+                )
     return build("calendar", "v3", credentials=creds)
 
 
