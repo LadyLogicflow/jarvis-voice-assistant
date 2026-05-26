@@ -22,7 +22,7 @@ import settings as S
 
 log = S.log
 
-_CACHE_PATH = os.path.expanduser("~/.jarvis_offers_cache.json")
+_CACHE_PATH = os.path.join(os.path.dirname(__file__), ".jarvis_offers_cache.json")
 _CACHE_MAX_AGE_HOURS = 6
 
 _DEFAULT_HEADERS = {
