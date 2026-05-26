@@ -461,6 +461,7 @@ async def morning_brief_scheduler() -> None:
                 await asyncio.gather(
                     refresh_data(force=True),
                     refresh_steuer_brief(),
+                    refresh_steuer_recent(),
                     refresh_morning_brief_data(),
                 )
             except Exception as e:
@@ -477,7 +478,9 @@ async def morning_brief_scheduler() -> None:
                         today_block += f"\nHeutige Aufgaben:\n{S.TODAY_TASKS}"
                     if S.TODAY_EVENTS:
                         today_block += f"\nHeutige Termine:\n{S.TODAY_EVENTS}"
-                    if S.STEUER_BRIEF:
+                    if S.STEUER_RECENT:
+                        today_block += f"\nSteuerrecht aktuell (3 Tage): {S.STEUER_RECENT[:400]}"
+                    elif S.STEUER_BRIEF:
                         today_block += f"\nSteuerrecht: {S.STEUER_BRIEF}"
                     if S.POLITIK_BRIEF:
                         today_block += f"\nNachrichten: {S.POLITIK_BRIEF}"
@@ -563,7 +566,7 @@ def register_proactive_handler(fn) -> None:
 
 async def _generate_proactive_message(slot: str) -> str:
     """Refresh today's data and ask Claude for the spoken update."""
-    await refresh_morning_brief_data()
+    await asyncio.gather(refresh_data(), refresh_morning_brief_data())
     system_prompt = _PROACTIVE_PROMPTS.get(slot, _DEFAULT_PROACTIVE_PROMPT).format(
         addr=pick_address(),
     )
