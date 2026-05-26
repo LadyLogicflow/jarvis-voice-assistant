@@ -1589,8 +1589,12 @@ async def execute_action(action: dict) -> str:
 
     elif t == "SPEISEPLAN":
         # Issue #125: Wochenplan generieren (oder bei vorhandenem Plan
-        # den aktuellen Plan anzeigen). Payload leer: neuen Plan erzwingen.
+        # den aktuellen Plan anzeigen). Payload leer oder Plan vorhanden:
+        # gecachten Plan zurueckgeben. Nur wenn noch kein Plan existiert,
+        # wird ein neuer via Claude generiert.
         import meal_plan as _mp
+        if S.MEAL_PLAN_WEEK:
+            return _mp.format_meal_plan_telegram()
         plan = await _mp.generate_meal_plan()
         if not plan:
             return (

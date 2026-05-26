@@ -31,8 +31,8 @@ log = logging.getLogger("jarvis.meal_plan")
 # ---------------------------------------------------------------------------
 
 def _next_saturday() -> datetime.date:
-    """Gibt das Datum des naechsten Samstags zurueck (oder heute wenn
-    heute Samstag ist)."""
+    """Gibt das Datum des naechsten Samstags zurueck (immer in der Zukunft,
+    auch wenn heute bereits Samstag ist)."""
     today = datetime.date.today()
     days_ahead = (5 - today.weekday()) % 7  # Samstag = weekday 5
     if days_ahead == 0:
