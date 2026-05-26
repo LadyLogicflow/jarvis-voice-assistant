@@ -458,8 +458,11 @@ async def morning_brief_scheduler() -> None:
         if now.hour >= S.MORNING_HOUR and triggered_today != today:
             triggered_today = today
             try:
-                await refresh_steuer_brief()
-                await refresh_morning_brief_data()
+                await asyncio.gather(
+                    refresh_data(force=True),
+                    refresh_steuer_brief(),
+                    refresh_morning_brief_data(),
+                )
             except Exception as e:
                 log.warning(f"morning_brief_scheduler: refresh failed: "
                             f"{type(e).__name__}: {e}")
@@ -476,9 +479,19 @@ async def morning_brief_scheduler() -> None:
                         today_block += f"\nHeutige Termine:\n{S.TODAY_EVENTS}"
                     if S.STEUER_BRIEF:
                         today_block += f"\nSteuerrecht: {S.STEUER_BRIEF}"
+                    if S.POLITIK_BRIEF:
+                        today_block += f"\nNachrichten: {S.POLITIK_BRIEF}"
                     if S.WEATHER_INFO:
                         w = S.WEATHER_INFO
-                        today_block += f"\nWetter: {w.get('temp', '?')} Grad"
+                        rain = ""
+                        for h in w.get("forecast_today", []):
+                            if int(h.get("rain", "0")) >= 40:
+                                rain = ", Regen möglich"
+                                break
+                        today_block += (
+                            f"\nWetter: {w.get('temp', '?')} Grad, "
+                            f"{w.get('description', '')}{rain}"
+                        )
                     user_msg = (
                         f"Datum: {now.strftime('%A, %d.%m.%Y')}, "
                         f"Uhrzeit: {now.strftime('%H:%M')}"
