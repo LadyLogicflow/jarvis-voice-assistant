@@ -14,7 +14,7 @@ import datetime
 import json
 import os
 import re
-from typing import Optional
+from typing import Optional, Sequence
 
 import httpx
 
@@ -24,6 +24,15 @@ log = S.log
 
 _CACHE_PATH = os.path.expanduser("~/.jarvis_offers_cache.json")
 _CACHE_MAX_AGE_HOURS = 6
+
+_DEFAULT_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/120.0.0.0 Safari/537.36"
+    ),
+    "Accept-Language": "de-DE,de;q=0.9",
+}
 
 # ---------------------------------------------------------------------------
 # Cache helpers
@@ -57,7 +66,7 @@ def _save_cache(offers: dict) -> None:
     """
     try:
         data = {
-            "timestamp": datetime.datetime.utcnow().isoformat(),
+            "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
             "offers": offers,
         }
         with open(_CACHE_PATH, "w", encoding="utf-8") as f:
@@ -77,7 +86,11 @@ def _is_cache_fresh(cache: dict) -> bool:
     """
     try:
         ts = datetime.datetime.fromisoformat(cache["timestamp"])
-        age = datetime.datetime.utcnow() - ts
+        # Normalisiere beide Seiten auf naive UTC fuer konsistenten Vergleich
+        now = datetime.datetime.now(datetime.timezone.utc)
+        if ts.tzinfo is None:
+            ts = ts.replace(tzinfo=datetime.timezone.utc)
+        age = now - ts
         return age.total_seconds() < _CACHE_MAX_AGE_HOURS * 3600
     except Exception:
         return False
@@ -87,11 +100,58 @@ def _is_cache_fresh(cache: dict) -> bool:
 # Market fetchers
 # ---------------------------------------------------------------------------
 
+async def _fetch_generic(
+    market_name: str,
+    url: str,
+    client: httpx.AsyncClient,
+    tags: Sequence[str] = ("h3", "h4", "p", "span"),
+    reject_starts_with_lt: bool = False,
+) -> list[str]:
+    """Generischer HTML-Fetcher fuer Supermarkt-Angebotsseiten.
+
+    Ruft die angegebene URL ab und extrahiert Produktbezeichnungen aus
+    den angegebenen HTML-Tags per Regex. Dedupliziert und begrenzt auf
+    200 Eintraege.
+
+    Args:
+        market_name: Anzeigename des Markts fuer Log-Ausgaben.
+        url: Ziel-URL der Angebotsseite.
+        client: Bestehender httpx-AsyncClient.
+        tags: Sequenz von HTML-Tag-Namen, die durchsucht werden.
+        reject_starts_with_lt: Wenn True, werden Treffer die mit '<'
+            beginnen zusaetzlich herausgefiltert (benoetigt fuer Rewe).
+
+    Returns:
+        Liste von deduplizierten Angebotstexten (max. 200 Eintraege).
+    """
+    resp = await client.get(url, headers=_DEFAULT_HEADERS, timeout=10, follow_redirects=True)
+    resp.raise_for_status()
+    html = resp.text
+    items: list[str] = []
+    for tag in tags:
+        for match in re.finditer(
+            rf"<{tag}[^>]*>([^<]{{3,80}})</{tag}>",
+            html,
+            re.IGNORECASE,
+        ):
+            text = match.group(1).strip()
+            if not (text and 3 <= len(text) <= 80):
+                continue
+            if reject_starts_with_lt and text.startswith("<"):
+                continue
+            items.append(text)
+    seen: set[str] = set()
+    result: list[str] = []
+    for item in items:
+        if item.lower() not in seen:
+            seen.add(item.lower())
+            result.append(item)
+    log.info(f"offer_monitor: {market_name} {len(result)} Eintraege gefunden")
+    return result[:200]
+
+
 async def _fetch_rewe(plz: str, client: httpx.AsyncClient) -> list[str]:
     """Ruft Rewe-Angebote ab.
-
-    Nutzt die Rewe-Angebots-Seite und extrahiert Produktbezeichnungen
-    aus dem HTML. Gibt eine Liste von Angebotstexten zurueck.
 
     Args:
         plz: Postleitzahl fuer die Marktsuche.
@@ -100,42 +160,13 @@ async def _fetch_rewe(plz: str, client: httpx.AsyncClient) -> list[str]:
     Returns:
         Liste von Angebotstexten (Produktnamen) bei Rewe.
     """
-    headers = {
-        "User-Agent": (
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/120.0.0.0 Safari/537.36"
-        ),
-        "Accept-Language": "de-DE,de;q=0.9",
-    }
-    url = "https://www.rewe.de/angebote/"
-    resp = await client.get(url, headers=headers, timeout=10, follow_redirects=True)
-    resp.raise_for_status()
-    html = resp.text
-    # Produkt-Bezeichnungen im Rewe-HTML stehen meist in <p>-Tags mit
-    # spezifischen Klassen-Attributen. Wir extrahieren alle sichtbaren
-    # Texte, die kurz genug sind um Produktnamen zu sein.
-    items: list[str] = []
-    # Muster fuer Produktbezeichnungen in <p>- und <h3>-Tags
-    for tag in ("p", "h3", "h4", "span"):
-        for match in re.finditer(
-            rf"<{tag}[^>]*>([^<]{{3,80}})</{tag}>",
-            html,
-            re.IGNORECASE,
-        ):
-            text = match.group(1).strip()
-            # Nur alphanumerischen Inhalt mit Laenge 3-80 Zeichen
-            if text and 3 <= len(text) <= 80 and not text.startswith("<"):
-                items.append(text)
-    # Deduplizieren
-    seen: set[str] = set()
-    result: list[str] = []
-    for item in items:
-        if item.lower() not in seen:
-            seen.add(item.lower())
-            result.append(item)
-    log.info(f"offer_monitor: Rewe {len(result)} Eintraege gefunden")
-    return result[:200]  # Obergrenze um Speicher zu schonen
+    return await _fetch_generic(
+        "Rewe",
+        "https://www.rewe.de/angebote/",
+        client,
+        tags=("p", "h3", "h4", "span"),
+        reject_starts_with_lt=True,
+    )
 
 
 async def _fetch_lidl(plz: str, client: httpx.AsyncClient) -> list[str]:
@@ -148,36 +179,7 @@ async def _fetch_lidl(plz: str, client: httpx.AsyncClient) -> list[str]:
     Returns:
         Liste von Angebotstexten bei Lidl.
     """
-    headers = {
-        "User-Agent": (
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/120.0.0.0 Safari/537.36"
-        ),
-        "Accept-Language": "de-DE,de;q=0.9",
-    }
-    url = "https://www.lidl.de/de/angebote"
-    resp = await client.get(url, headers=headers, timeout=10, follow_redirects=True)
-    resp.raise_for_status()
-    html = resp.text
-    items: list[str] = []
-    for tag in ("h3", "h4", "p", "span"):
-        for match in re.finditer(
-            rf"<{tag}[^>]*>([^<]{{3,80}})</{tag}>",
-            html,
-            re.IGNORECASE,
-        ):
-            text = match.group(1).strip()
-            if text and 3 <= len(text) <= 80:
-                items.append(text)
-    seen: set[str] = set()
-    result: list[str] = []
-    for item in items:
-        if item.lower() not in seen:
-            seen.add(item.lower())
-            result.append(item)
-    log.info(f"offer_monitor: Lidl {len(result)} Eintraege gefunden")
-    return result[:200]
+    return await _fetch_generic("Lidl", "https://www.lidl.de/de/angebote", client)
 
 
 async def _fetch_aldi_sued(plz: str, client: httpx.AsyncClient) -> list[str]:
@@ -190,36 +192,9 @@ async def _fetch_aldi_sued(plz: str, client: httpx.AsyncClient) -> list[str]:
     Returns:
         Liste von Angebotstexten bei Aldi Sued.
     """
-    headers = {
-        "User-Agent": (
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/120.0.0.0 Safari/537.36"
-        ),
-        "Accept-Language": "de-DE,de;q=0.9",
-    }
-    url = "https://www.aldi-sued.de/de/angebote.html"
-    resp = await client.get(url, headers=headers, timeout=10, follow_redirects=True)
-    resp.raise_for_status()
-    html = resp.text
-    items: list[str] = []
-    for tag in ("h3", "h4", "p", "span"):
-        for match in re.finditer(
-            rf"<{tag}[^>]*>([^<]{{3,80}})</{tag}>",
-            html,
-            re.IGNORECASE,
-        ):
-            text = match.group(1).strip()
-            if text and 3 <= len(text) <= 80:
-                items.append(text)
-    seen: set[str] = set()
-    result: list[str] = []
-    for item in items:
-        if item.lower() not in seen:
-            seen.add(item.lower())
-            result.append(item)
-    log.info(f"offer_monitor: Aldi Sued {len(result)} Eintraege gefunden")
-    return result[:200]
+    return await _fetch_generic(
+        "Aldi Sued", "https://www.aldi-sued.de/de/angebote.html", client
+    )
 
 
 async def _fetch_edeka(plz: str, client: httpx.AsyncClient) -> list[str]:
@@ -232,36 +207,7 @@ async def _fetch_edeka(plz: str, client: httpx.AsyncClient) -> list[str]:
     Returns:
         Liste von Angebotstexten bei Edeka.
     """
-    headers = {
-        "User-Agent": (
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/120.0.0.0 Safari/537.36"
-        ),
-        "Accept-Language": "de-DE,de;q=0.9",
-    }
-    url = "https://www.edeka.de/angebote/"
-    resp = await client.get(url, headers=headers, timeout=10, follow_redirects=True)
-    resp.raise_for_status()
-    html = resp.text
-    items: list[str] = []
-    for tag in ("h3", "h4", "p", "span"):
-        for match in re.finditer(
-            rf"<{tag}[^>]*>([^<]{{3,80}})</{tag}>",
-            html,
-            re.IGNORECASE,
-        ):
-            text = match.group(1).strip()
-            if text and 3 <= len(text) <= 80:
-                items.append(text)
-    seen: set[str] = set()
-    result: list[str] = []
-    for item in items:
-        if item.lower() not in seen:
-            seen.add(item.lower())
-            result.append(item)
-    log.info(f"offer_monitor: Edeka {len(result)} Eintraege gefunden")
-    return result[:200]
+    return await _fetch_generic("Edeka", "https://www.edeka.de/angebote/", client)
 
 
 async def _fetch_trinkgut(plz: str, client: httpx.AsyncClient) -> list[str]:
@@ -274,36 +220,7 @@ async def _fetch_trinkgut(plz: str, client: httpx.AsyncClient) -> list[str]:
     Returns:
         Liste von Angebotstexten bei Trinkgut.
     """
-    headers = {
-        "User-Agent": (
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/120.0.0.0 Safari/537.36"
-        ),
-        "Accept-Language": "de-DE,de;q=0.9",
-    }
-    url = "https://www.trinkgut.de/angebote"
-    resp = await client.get(url, headers=headers, timeout=10, follow_redirects=True)
-    resp.raise_for_status()
-    html = resp.text
-    items: list[str] = []
-    for tag in ("h3", "h4", "p", "span"):
-        for match in re.finditer(
-            rf"<{tag}[^>]*>([^<]{{3,80}})</{tag}>",
-            html,
-            re.IGNORECASE,
-        ):
-            text = match.group(1).strip()
-            if text and 3 <= len(text) <= 80:
-                items.append(text)
-    seen: set[str] = set()
-    result: list[str] = []
-    for item in items:
-        if item.lower() not in seen:
-            seen.add(item.lower())
-            result.append(item)
-    log.info(f"offer_monitor: Trinkgut {len(result)} Eintraege gefunden")
-    return result[:200]
+    return await _fetch_generic("Trinkgut", "https://www.trinkgut.de/angebote", client)
 
 
 # ---------------------------------------------------------------------------
