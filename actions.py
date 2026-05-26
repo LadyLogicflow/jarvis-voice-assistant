@@ -1587,6 +1587,157 @@ async def execute_action(action: dict) -> str:
             log.warning(f"BRING_LIST: {type(e).__name__}: {e}")
             return f"Bring!-Fehler: {type(e).__name__}"
 
+    elif t == "SPEISEPLAN":
+        # Issue #125: Wochenplan generieren (oder bei vorhandenem Plan
+        # den aktuellen Plan anzeigen). Payload leer: neuen Plan erzwingen.
+        import meal_plan as _mp
+        plan = await _mp.generate_meal_plan()
+        if not plan:
+            return (
+                f"Ich konnte den Speisenplan leider nicht erstellen, "
+                f"{pick_address()}. Bitte spaeter erneut versuchen."
+            )
+        return _mp.format_meal_plan_telegram()
+
+    elif t == "SPEISEPLAN_SWAP":
+        # Issue #125: Ein einzelnes Gericht tauschen.
+        # Payload-Format: "Wochentag|Neues Gericht"
+        # Beispiel: "Montag|Pasta mit Gemüse"
+        import meal_plan as _mp
+        if not S.MEAL_PLAN_WEEK:
+            return (
+                f"Es gibt noch keinen Speisenplan, {pick_address()}. "
+                f"Bitte erst [ACTION:SPEISEPLAN] aufrufen."
+            )
+        parts = p.split("|", 1)
+        if len(parts) != 2 or not parts[0].strip() or not parts[1].strip():
+            return (
+                f"Bitte im Format 'Wochentag|Neues Gericht' angeben, "
+                f"{pick_address()}. Beispiel: Montag|Pasta mit Gemüse"
+            )
+        weekday_raw = parts[0].strip()
+        new_dish = parts[1].strip()
+        _WEEKDAY_MAP = {
+            "montag": 0, "dienstag": 1, "mittwoch": 2, "donnerstag": 3,
+            "freitag": 4, "samstag": 5, "sonntag": 6,
+        }
+        target_weekday = _WEEKDAY_MAP.get(weekday_raw.lower())
+        if target_weekday is None:
+            return (
+                f"Wochentag '{weekday_raw}' nicht erkannt, {pick_address()}. "
+                f"Bitte einen deutschen Wochentag angeben (z.B. Montag)."
+            )
+        # Datum mit diesem Wochentag im Plan suchen
+        target_date = None
+        for date_str in S.MEAL_PLAN_WEEK:
+            try:
+                d = datetime.date.fromisoformat(date_str)
+                if d.weekday() == target_weekday:
+                    target_date = date_str
+                    break
+            except ValueError:
+                pass
+        if not target_date:
+            return (
+                f"Fuer {weekday_raw} habe ich keinen Eintrag im Plan, "
+                f"{pick_address()}."
+            )
+        # Gericht ersetzen; Rezept neu generieren via Claude
+        old_dish = S.MEAL_PLAN_WEEK[target_date].get("dish", "")
+        servings = S.MEAL_PLAN_WEEK[target_date].get("servings", S.MEAL_PLAN_SERVINGS_DEFAULT)
+        try:
+            from prompt import llm_text as _llm_text
+            swap_prompt = (
+                f"Du bist Jarvis. Erstelle ein vollstaendiges Rezept fuer "
+                f"'{new_dish}' fuer {servings} Personen.\n\n"
+                "Anforderungen: Kochzeit <= 60 Minuten, "
+                + ("ausgewogen + diabetesgeeignet (kein Zucker, wenig einfache Kohlenhydrate). "
+                   if S.MEAL_PLAN_DIABETES_MODE else "") +
+                "Antworte AUSSCHLIESSLICH mit gueltigem JSON:\n"
+                '{"recipe": "Schritt-fuer-Schritt-Anleitung als Text",'
+                '"ingredients": ["Zutat 1", "Zutat 2", ...],'
+                '"cook_time_minutes": <Ganzzahl>}'
+            )
+            resp = await S.ai.messages.create(
+                model="claude-haiku-4-5-20251001",
+                max_tokens=1000,
+                system=swap_prompt,
+                messages=[{"role": "user", "content": f"Gericht: {new_dish}"}],
+            )
+            raw = _llm_text(resp).strip()
+            if raw.startswith("```"):
+                raw = "\n".join(
+                    l for l in raw.splitlines() if not l.strip().startswith("```")
+                )
+            import json as _json
+            new_entry_data = _json.loads(raw)
+            S.MEAL_PLAN_WEEK[target_date] = {
+                "dish": new_dish,
+                "recipe": str(new_entry_data.get("recipe", "")),
+                "servings": servings,
+                "ingredients": [str(i) for i in new_entry_data.get("ingredients", [])],
+                "cook_time_minutes": int(new_entry_data.get("cook_time_minutes", 45)),
+            }
+        except Exception as e:
+            log.warning(f"SPEISEPLAN_SWAP recipe generation failed: {type(e).__name__}: {e}")
+            # Minimaler Fallback: Gericht merken, Rezept leer
+            S.MEAL_PLAN_WEEK[target_date]["dish"] = new_dish
+            S.MEAL_PLAN_WEEK[target_date]["recipe"] = ""
+            S.MEAL_PLAN_WEEK[target_date]["ingredients"] = []
+        return (
+            f"{weekday_raw} getauscht: '{old_dish}' -> '{new_dish}', "
+            f"{pick_address()}."
+        )
+
+    elif t == "EINKAUF_FREIGEBEN":
+        # Issue #125: Einkaufsliste aus dem Wochenplan an Bring! uebergeben.
+        import meal_plan as _mp
+        if not S.MEAL_PLAN_WEEK:
+            return (
+                f"Es gibt noch keinen Speisenplan, {pick_address()}. "
+                f"Bitte erst [ACTION:SPEISEPLAN] aufrufen."
+            )
+        if not S.BRING_EMAIL or not S.BRING_PASSWORD:
+            return (
+                f"Bring! ist nicht konfiguriert, {pick_address()}. "
+                f"Bitte BRING_EMAIL und BRING_PASSWORD in der .env setzen."
+            )
+        ingredients = await _mp.get_ingredients_for_week()
+        if not ingredients:
+            return f"Keine Zutaten im Plan gefunden, {pick_address()}."
+        try:
+            import bring_tools
+            count = await bring_tools.bring_add_items(ingredients)
+            if count == 0:
+                return (
+                    f"Die Zutaten konnten nicht zur Einkaufsliste hinzugefuegt werden, "
+                    f"{pick_address()}. Bitte Bring!-Zugangsdaten pruefen."
+                )
+            return (
+                f"{count} Zutaten wurden auf die Bring!-Einkaufsliste uebertragen, "
+                f"{pick_address()}. Viel Spass beim Einkaufen."
+            )
+        except Exception as e:
+            log.warning(f"EINKAUF_FREIGEBEN: {type(e).__name__}: {e}")
+            return f"Bring!-Fehler beim Uebertragen: {type(e).__name__}"
+
+    elif t == "REZEPT_HEUTE":
+        # Issue #125: Heutiges Rezept erneut ausgeben.
+        import meal_plan as _mp
+        recipe_text = await _mp.get_today_recipe()
+        if not recipe_text:
+            today_str = datetime.date.today().isoformat()
+            if S.MEAL_PLAN_WEEK:
+                return (
+                    f"Fuer heute ({today_str}) habe ich kein Gericht im Plan, "
+                    f"{pick_address()}."
+                )
+            return (
+                f"Es gibt noch keinen Speisenplan, {pick_address()}. "
+                f"Bitte erst [ACTION:SPEISEPLAN] aufrufen."
+            )
+        return recipe_text
+
     elif t == "OFFERS":
         # Issue #122: Aktuelle Supermarkt-Angebote fuer die Watchlist abrufen.
         # Nutzt den offer_monitor mit 6h-Cache.

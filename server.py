@@ -46,6 +46,8 @@ import scheduler
 from scheduler import (
     bring_monitor_scheduler,
     evening_brief_scheduler,
+    meal_plan_reminder_scheduler,
+    meal_plan_scheduler,
     memory_reindex_scheduler,
     morning_brief_scheduler,
     proactive_briefs_scheduler,
@@ -139,12 +141,15 @@ async def _lifespan(_app):  # type: ignore[no-untyped-def]  # AsyncGenerator
     task_weekly = asyncio.create_task(weekly_outlook_scheduler())
     task_memory = asyncio.create_task(memory_reindex_scheduler())
     task_planner = asyncio.create_task(planner.planner_loop())
+    task_meal_plan = asyncio.create_task(meal_plan_scheduler())
+    task_meal_reminder = asyncio.create_task(meal_plan_reminder_scheduler())
     log.info(f"Steuerrecht-Scheduler gestartet (taeglich um {S.MORNING_HOUR}:00 Uhr)")
     log.info(f"Abschluss-Ritual aktiv (taeglich um {S.EVENING_HOUR}:00 Uhr)")
     log.info(f"Proaktive Briefs aktiv: {S.PROACTIVE_BRIEFS_TIMES}")
     log.info("Wochenausblick aktiv (Sonntag 18:00)")
     log.info("Memory-Reindex-Scheduler aktiv (täglich 03:00 Uhr + Startup)")
     log.info("Task-Planer aktiv (stündlich, Mo–Fr 17–19 Uhr)")
+    log.info("Speiseplanung aktiv (Donnerstag 07:30 + taeglich 17:30 Rezept-Reminder)")
     # Bring!-Monitor (Issue #123): nur starten wenn Zugangsdaten konfiguriert
     task_bring: asyncio.Task | None = None
     if S.BRING_EMAIL and S.BRING_PASSWORD:
@@ -156,7 +161,8 @@ async def _lifespan(_app):  # type: ignore[no-untyped-def]  # AsyncGenerator
         yield
     finally:
         tasks_to_cancel = [task_reindex, task_brief, task_evening, task_proactive,
-                           task_telegram, task_mail, task_weekly, task_memory, task_planner]
+                           task_telegram, task_mail, task_weekly, task_memory,
+                           task_planner, task_meal_plan, task_meal_reminder]
         if task_bring is not None:
             tasks_to_cancel.append(task_bring)
         for t in tasks_to_cancel:
