@@ -44,6 +44,7 @@ from conversation import (
 from prompt import extract_action, get_system_prompt, llm_text, pick_address
 import scheduler
 from scheduler import (
+    evening_brief_scheduler,
     memory_reindex_scheduler,
     morning_brief_scheduler,
     proactive_briefs_scheduler,
@@ -125,6 +126,7 @@ async def _lifespan(_app):  # type: ignore[no-untyped-def]  # AsyncGenerator
     import memory_search
     task_reindex = asyncio.create_task(memory_search.reindex_all())
     task_brief = asyncio.create_task(morning_brief_scheduler())
+    task_evening = asyncio.create_task(evening_brief_scheduler())
     task_proactive = asyncio.create_task(proactive_briefs_scheduler())
     task_telegram = asyncio.create_task(telegram_bot_main())
     task_mail = asyncio.create_task(mail_monitor_main())
@@ -132,6 +134,7 @@ async def _lifespan(_app):  # type: ignore[no-untyped-def]  # AsyncGenerator
     task_memory = asyncio.create_task(memory_reindex_scheduler())
     task_planner = asyncio.create_task(planner.planner_loop())
     log.info(f"Steuerrecht-Scheduler gestartet (taeglich um {S.MORNING_HOUR}:00 Uhr)")
+    log.info(f"Abschluss-Ritual aktiv (taeglich um {S.EVENING_HOUR}:00 Uhr)")
     log.info(f"Proaktive Briefs aktiv: {S.PROACTIVE_BRIEFS_TIMES}")
     log.info("Wochenausblick aktiv (Sonntag 18:00)")
     log.info("Memory-Reindex-Scheduler aktiv (täglich 03:00 Uhr + Startup)")
@@ -139,8 +142,8 @@ async def _lifespan(_app):  # type: ignore[no-untyped-def]  # AsyncGenerator
     try:
         yield
     finally:
-        for t in (task_reindex, task_brief, task_proactive, task_telegram, task_mail,
-                  task_weekly, task_memory, task_planner):
+        for t in (task_reindex, task_brief, task_evening, task_proactive, task_telegram,
+                  task_mail, task_weekly, task_memory, task_planner):
             t.cancel()
             try:
                 await t
@@ -249,6 +252,7 @@ async def process_message(session_id: str, user_text: str, ws: WebSocket) -> Non
             await refresh_morning_brief_data()
 
     await append_message(session_id, "user", user_text)
+    session_state.update_stress_level(session_id, len(user_text), time.time())
     history = conversations[session_id][-16:]
 
     # Emotionale Kalibrierung (Issue #118): Stress-Level nach jeder Nachricht aktualisieren.

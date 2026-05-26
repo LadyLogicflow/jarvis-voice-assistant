@@ -86,6 +86,7 @@ USER_ROLE = config.get(
 CITY = config.get("city", "Neuss")
 TASKS_FILE = config.get("obsidian_inbox_path", "")
 MORNING_HOUR = config.get("morning_hour", 7)
+EVENING_HOUR = config.get("evening_hour", 18)
 
 SERVER_PORT = int(config.get("server_port", 8340))
 SERVER_HOST = config.get("server_host", "0.0.0.0")
@@ -271,3 +272,16 @@ TODAY_EVENTS: str = ""        # Google Calendar events for today
 POLITIK_BRIEF: str = ""       # Tagesschau Inland summary
 POLITIK_BRIEF_DATE: str = ""
 OPEN_PROMISES: str = ""       # Offene Vorhaben (Issue #117), cache
+
+UPCOMING_DEADLINES: str = ""  # Anstehende Fristen (Issue #119), cache
+BIRTHDAY_REMINDERS: str = ""  # Geburtstage dieser Woche (Issue #120), cache
+
+# Abschluss-Ritual (Issue #121): Anzahl heute per DONETASK abgeschlossener Tasks.
+# Wird in actions.py inkrementiert, in settings damit alle Module drauf zugreifen.
+TASKS_COMPLETED_TODAY: int = 0
+_tasks_completed_date: str = ""  # ISO date — reset guard
+
+# Angebote-Monitor (Issue #122)
+OFFER_WATCHLIST: list = config.get("offer_watchlist", [])
+OFFER_PLZ: str = config.get("offer_plz", "")
+WEEKLY_OFFERS: str = ""  # populated Monday morning by refresh_offers()
