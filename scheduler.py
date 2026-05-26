@@ -472,12 +472,16 @@ async def morning_brief_scheduler() -> None:
         if now.hour >= S.MORNING_HOUR and triggered_today != today:
             triggered_today = today
             try:
-                await asyncio.gather(
+                gather_tasks = [
                     refresh_data(force=True),
                     refresh_steuer_brief(),
                     refresh_steuer_recent(),
                     refresh_morning_brief_data(),
-                )
+                ]
+                # Angebote nur montags laden (Issue #122)
+                if now.weekday() == 0:
+                    gather_tasks.append(refresh_offers())
+                await asyncio.gather(*gather_tasks)
             except Exception as e:
                 log.warning(f"morning_brief_scheduler: refresh failed: "
                             f"{type(e).__name__}: {e}")
@@ -497,6 +501,9 @@ async def morning_brief_scheduler() -> None:
                     # refresh_open_promises() ausgefuehrt und S.OPEN_PROMISES befuellt)
                     if S.OPEN_PROMISES:
                         today_block += f"\n{S.OPEN_PROMISES}"
+                    # Supermarkt-Angebote (Issue #122) — nur montags, wenn vorhanden
+                    if now.weekday() == 0 and S.WEEKLY_OFFERS:
+                        today_block += f"\n{S.WEEKLY_OFFERS}"
                     if S.STEUER_RECENT:
                         today_block += f"\nSteuerrecht aktuell (3 Tage): {S.STEUER_RECENT[:400]}"
                     elif S.STEUER_BRIEF:
@@ -633,12 +640,49 @@ async def memory_reindex_scheduler() -> None:
         await asyncio.sleep(60)
 
 
+_PROMISE_FOLLOWUP_SLOT = "16:00"
+
+
+async def _build_promise_followup_suffix() -> str:
+    """Prueft ob eine ueberfaellige Versprechen-Nachfrage gesendet werden soll.
+
+    Gibt einen fertigen Satz zurueck der an die proaktive Nachricht angehaengt
+    werden kann, oder einen leeren String wenn keine Nachfrage noetig ist.
+    Markiert das heutige Datum wenn eine Nachfrage generiert wird.
+    """
+    try:
+        import promise_tracker
+        if await promise_tracker.was_followup_sent_today():
+            return ""
+        promise = await promise_tracker.get_oldest_overdue_promise(min_age_days=2)
+        if promise is None:
+            return ""
+        age = promise["age_label"]
+        text = promise["text"]
+        suffix = (
+            f" Uebrigens — Sie wollten {age} noch: {text}. "
+            f"Ist das inzwischen erledigt?"
+        )
+        await promise_tracker.mark_followup_sent_today()
+        log.info(f"promise_tracker: Nachfrage generiert fuer promise #{promise['id']}")
+        return suffix
+    except Exception as e:
+        log.warning(
+            f"_build_promise_followup_suffix failed: {type(e).__name__}: {e}"
+        )
+        return ""
+
+
 async def proactive_briefs_scheduler() -> None:
     """Long-running task: fire each configured slot once per day.
 
     Uses '>=' on the HH:MM string (not '=='): if the Mac was asleep at
     exactly the configured time and the loop wakes up a few minutes later,
     the slot still fires today — same approach as morning_brief_scheduler.
+
+    At the _PROMISE_FOLLOWUP_SLOT (16:00) a promise followup question is
+    appended when there is an overdue open promise and no followup was sent
+    today yet (Issue #124).
     """
     triggered: dict[str, str] = {}  # slot "HH:MM" -> ISO date last fired
     while True:
@@ -658,6 +702,12 @@ async def proactive_briefs_scheduler() -> None:
                 log.info(f"proactive {slot}: generating message")
                 try:
                     message = await _generate_proactive_message(slot)
+                    # Issue #124: at the followup slot append a promise
+                    # followup question (max once per day, min 2 days old).
+                    if slot == _PROMISE_FOLLOWUP_SLOT:
+                        followup = await _build_promise_followup_suffix()
+                        if followup:
+                            message = message + followup
                     log.info(f"proactive {slot}: '{message[:80]}'")
                     await _proactive_handler(message)
                 except Exception as e:

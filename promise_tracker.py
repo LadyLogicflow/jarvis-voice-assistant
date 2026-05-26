@@ -195,6 +195,82 @@ async def mark_promise_done(promise_id: int) -> None:
     log.info(f"promise_tracker: promise #{promise_id} als erledigt markiert")
 
 
+_FOLLOWUP_DATE_FILE = os.path.expanduser("~/.jarvis_promise_followup_date")
+
+
+async def get_oldest_overdue_promise(min_age_days: int = 2) -> dict | None:
+    """Gibt das aelteste offene Vorhaben zurueck das mindestens min_age_days alt ist.
+
+    Liefert None wenn kein solches Vorhaben existiert.
+    Jeder Eintrag enthaelt: id, text, source, created, age_label.
+    """
+    await _ensure_db()
+    cutoff = (
+        datetime.datetime.now() - datetime.timedelta(days=min_age_days)
+    ).isoformat(timespec="seconds")
+    now = datetime.datetime.now()
+    async with aiosqlite.connect(_DB_PATH) as db:
+        async with db.execute(
+            "SELECT id, text, source, created FROM promises "
+            "WHERE done = 0 AND created <= ? "
+            "ORDER BY created ASC "
+            "LIMIT 1",
+            (cutoff,),
+        ) as cur:
+            row = await cur.fetchone()
+    if row is None:
+        return None
+    promise_id, text, source, created_str = row
+    try:
+        created_dt = datetime.datetime.fromisoformat(created_str)
+        delta = now - created_dt
+        days = delta.days
+        if days == 0:
+            age_label = "heute"
+        elif days == 1:
+            age_label = "gestern"
+        else:
+            age_label = f"vor {days} Tagen"
+    except Exception:
+        age_label = "kuerzlich"
+    return {
+        "id": promise_id,
+        "text": text,
+        "source": source,
+        "created": created_str,
+        "age_label": age_label,
+    }
+
+
+async def was_followup_sent_today() -> bool:
+    """Prueft ob heute bereits eine Versprechen-Nachfrage gesendet wurde.
+
+    Liest das Datum aus ~/.jarvis_promise_followup_date (ueberlebt Server-Neustarts).
+    """
+    try:
+        with open(_FOLLOWUP_DATE_FILE, "r", encoding="utf-8") as f:
+            stored = f.read().strip()
+        return stored == datetime.date.today().isoformat()
+    except FileNotFoundError:
+        return False
+    except Exception as e:
+        log.warning(f"was_followup_sent_today: Lesefehler: {type(e).__name__}: {e}")
+        return False
+
+
+async def mark_followup_sent_today() -> None:
+    """Speichert das heutige Datum als 'Nachfrage gesendet'.
+
+    Schreibt in ~/.jarvis_promise_followup_date.
+    """
+    try:
+        with open(_FOLLOWUP_DATE_FILE, "w", encoding="utf-8") as f:
+            f.write(datetime.date.today().isoformat())
+        log.info("promise_tracker: Nachfrage-Datum gespeichert")
+    except Exception as e:
+        log.warning(f"mark_followup_sent_today: Schreibfehler: {type(e).__name__}: {e}")
+
+
 async def format_promises_block(max_age_days: int = 3) -> str:
     """Formatiert offene Vorhaben als Briefing-Block.
 
