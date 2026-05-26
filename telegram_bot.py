@@ -26,7 +26,7 @@ import conversation
 import session_state
 import settings as S
 from prompt import extract_action, get_system_prompt, llm_text, pick_address
-from tts import _split_text, _tts_one, normalize_for_tts
+from tts import tts_chunks
 
 log = S.log
 
@@ -224,15 +224,7 @@ async def _ask_claude(session_id: str, user_text: str) -> str:
 async def _tts_full(text: str) -> bytes:
     """Concatenate TTS chunks into one audio blob suitable for
     Telegram's voice-note attachment."""
-    text = normalize_for_tts(text)
-    if not text:
-        return b""
-    out = bytearray()
-    for chunk in _split_text(text):
-        audio = await _tts_one(chunk)
-        if audio:
-            out += audio
-    return bytes(out)
+    return b"".join(await tts_chunks(text))
 
 
 # ---------------------------------------------------------------------------
