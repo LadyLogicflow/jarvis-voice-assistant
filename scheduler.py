@@ -731,11 +731,11 @@ async def morning_brief_scheduler() -> None:
 _PROACTIVE_PROMPTS = {
     "12:30": (
         "Du bist Jarvis. Es ist Mittag. Der Nutzer arbeitet. Erinnere {addr} "
-        "an die Mittagspause. KURZ (2-3 Saetze): erst eine trockene Mittagspausen-"
-        "Aufforderung im Butler-Stil; dann nenne offene Aufgaben fuer heute (siehe "
-        "AKTUELLE DATEN, falls vorhanden) und naechste Termine bis Tagesende. "
-        "Wenn keine Aufgaben oder Termine: kurzes Lob im Jarvis-Stil. Keine "
-        "ACTION-Tags, alles wird vorgelesen."
+        "an die Mittagspause. 3-4 Saetze: erst eine trockene Mittagspausen-"
+        "Aufforderung im Butler-Stil; dann nenne ALLE offenen Aufgaben fuer heute "
+        "(siehe AKTUELLE DATEN — PFLICHT, auch wenn die Liste lang ist) und naechste "
+        "Termine bis Tagesende. Wenn keine Aufgaben oder Termine: kurzes Lob im "
+        "Jarvis-Stil. Keine ACTION-Tags, alles wird vorgelesen."
     ),
     "16:00": (
         "Du bist Jarvis. Nachmittagsupdate fuer {addr}. KURZ (2-3 Saetze): "
@@ -778,10 +778,14 @@ async def _generate_proactive_message(slot: str) -> str:
         today_block += f"\nHeutige Aufgaben:\n{S.TODAY_TASKS}"
     if S.TODAY_EVENTS:
         today_block += f"\nHeutige Termine:\n{S.TODAY_EVENTS}"
+    if S.OPEN_PROMISES:
+        today_block += f"\n{S.OPEN_PROMISES}"
+    if S.UPCOMING_DEADLINES:
+        today_block += f"\n{S.UPCOMING_DEADLINES}"
     user_msg = f"Aktuelle Tagesdaten:{today_block or ' (keine offenen Punkte)'}"
     resp = await S.ai.messages.create(
         model="claude-haiku-4-5-20251001",
-        max_tokens=400,
+        max_tokens=500,
         system=system_prompt,
         messages=[{"role": "user", "content": user_msg}],
     )
