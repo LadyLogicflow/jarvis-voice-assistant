@@ -14,6 +14,7 @@ zurück — der Server startet trotzdem fehlerfrei.
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import logging
@@ -417,16 +418,19 @@ async def reindex_all() -> None:
         return
 
     log.info("memory_search: Starte Reindex aller Quellen …")
+    loop = asyncio.get_running_loop()
+    # Sync-Calls in Thread-Pool damit der Event-Loop nicht blockiert
+    # (SentenceTransformer-Load dauert auf Pi 4 bis zu 2 Minuten)
     try:
-        index_conversation_history()
+        await loop.run_in_executor(None, index_conversation_history)
     except Exception as exc:
         log.warning("memory_search.reindex_all: conversation fehlgeschlagen: %s", exc)
     try:
-        index_notes()
+        await loop.run_in_executor(None, index_notes)
     except Exception as exc:
         log.warning("memory_search.reindex_all: notes fehlgeschlagen: %s", exc)
     try:
-        index_persons()
+        await loop.run_in_executor(None, index_persons)
     except Exception as exc:
         log.warning("memory_search.reindex_all: persons fehlgeschlagen: %s", exc)
     try:
