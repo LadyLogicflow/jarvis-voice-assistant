@@ -28,9 +28,14 @@ log = S.log
 # ---------------------------------------------------------------------------
 _API_BASE = "https://api.getbring.com/rest/v2"
 _AUTH_URL = f"{_API_BASE}/bringauth"
-_LISTS_URL_TPL = f"{_API_BASE}/bringlists/{{uuid}}"
+_USER_LISTS_URL_TPL = f"{_API_BASE}/bringusers/{{uuid}}/lists"
 _LIST_ITEMS_URL_TPL = f"{_API_BASE}/bringlists/{{list_uuid}}"
 _API_TIMEOUT = 10
+_BRING_HEADERS = {
+    "X-BRING-API-KEY": "cof4Nc6D8saplXjE3h3HXqHH",
+    "X-BRING-CLIENT-SOURCE": "webApp",
+    "X-BRING-COUNTRY": "DE",
+}
 
 # ---------------------------------------------------------------------------
 # Modulebene Token-Cache
@@ -70,7 +75,7 @@ async def bring_login() -> tuple[str, str]:
             resp = await client.post(
                 _AUTH_URL,
                 data={"email": S.BRING_EMAIL, "password": S.BRING_PASSWORD},
-                headers={"X-BRING-API-KEY": "cof4Nc6D8saplXjE3h3HXqHH"},
+                headers=_BRING_HEADERS,
             )
             resp.raise_for_status()
             data = resp.json()
@@ -111,8 +116,8 @@ async def _fetch_first_list_uuid(uuid: str, token: str) -> str:
     try:
         async with httpx.AsyncClient(timeout=_API_TIMEOUT) as client:
             resp = await client.get(
-                _LISTS_URL_TPL.format(uuid=uuid),
-                headers={"Authorization": f"Bearer {token}"},
+                _USER_LISTS_URL_TPL.format(uuid=uuid),
+                headers={**_BRING_HEADERS, "Authorization": f"Bearer {token}"},
             )
             resp.raise_for_status()
             data = resp.json()
