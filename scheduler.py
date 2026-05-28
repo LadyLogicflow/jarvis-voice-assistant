@@ -49,24 +49,26 @@ async def _fetch_weather_once() -> dict:
         resp.raise_for_status()
         data = resp.json()
     c = data["current_condition"][0]
+    today = data["weather"][0]
     result = {
         "temp": c["temp_C"],
         "feels_like": c["FeelsLikeC"],
         "description": c["weatherDesc"][0]["value"],
         "humidity": c["humidity"],
         "wind_kmh": c["windspeedKmph"],
+        "max_temp": today.get("maxtempC", c["temp_C"]),
+        "min_temp": today.get("mintempC", c["temp_C"]),
+        "day_description": today.get("weatherDesc", [{}])[0].get("value", c["weatherDesc"][0]["value"]),
         "forecast_today": [],
     }
-    now_hour = datetime.datetime.now().hour
-    for h in data["weather"][0]["hourly"]:
-        h_hour = int(h["time"]) // 100
-        if h_hour > now_hour:
-            result["forecast_today"].append({
-                "hour": h_hour,
-                "temp": h["tempC"],
-                "desc": h["weatherDesc"][0]["value"],
-                "rain": h.get("chanceofrain", "0"),
-            })
+    # Alle Stunden des Tages (nicht nur zukuenftige) fuer Tagesbogen-Darstellung
+    for h in today["hourly"]:
+        result["forecast_today"].append({
+            "hour": int(h["time"]) // 100,
+            "temp": h["tempC"],
+            "desc": h["weatherDesc"][0]["value"],
+            "rain": h.get("chanceofrain", "0"),
+        })
     return result
 
 
@@ -689,9 +691,12 @@ async def morning_brief_scheduler() -> None:
                             if int(h.get("rain", "0")) >= 40:
                                 rain = ", Regen möglich"
                                 break
+                        max_t = w.get("max_temp", w.get("temp", "?"))
+                        min_t = w.get("min_temp", w.get("temp", "?"))
+                        day_desc = w.get("day_description", w.get("description", ""))
                         today_block += (
-                            f"\nWetter: {w.get('temp', '?')} Grad, "
-                            f"{w.get('description', '')}{rain}"
+                            f"\nWetter heute: {day_desc}, "
+                            f"max. {max_t} Grad (min. {min_t} Grad){rain}"
                         )
                     user_msg = (
                         f"Datum: {now.strftime('%A, %d.%m.%Y')}, "
