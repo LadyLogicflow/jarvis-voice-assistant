@@ -164,7 +164,7 @@ async def bring_get_items(list_uuid: str | None = None) -> list[str]:
         async with httpx.AsyncClient(timeout=_API_TIMEOUT) as client:
             resp = await client.get(
                 _LIST_ITEMS_URL_TPL.format(list_uuid=target_list),
-                headers={"Authorization": f"Bearer {tok}"},
+                headers={**_BRING_HEADERS, "Authorization": f"Bearer {tok}"},
             )
             resp.raise_for_status()
             data = resp.json()
@@ -213,7 +213,7 @@ async def bring_add_item(item: str, list_uuid: str | None = None) -> bool:
             resp = await client.put(
                 _LIST_ITEMS_URL_TPL.format(list_uuid=target_list),
                 data={"purchase": item.strip(), "recently": ""},
-                headers={"Authorization": f"Bearer {tok}"},
+                headers={**_BRING_HEADERS, "Authorization": f"Bearer {tok}"},
             )
             resp.raise_for_status()
         return True
