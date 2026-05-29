@@ -123,6 +123,26 @@ def find_by_email(email: str) -> PersonProfile | None:
     return None
 
 
+def search_by_name(name: str) -> list[PersonProfile]:
+    """Sucht Profile deren Vorname oder Nachname den Suchbegriff enthaelt.
+
+    Die Suche ist case-insensitiv und verwendet Teil-String-Matching auf dem
+    ``name``-Feld (Display-Name) der Profile. Ein leeres ``name``-Argument
+    liefert eine leere Liste zurueck.
+
+    Args:
+        name: Suchbegriff (z.B. "Sandra", "Mueller").
+
+    Returns:
+        Liste aller passenden PersonProfile-Objekte, leer wenn kein Treffer.
+    """
+    if not name:
+        return []
+    needle = name.lower().strip()
+    _load()
+    return [p for p in _persons.values() if needle in p.name.lower()]
+
+
 def find_by_phone_normalized(normalized: str) -> PersonProfile | None:
     if not normalized:
         return None

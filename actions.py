@@ -1787,4 +1787,81 @@ async def execute_action(action: dict) -> str:
             log.warning(f"OFFERS: offer_monitor failed: {type(e).__name__}: {e}")
             return f"Angebots-Abfrage fehlgeschlagen: {type(e).__name__}"
 
+    elif t == "MAIL_FORWARD_PENDING":
+        # Issue #143: Empfaenger fuer Weiterleitung ermitteln und in
+        # S.PENDING_MAIL_FORWARD speichern. Payload kann eine E-Mail-Adresse
+        # oder ein Name sein. Jarvis nennt den gefundenen Kontakt und bittet
+        # um Bestaetigung bevor die Mail tatsaechlich weitergeleitet wird.
+        import persons_db
+        payload_stripped = p.strip() if p else ""
+        if not payload_stripped:
+            return "Bitte nennen Sie den Empfaenger."
+        if "@" in payload_stripped:
+            # Payload ist bereits eine E-Mail-Adresse
+            S.PENDING_MAIL_FORWARD = {
+                "to_addr": payload_stripped,
+                "to_name": payload_stripped,
+            }
+            return (
+                f"Weiterleitung vorbereitet: {payload_stripped}. "
+                f"Bitte bestaetigen Sie."
+            )
+        # Payload ist ein Name — in persons_db suchen
+        matches = persons_db.search_by_name(payload_stripped)
+        if not matches:
+            return (
+                f"Kein Kontakt '{payload_stripped}' gefunden. "
+                f"Bitte geben Sie die E-Mail-Adresse direkt an."
+            )
+        if len(matches) == 1:
+            profile = matches[0]
+            if not profile.primary_email:
+                return (
+                    f"Kontakt {profile.name} gefunden, aber keine E-Mail-Adresse "
+                    f"hinterlegt. Bitte geben Sie die Adresse direkt an."
+                )
+            S.PENDING_MAIL_FORWARD = {
+                "to_addr": profile.primary_email,
+                "to_name": profile.name,
+            }
+            return (
+                f"Weiterleitung vorbereitet: {profile.name} "
+                f"({profile.primary_email}). Bitte bestaetigen Sie."
+            )
+        # Mehrere Treffer — Auswahl zurueckgeben
+        lines = [f"Mehrere Kontakte gefunden fuer '{payload_stripped}':"]
+        for i, profile in enumerate(matches, 1):
+            email_info = profile.primary_email or "(keine E-Mail)"
+            lines.append(f"{i}. {profile.name} — {email_info}")
+        lines.append("Bitte nennen Sie die genaue E-Mail-Adresse.")
+        return "\n".join(lines)
+
+    elif t == "MAIL_FORWARD_SEND":
+        # Issue #143: Leitet die aktive Mail an den gespeicherten Empfaenger
+        # weiter. Setzt S.PENDING_MAIL_FORWARD voraus.
+        if not S.PENDING_MAIL_FORWARD:
+            return (
+                "Kein Empfaenger gespeichert. "
+                "Bitte zuerst Empfaenger nennen."
+            )
+        to_addr = S.PENDING_MAIL_FORWARD.get("to_addr", "")
+        to_name = S.PENDING_MAIL_FORWARD.get("to_name", to_addr)
+        if not to_addr:
+            S.PENDING_MAIL_FORWARD = {}
+            return "Gespeicherter Empfaenger hat keine E-Mail-Adresse. Bitte erneut angeben."
+        # Aktive Mail aus dem Default-Slot lesen
+        active = session_state.get("default").active_mail
+        if not active:
+            return "Keine aktive Mail im Kontext."
+        ok = await mail_actions.forward_mail(active.account, active.uid, to_addr)
+        S.PENDING_MAIL_FORWARD = {}
+        if ok:
+            return (
+                f"Mail weitergeleitet an {to_name} ({to_addr})."
+            )
+        return (
+            f"Weiterleitung an {to_name} fehlgeschlagen. "
+            f"Bitte pruefen Sie die SMTP-Konfiguration."
+        )
+
     return ""

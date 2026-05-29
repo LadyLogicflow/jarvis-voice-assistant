@@ -302,3 +302,9 @@ MEAL_PLAN_REMINDER_TIME: str = config.get("meal_plan_reminder_time", "17:30")
 # Format: {date_str: {"dish": str, "recipe": str, "servings": int,
 #                     "ingredients": list[str], "cook_time_minutes": int}}
 MEAL_PLAN_WEEK: dict = {}
+
+# Mail-Weiterleitung (Issue #143). Zwischenspeicher fuer den
+# MAIL_FORWARD_PENDING -> MAIL_FORWARD_SEND-Workflow.
+# Struktur: {"to_addr": str, "to_name": str}
+# Geleert nach erfolgreichem MAIL_FORWARD_SEND oder manuell.
+PENDING_MAIL_FORWARD: dict = {}
