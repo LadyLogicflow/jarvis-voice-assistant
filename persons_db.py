@@ -140,7 +140,7 @@ def search_by_name(name: str) -> list[PersonProfile]:
         return []
     needle = name.lower().strip()
     _load()
-    return [p for p in _persons.values() if needle in p.name.lower()]
+    return [p for p in _persons.values() if p.name and needle in p.name.lower()]
 
 
 def find_by_phone_normalized(normalized: str) -> PersonProfile | None:

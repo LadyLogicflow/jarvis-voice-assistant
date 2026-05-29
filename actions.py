@@ -1794,8 +1794,9 @@ async def execute_action(action: dict) -> str:
         # um Bestaetigung bevor die Mail tatsaechlich weitergeleitet wird.
         import persons_db
         payload_stripped = p.strip() if p else ""
+        addr = S.USER_ADDRESS
         if not payload_stripped:
-            return "Bitte nennen Sie den Empfaenger."
+            return f"Bitte nennen Sie den Empfaenger, {addr}."
         if "@" in payload_stripped:
             # Payload ist bereits eine E-Mail-Adresse
             S.PENDING_MAIL_FORWARD = {
@@ -1804,21 +1805,21 @@ async def execute_action(action: dict) -> str:
             }
             return (
                 f"Weiterleitung vorbereitet: {payload_stripped}. "
-                f"Bitte bestaetigen Sie."
+                f"Bitte bestaetigen, {addr}."
             )
         # Payload ist ein Name — in persons_db suchen
         matches = persons_db.search_by_name(payload_stripped)
         if not matches:
             return (
-                f"Kein Kontakt '{payload_stripped}' gefunden. "
-                f"Bitte geben Sie die E-Mail-Adresse direkt an."
+                f"Kein Kontakt '{payload_stripped}' gefunden, {addr}. "
+                f"Bitte die E-Mail-Adresse direkt nennen."
             )
         if len(matches) == 1:
             profile = matches[0]
             if not profile.primary_email:
                 return (
                     f"Kontakt {profile.name} gefunden, aber keine E-Mail-Adresse "
-                    f"hinterlegt. Bitte geben Sie die Adresse direkt an."
+                    f"hinterlegt. Bitte die Adresse direkt nennen, {addr}."
                 )
             S.PENDING_MAIL_FORWARD = {
                 "to_addr": profile.primary_email,
@@ -1826,7 +1827,7 @@ async def execute_action(action: dict) -> str:
             }
             return (
                 f"Weiterleitung vorbereitet: {profile.name} "
-                f"({profile.primary_email}). Bitte bestaetigen Sie."
+                f"({profile.primary_email}). Bitte bestaetigen, {addr}."
             )
         # Mehrere Treffer — Auswahl zurueckgeben
         lines = [f"Mehrere Kontakte gefunden fuer '{payload_stripped}':"]
@@ -1855,13 +1856,9 @@ async def execute_action(action: dict) -> str:
             return "Keine aktive Mail im Kontext."
         ok = await mail_actions.forward_mail(active.account, active.uid, to_addr)
         S.PENDING_MAIL_FORWARD = {}
+        session_state.clear_active_mail("default")
         if ok:
-            return (
-                f"Mail weitergeleitet an {to_name} ({to_addr})."
-            )
-        return (
-            f"Weiterleitung an {to_name} fehlgeschlagen. "
-            f"Bitte pruefen Sie die SMTP-Konfiguration."
-        )
+            return f"Mail weitergeleitet an {to_name} ({to_addr})."
+        return f"Weiterleitung an {to_name} fehlgeschlagen — bitte SMTP-Konfiguration pruefen."
 
     return ""

@@ -271,6 +271,14 @@ def build_system_prompt() -> str:
             f"\n  Wenn {addr} \"ja\" / \"anlegen\" / \"aktualisieren\" / \"ergaenzen\" sagt -> [ACTION:ACCEPT_PERSON_ACTION]"
             f"\n  Wenn {addr} \"nein\" / \"verwerfen\" / \"lass\" sagt -> [ACTION:DECLINE_PERSON_ACTION]"
         )
+    if S.PENDING_MAIL_FORWARD:
+        _fwd = S.PENDING_MAIL_FORWARD
+        active_mail_block += (
+            f"\nPending-Weiterleitung (vorbereitet durch MAIL_FORWARD_PENDING):"
+            f"\n  An: {_sanitize(_fwd.get('to_name', ''))} ({_sanitize(_fwd.get('to_addr', ''))})"
+            f"\n  Wenn {addr} \"ja\" / \"weiterleiten\" / \"mach das\" sagt -> [ACTION:MAIL_FORWARD_SEND]"
+            f"\n  Wenn {addr} \"nein\" / \"abbrechen\" / \"lass es\" sagt -> nichts tun, Weiterleitung verwerfen"
+        )
 
     hour = int(time.strftime("%H"))
     is_evening = hour >= 18
