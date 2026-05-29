@@ -95,10 +95,10 @@ async def bring_login() -> tuple[str, str]:
         # Tokens leben ~1 Stunde; wir refreshen 5 Minuten frueher
         _bring_token_expiry = datetime.datetime.utcnow() + datetime.timedelta(minutes=55)
 
-        # Standard-Listen abrufen; Login-Response kann listUuid direkt enthalten
+        # Standard-Listen abrufen; Login-Response enthaelt bringListUUID direkt
         if _bring_uuid and _bring_token:
             _bring_default_list_uuid = (
-                data.get("listUuid", "")
+                data.get("bringListUUID", "")
                 or await _fetch_first_list_uuid(_bring_uuid, _bring_token)
             )
             # In settings-Cache schreiben damit andere Module darauf zugreifen
