@@ -146,7 +146,7 @@ def route(
     if heur.get("bounce_to_junk", False):
         if any(p in sender_l for p in _BOUNCE_FROM_PATTERNS) or \
            any(p in subject_l for p in _BOUNCE_SUBJECT_PATTERNS):
-            return {"action": "move", "folder": "Junk"}
+            return {"action": "move", "folder": heur.get("bounce_folder", "INBOX.Spam")}
 
     pkg_folder = heur.get("package_to_dhl_folder")
     if pkg_folder and any(d in sender_l for d in _PACKAGE_FROM_DOMAINS):

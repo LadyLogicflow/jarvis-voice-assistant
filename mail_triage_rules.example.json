@@ -8,7 +8,7 @@
       "name": "ELSTER-Portal",
       "from_contains": "elster.de",
       "action": "move",
-      "folder": "Elster",
+      "folder": "INBOX.Elster",
       "also_mark_read": true
     },
     {
