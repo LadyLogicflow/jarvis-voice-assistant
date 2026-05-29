@@ -81,14 +81,25 @@ async def bring_login() -> tuple[str, str]:
             data = resp.json()
 
         _bring_uuid = data.get("uuid", "")
-        _bring_token = data.get("access_token", "")
+        # Bring! API liefert den Token je nach Account-Typ unter verschiedenen Keys
+        _bring_token = (
+            data.get("access_token", "")
+            or data.get("bearerToken", "")
+            or data.get("token", "")
+        )
+        log.info(
+            f"bring_login: auth response keys={list(data.keys())}, "
+            f"uuid={'set' if _bring_uuid else 'missing'}, "
+            f"token={'set (len=%d)' % len(_bring_token) if _bring_token else 'MISSING'}"
+        )
         # Tokens leben ~1 Stunde; wir refreshen 5 Minuten frueher
         _bring_token_expiry = datetime.datetime.utcnow() + datetime.timedelta(minutes=55)
 
-        # Standard-Listen abrufen und erste Liste cachen
+        # Standard-Listen abrufen; Login-Response kann listUuid direkt enthalten
         if _bring_uuid and _bring_token:
-            _bring_default_list_uuid = await _fetch_first_list_uuid(
-                _bring_uuid, _bring_token
+            _bring_default_list_uuid = (
+                data.get("listUuid", "")
+                or await _fetch_first_list_uuid(_bring_uuid, _bring_token)
             )
             # In settings-Cache schreiben damit andere Module darauf zugreifen
             S.BRING_LIST_UUID_CACHE = _bring_default_list_uuid
