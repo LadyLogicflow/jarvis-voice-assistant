@@ -502,8 +502,11 @@ async def _process_new_uids(account: dict, client, uids: list[int]) -> None:
 
             # Auto-Triage zuerst pruefen — Sender-Regeln, Heuristiken
             # (Bounce/Paket/Reise/Newsletter), und werbung_action.
+            # Voller From-Header ("Name <email@domain>") uebergeben damit
+            # from_contains auf Domain matchen kann, nicht nur Anzeigenamen.
+            triage_sender = msg.get("From", "") or sender
             try:
-                triage = mail_triage.route(sender, subject, category, msg=msg)
+                triage = mail_triage.route(triage_sender, subject, category, msg=msg)
             except Exception as e:
                 log.warning(f"mail_monitor[{name}] uid={uid}: triage failed: {type(e).__name__}: {e}")
                 triage = {"action": "none"}
