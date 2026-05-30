@@ -28,6 +28,7 @@ from fastapi import (
     FastAPI,
     Header,
     HTTPException,
+    Request,
     WebSocket,
     WebSocketDisconnect,
 )
@@ -57,6 +58,7 @@ from scheduler import (
     weekly_outlook_scheduler,
 )
 from mail_monitor import mail_monitor_main, register_mail_alert_handler
+import health_tools
 import planner
 import session_state
 from telegram_bot import telegram_bot_main, send_user_text as telegram_send
@@ -220,6 +222,26 @@ active_clients: list = []
 _inflight_tasks: dict[str, asyncio.Task] = {}
 _last_activate_time: float = 0.0
 _last_greeting_time: float = 0.0
+
+
+@app.post("/health")
+async def health_webhook(request: Request) -> dict:
+    """Empfaengt Gesundheitsdaten von Health Auto Export (iOS).
+    Kein Auth-Token noetig — Endpunkt ist nur im Heimnetz erreichbar.
+    Speichert die geparsten Daten in S.HEALTH_INFO."""
+    try:
+        payload = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="invalid JSON")
+    parsed = health_tools.parse_health_export(payload)
+    # Rotate: gestrige Werte sichern bevor wir ueberschreiben.
+    if S.HEALTH_INFO and S.HEALTH_INFO.get("date") != parsed.get("date"):
+        S.HEALTH_INFO_PREV = S.HEALTH_INFO
+    S.HEALTH_INFO = parsed
+    log.info(f"/health: Daten empfangen — Schlaf {parsed.get('sleep_h')}h, "
+             f"Bewegung {parsed.get('move_kcal')} kcal, "
+             f"Training {parsed.get('exercise_min')} min")
+    return {"ok": True, "date": parsed.get("date")}
 
 
 @app.get("/activate", dependencies=[Depends(require_jarvis_token)])

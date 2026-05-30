@@ -303,6 +303,15 @@ MEAL_PLAN_REMINDER_TIME: str = config.get("meal_plan_reminder_time", "17:30")
 #                     "ingredients": list[str], "cook_time_minutes": int}}
 MEAL_PLAN_WEEK: dict = {}
 
+# Apple Health / Apple Watch Daten (via Health Auto Export Webhook /health).
+# HEALTH_INFO = heutiger Stand. HEALTH_INFO_PREV = gestrige Werte (fuer Vergleich).
+# Wird bei jedem POST an /health rotiert: prev <- current, current <- neu.
+HEALTH_INFO: dict = {}
+HEALTH_INFO_PREV: dict = {}
+
+# Bewegungsring-Tagesziel in kcal (individuell auf der Watch eingestellt).
+ACTIVITY_GOAL_KCAL: int = int(config.get("activity_goal_kcal", 500))
+
 # Mail-Weiterleitung (Issue #143). Zwischenspeicher fuer den
 # MAIL_FORWARD_PENDING -> MAIL_FORWARD_SEND-Workflow.
 # Struktur: {"to_addr": str, "to_name": str}

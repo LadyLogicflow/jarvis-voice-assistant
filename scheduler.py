@@ -28,6 +28,7 @@ from tenacity import (
 
 import browser_tools  # for fetch_news (politik feed)
 import google_calendar_tools
+import health_tools
 import offer_monitor
 from prompt import llm_text, pick_address
 import settings as S
@@ -619,8 +620,16 @@ _MORNING_BRIEF_PROMPT = (
     "Liefere ein vollstaendiges Tages-Briefing mit allen verfuegbaren Bloecken: "
     "Wochentag + exaktes Datum, Wetter (nur Maximaltemperatur + Regen ja/nein), "
     "heutige Termine, heutige Aufgaben, Steuerrecht-Schlagzeile (falls vorhanden), "
-    "Politik (falls vorhanden). Unter 6 Saetze, fliessende Sprache, Jarvis-Stil. "
-    "Keine ACTION-Tags."
+    "Politik (falls vorhanden). "
+    "Falls Gesundheitsdaten vorhanden: Schlaf und Aktivitaetsringe in EINEM trockenen "
+    "Jarvis-Satz kommentieren — mit Vortagsvergleich wenn verfuegbar. "
+    "Bei Verbesserung: knappe, echte Anerkennung ohne Jubel "
+    "('Schlaf besser als gestern — bemerkenswert.'). "
+    "Bei Verschlechterung: trocken anspornen, kein Nagging "
+    "('Bewegungsring unter gestern. Eine Runde um den Block wuerde ich als "
+    "medizinisch indiziert bezeichnen.'). "
+    "Bei schlechten Ringen ohne Vortagsdaten: einmalig sachlich hinweisen. "
+    "Unter 7 Saetze gesamt, fliessende Sprache. Keine ACTION-Tags."
 )
 
 
@@ -698,6 +707,14 @@ async def morning_brief_scheduler() -> None:
                             f"\nWetter heute: {day_desc}, "
                             f"max. {max_t} Grad (min. {min_t} Grad){rain}"
                         )
+                    if S.HEALTH_INFO:
+                        health_block = health_tools.format_for_brief(
+                            S.HEALTH_INFO,
+                            S.ACTIVITY_GOAL_KCAL,
+                            prev=S.HEALTH_INFO_PREV or None,
+                        )
+                        if health_block:
+                            today_block += f"\nGesundheitsdaten:\n{health_block}"
                     user_msg = (
                         f"Datum: {now.strftime('%A, %d.%m.%Y')}, "
                         f"Uhrzeit: {now.strftime('%H:%M')}"
@@ -739,9 +756,16 @@ _PROACTIVE_PROMPTS = {
     ),
     "16:00": (
         "Du bist Jarvis. Nachmittagsupdate fuer {addr}. KURZ (2-3 Saetze): "
-        "ein knapper Status-Check (\"Wie laeuft's?\"-Halbsatz im Butler-Ton), "
+        "ein knapper Status-Check im Butler-Ton, "
         "dann offene Aufgaben fuer heute (siehe AKTUELLE DATEN) und Termine "
-        "die noch bis Tagesende anstehen. Keine ACTION-Tags."
+        "die noch bis Tagesende anstehen. "
+        "Falls Gesundheitsdaten vorhanden und Bewegungsring unter 50 Prozent: "
+        "eine trockene Aufforderung zu einer kurzen Aktivitaet einbauen — "
+        "konkret und witzig, nicht predighaft "
+        "('Ihr Bewegungsring sieht aus als haette er aufgegeben. "
+        "Fuenfzehn Minuten frische Luft wuerden da Wunder wirken.'). "
+        "Bei Verbesserung gegenueber gestern: kurz positiv vermerken. "
+        "Keine ACTION-Tags."
     ),
     "18:00": (
         "Du bist Jarvis. Es ist 18 Uhr — Feierabend-Erinnerung fuer {addr}. "
@@ -782,6 +806,12 @@ async def _generate_proactive_message(slot: str) -> str:
         today_block += f"\n{S.OPEN_PROMISES}"
     if S.UPCOMING_DEADLINES:
         today_block += f"\n{S.UPCOMING_DEADLINES}"
+    if S.HEALTH_INFO:
+        health_block = health_tools.format_for_brief(
+            S.HEALTH_INFO, S.ACTIVITY_GOAL_KCAL, prev=S.HEALTH_INFO_PREV or None
+        )
+        if health_block:
+            today_block += f"\nGesundheitsdaten:\n{health_block}"
     user_msg = f"Aktuelle Tagesdaten:{today_block or ' (keine offenen Punkte)'}"
     resp = await S.ai.messages.create(
         model="claude-haiku-4-5-20251001",
