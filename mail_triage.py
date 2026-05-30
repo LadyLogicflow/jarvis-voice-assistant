@@ -93,11 +93,24 @@ def _matches_rule(rule: dict, sender: str, subject: str) -> bool:
     return False
 
 
+def _apply_folder_override(result: dict, account: str, rules: dict) -> dict:
+    """Remap folder names per-account (e.g. iCloud uses 'Junk' not 'INBOX.Spam')."""
+    folder = result.get("folder")
+    if not folder or not account:
+        return result
+    overrides = rules.get("account_folder_map", {}).get(account, {})
+    if folder in overrides:
+        result = dict(result)
+        result["folder"] = overrides[folder]
+    return result
+
+
 def route(
     sender: str,
     subject: str,
     category: str,
     msg=None,
+    account: str = "",
 ) -> dict:
     """Decide what to do with an incoming mail. Returns one of:
       {"action": "none"}                       -> proceed normal flow
@@ -117,23 +130,25 @@ def route(
         if action == "forward":
             with_attach_only = rule.get("forward_only_with_attachment", False)
             if with_attach_only and not _has_attachment(msg):
-                # Fallback path
                 fb = rule.get("fallback_action", "mark_read")
                 if fb == "move":
-                    return {"action": "move", "folder": rule.get("fallback_folder", "Junk")}
+                    return _apply_folder_override(
+                        {"action": "move", "folder": rule.get("fallback_folder", "Junk")},
+                        account, rules,
+                    )
                 return {"action": "mark_read"}
-            return {
+            return _apply_folder_override({
                 "action": "forward",
                 "to": rule.get("to", ""),
                 "and_then": "move" if rule.get("after_forward_move_to") else "mark_read",
                 "folder": rule.get("after_forward_move_to", ""),
-            }
+            }, account, rules)
         if action == "move":
-            return {
+            return _apply_folder_override({
                 "action": "move",
                 "folder": rule.get("folder", "Junk"),
                 "also_mark_read": rule.get("also_mark_read", False),
-            }
+            }, account, rules)
         if action == "mark_read":
             return {"action": "mark_read"}
 
@@ -146,15 +161,22 @@ def route(
     if heur.get("bounce_to_junk", False):
         if any(p in sender_l for p in _BOUNCE_FROM_PATTERNS) or \
            any(p in subject_l for p in _BOUNCE_SUBJECT_PATTERNS):
-            return {"action": "move", "folder": heur.get("bounce_folder", "INBOX.Spam")}
+            return _apply_folder_override(
+                {"action": "move", "folder": heur.get("bounce_folder", "INBOX.Spam")},
+                account, rules,
+            )
 
     pkg_folder = heur.get("package_to_dhl_folder")
     if pkg_folder and any(d in sender_l for d in _PACKAGE_FROM_DOMAINS):
-        return {"action": "move", "folder": pkg_folder}
+        return _apply_folder_override(
+            {"action": "move", "folder": pkg_folder}, account, rules
+        )
 
     travel_folder = heur.get("travel_to_reise_folder")
     if travel_folder and any(d in sender_l for d in _TRAVEL_FROM_DOMAINS):
-        return {"action": "move", "folder": travel_folder}
+        return _apply_folder_override(
+            {"action": "move", "folder": travel_folder}, account, rules
+        )
 
     # 3) Newsletter heuristic — needs the parsed msg for List-Unsubscribe
     if msg is not None:
@@ -162,13 +184,18 @@ def route(
         if (newsletter_folder
                 and msg.get("List-Unsubscribe")
                 and category == "werbung"):
-            return {"action": "move", "folder": newsletter_folder}
+            return _apply_folder_override(
+                {"action": "move", "folder": newsletter_folder}, account, rules
+            )
 
     # 4) Generic werbung action from the rules file
     if category == "werbung":
         action = rules.get("werbung_action")
         if action == "move":
-            return {"action": "move", "folder": rules.get("werbung_folder", "Junk")}
+            return _apply_folder_override(
+                {"action": "move", "folder": rules.get("werbung_folder", "Junk")},
+                account, rules,
+            )
         if action == "mark_read":
             return {"action": "mark_read"}
 
