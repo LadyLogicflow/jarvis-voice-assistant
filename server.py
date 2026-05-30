@@ -541,7 +541,7 @@ async def websocket_endpoint(ws: WebSocket) -> None:
                 log.info("process_message was cancelled")
 
     except Exception as e:
-        log.info(f"Client disconnected: {type(e).__name__}")
+        log.exception(f"Client disconnected: {type(e).__name__}")
         _cancel_inflight("client disconnected")
         _inflight_tasks.pop(session_id, None)
         conversations.pop(session_id, None)
