@@ -357,6 +357,7 @@ async def process_message(session_id: str, user_text: str, ws: WebSocket) -> Non
         "ACCEPT_CALENDAR_INVITE", "DECLINE_CALENDAR_INVITE",
         "ACCEPT_PERSON_ACTION", "DECLINE_PERSON_ACTION",
         "PROMISE_DONE",
+        "BRING_ADD", "EINKAUF_FREIGEBEN",
     }
     if action["type"] in _SILENT_ON_SUCCESS and spoken_text:
         if "?" not in action_result and "fehlgeschlagen" not in action_result:
