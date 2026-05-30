@@ -47,6 +47,7 @@ class MailRef:
     date: str = ""
     message_id: str = ""
     references: str = ""
+    reply_needed: bool = False
 
 
 @dataclass

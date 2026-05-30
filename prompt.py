@@ -232,6 +232,11 @@ def build_system_prompt() -> str:
             f"\n  Konto: {_active.account}, Absender: {_sanitize(_active.sender)}, "
             f"Betreff: {_sanitize(_active.subject)}"
         )
+        if _active.reply_needed and not _pending:
+            active_mail_block += (
+                f"\n  Antwort erwartet: ja — wenn {addr} \"ja\", \"Entwurf\" oder "
+                f"\"schreib einen Entwurf\" sagt -> [ACTION:MAIL_DRAFT]"
+            )
     if _pending:
         active_mail_block += (
             f"\nPending-Draft (Antwort-Entwurf zur Freigabe — falls {addr} "

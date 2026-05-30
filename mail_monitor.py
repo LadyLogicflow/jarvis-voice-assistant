@@ -164,36 +164,50 @@ def _decode_header(raw: Optional[str]) -> str:
 # Classification
 # ---------------------------------------------------------------------------
 _CLASSIFIER_PROMPT = (
-    "Du bist ein E-Mail-Klassifikator. Antworte mit GENAU EINEM Wort, "
-    "aus dieser Liste: werbung, info, handlungsbedarf.\n"
+    "Du bist ein E-Mail-Klassifikator. Antworte mit JSON: "
+    "{\"category\": \"...\", \"reply_needed\": true/false}\n"
+    "category-Werte:\n"
     "- werbung = Newsletter, Marketing, Werbeangebote, no-reply Marketing-Mails\n"
-    "- info = Statusmeldungen, automatische Notifications die kein Handeln erfordern "
+    "- info = automatische Statusmeldungen die kein Handeln erfordern "
     "(Versandbestaetigungen, OAuth-Logins, etc.)\n"
-    "- handlungsbedarf = Persoenliche Antworten erwartet, Termine, Fristen, Mandantensachen, "
-    "wichtige Mitteilungen. IMMER handlungsbedarf: ELSTER, Finanzamt, Behoerden, Gerichte, "
+    "- handlungsbedarf = Fristen, Termine, wichtige Mitteilungen. "
+    "IMMER handlungsbedarf: ELSTER, Finanzamt, Behoerden, Gerichte, "
     "Steuerberaterkammer, IHK, Rentenversicherung, Krankenkassen, DATEV-Nachrichten.\n"
-    "Antworte NUR mit dem einen Wort, kein Satz, keine Erklaerung."
+    "reply_needed = true NUR wenn der Absender offensichtlich eine persoenliche "
+    "Antwort erwartet (direkte Fragen, Mandantenanfragen, persoenliche Nachrichten). "
+    "false bei automatischen Mails oder Einwegkommunikation.\n"
+    "Antworte NUR mit dem JSON-Objekt, nichts anderes."
 )
 
 
-async def _classify(sender: str, subject: str, body_preview: str) -> str:
+async def _classify(sender: str, subject: str, body_preview: str) -> tuple[str, bool]:
+    """Returns (category, reply_needed)."""
+    import json as _json
     user_msg = f"Von: {sender}\nBetreff: {subject}\n\n{body_preview[:1500]}"
     try:
         resp = await S.ai.messages.create(
             model="claude-haiku-4-5-20251001",
-            max_tokens=10,
+            max_tokens=50,
             system=_CLASSIFIER_PROMPT,
             messages=[{"role": "user", "content": user_msg}],
         )
-        cat = llm_text(resp).strip().lower()
-        for token in cat.replace(",", " ").replace(".", " ").split():
-            if token in ("werbung", "info", "handlungsbedarf"):
-                return token
-        log.info(f"mail_monitor: classifier returned {cat!r}, defaulting to 'info'")
-        return "info"
+        raw = llm_text(resp).strip()
+        try:
+            data = _json.loads(raw)
+            cat = str(data.get("category", "info")).strip().lower()
+            if cat not in ("werbung", "info", "handlungsbedarf"):
+                cat = "info"
+            return cat, bool(data.get("reply_needed", False))
+        except _json.JSONDecodeError:
+            # Fallback: alte Einzel-Wort-Antwort tolerieren
+            for token in raw.lower().replace(",", " ").replace(".", " ").split():
+                if token in ("werbung", "info", "handlungsbedarf"):
+                    return token, False
+        log.info(f"mail_monitor: classifier returned {raw!r}, defaulting to 'info'")
+        return "info", False
     except Exception as e:
         log.warning(f"mail_monitor classify failed: {type(e).__name__}: {e}")
-        return "unknown"
+        return "unknown", False
 
 
 _SUMMARY_PROMPT = (
@@ -221,7 +235,7 @@ async def _summarize_body(sender: str, subject: str, body: str) -> str:
 
 def _format_for_telegram(
     account_name: str, sender: str, subject: str,
-    category: str, summary: str = "",
+    category: str, summary: str = "", reply_needed: bool = False,
 ) -> str:
     icon = {
         "handlungsbedarf": "🔴",
@@ -234,17 +248,21 @@ def _format_for_telegram(
     )
     if summary:
         base += f"\n\n{summary}"
-    if category == "handlungsbedarf":
-        base += "\n\n→ Mail entwerfen oder Aufgabe anlegen?"
+    if reply_needed:
+        base += "\n\n↩️ Antwort erwartet — Entwurf vorbereiten?"
+    elif category == "handlungsbedarf":
+        base += "\n\n→ Aufgabe anlegen?"
     elif category == "info":
         base += "\n\n→ Absender merken?"
     return base
 
 
-def _format_for_voice(sender: str, subject: str) -> str:
-    """Natural-language sentence for Jarvis to speak via the Mac UI.
-    No emoji, no brackets, no category jargon."""
-    return f"Eine neue, dringende E-Mail von {sender} mit dem Betreff: {subject}."
+def _format_for_voice(sender: str, subject: str, reply_needed: bool = False) -> str:
+    """Natural-language sentence for Jarvis to speak via the Mac UI."""
+    base = f"Eine neue, dringende E-Mail von {sender} mit dem Betreff: {subject}."
+    if reply_needed:
+        base += " Eine Antwort scheint erwartet zu werden — soll ich einen Entwurf vorbereiten?"
+    return base
 
 
 # Callback the server registers to push spoken alerts to the Web-UI.
@@ -318,9 +336,9 @@ async def _process_new_uids(account: dict, client, uids: list[int]) -> None:
             # We only fetch BODY.PEEK[HEADER] (Apple-strict-parser-friendly),
             # so the classifier runs on sender + subject only. Empty body
             # preview by design.
-            category = await _classify(sender, subject, "")
+            category, reply_needed = await _classify(sender, subject, "")
             log.info(f"mail_monitor[{name}] uid={uid} sender={sender!r} "
-                     f"subject={subject!r} -> {category}")
+                     f"subject={subject!r} -> {category} reply_needed={reply_needed}")
 
             # Personen-Drift-Detection (Issue #55) — nur fuer
             # forward-eligible Mails, sonst flutet Werbung den Kontakt-
@@ -548,11 +566,12 @@ async def _process_new_uids(account: dict, client, uids: list[int]) -> None:
                     date=msg.get("Date", ""),
                     message_id=msg.get("Message-ID", ""),
                     references=msg.get("References", ""),
+                    reply_needed=reply_needed,
                 )
                 session_state.broadcast_active_mail(_mail_ref)
                 tg_quiet = S.is_quiet_hours()
                 mac_quiet = S.is_mac_quiet_hours()
-                spoken = _format_for_voice(sender, subject)
+                spoken = _format_for_voice(sender, subject, reply_needed=reply_needed)
                 # Fetch body + summarize so Catrin can decide Mail/Aufgabe/Absender
                 summary = ""
                 try:
@@ -561,7 +580,8 @@ async def _process_new_uids(account: dict, client, uids: list[int]) -> None:
                         summary = await _summarize_body(sender, subject, body_data["text"])
                 except Exception as e:
                     log.warning(f"mail_monitor[{name}] summary fetch failed: {type(e).__name__}: {e}")
-                caption = _format_for_telegram(name, sender, subject, category, summary=summary)
+                caption = _format_for_telegram(name, sender, subject, category,
+                                               summary=summary, reply_needed=reply_needed)
                 # Telegram: voice-note + caption, sofern nicht in
                 # Telegram-Quiet-Hours.
                 if tg_quiet:
