@@ -407,7 +407,7 @@ async def process_message(session_id: str, user_text: str, ws: WebSocket) -> Non
         "ACCEPT_CALENDAR_INVITE", "DECLINE_CALENDAR_INVITE",
         "ACCEPT_PERSON_ACTION", "DECLINE_PERSON_ACTION",
         "WEEKLY_OUTLOOK", "CONTACTS_INFO", "LOOKUP_CONTACT",
-        "PLAN_NOW", "WEATHER", "IMPORT_MAIL_HISTORY",
+        "PLAN_NOW", "IMPORT_MAIL_HISTORY",
     ):
         await append_message(session_id, "assistant", action_result)
         await speak(action_result, ws, display=action_result)
@@ -436,6 +436,17 @@ async def process_message(session_id: str, user_text: str, ws: WebSocket) -> Non
             f"Fortschritt, Loesung), haenge sie als 4. vollstaendigen Satz "
             f"an. Wenn nichts Positives dabei: bei 3 Saetzen aufhoeren. "
             f"WICHTIG: jeden Satz mit Punkt beenden, keinen Satz abbrechen. "
+            f"Sprich {addr} an. KEINE Begruessung. KEINE Tags."
+        )
+    elif action["type"] == "WEATHER":
+        summary_system = (
+            f"Du bist Jarvis, der britisch-hoefliche KI-Butler. "
+            f"Formuliere den folgenden Wetterbericht auf Deutsch in natuerlichen Saetzen — "
+            f"keine Aufzaehlungen, keine Tabellen. "
+            f"Nutze deutsche Wetterbegriffe: sonnig, bewoelkt, Schauer, Gewitter, Nieselregen, usw. "
+            f"Temperaturen als 'zwischen X und Y Grad'. Regenwahrscheinlichkeit nur erwaehnen "
+            f"wenn sie ueber 30 Prozent liegt. "
+            f"Umfang: 2-3 fliesende Saetze. Ton: trocken, knapp, Butler-Stil. "
             f"Sprich {addr} an. KEINE Begruessung. KEINE Tags."
         )
     elif action["type"] in ("SEARCH", "BROWSE"):

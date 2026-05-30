@@ -147,7 +147,12 @@ async def _tts_post(text: str) -> bytes:
     }, json={
         "text": text,
         "model_id": S.ELEVENLABS_MODEL,
-        "voice_settings": {"stability": 0.5, "similarity_boost": 0.85},
+        "voice_settings": {
+            "stability": 0.60,
+            "similarity_boost": 0.85,
+            "style": 0.40,
+            "use_speaker_boost": True,
+        },
     })
     log.info(f"TTS chunk status: {resp.status_code}, size: {len(resp.content)}")
     if resp.status_code != 200:
