@@ -178,12 +178,11 @@ def route(
             {"action": "move", "folder": travel_folder}, account, rules
         )
 
-    # 3) Newsletter heuristic — needs the parsed msg for List-Unsubscribe
+    # 3) Newsletter heuristic — List-Unsubscribe header alone is definitive;
+    #    LLM category is not required (newsletters often misclassified as "info")
     if msg is not None:
         newsletter_folder = heur.get("newsletter_to_werbung_folder")
-        if (newsletter_folder
-                and msg.get("List-Unsubscribe")
-                and category == "werbung"):
+        if newsletter_folder and msg.get("List-Unsubscribe"):
             return _apply_folder_override(
                 {"action": "move", "folder": newsletter_folder}, account, rules
             )

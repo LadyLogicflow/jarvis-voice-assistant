@@ -44,7 +44,16 @@
   "werbung_action": "move",
   "werbung_folder": "Werbung",
 
-  "_comment_heuristics": "Vordefinierte Pattern-Erkennung. Greifen unabhaengig vom Klassifikator wenn die Heuristik anschlaegt.",
+  "_comment_account_folder_map": "Pro-Account Ordner-Umbenennung. iCloud/Apple nutzt andere Namen als Standard-IMAP (z.B. 'Junk' statt 'INBOX.Spam', 'gelesen_automatisch' ohne INBOX-Prefix).",
+  "account_folder_map": {
+    "Apple": {
+      "INBOX.Spam": "Junk",
+      "INBOX.Elster": "INBOX.Elster",
+      "INBOX.gelesen_automatisch": "gelesen_automatisch"
+    }
+  },
+
+  "_comment_heuristics": "Vordefinierte Pattern-Erkennung. Greifen unabhaengig vom Klassifikator wenn die Heuristik anschlaegt. newsletter_to_werbung_folder greift auf alle Mails mit List-Unsubscribe-Header — unabhaengig von der LLM-Klassifikation.",
   "heuristics": {
     "bounce_to_junk": true,
     "package_to_dhl_folder": "DHL",
