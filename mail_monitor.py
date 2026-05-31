@@ -192,6 +192,10 @@ async def _classify(sender: str, subject: str, body_preview: str) -> tuple[str, 
             messages=[{"role": "user", "content": user_msg}],
         )
         raw = llm_text(resp).strip()
+        # Strip markdown code fences the LLM occasionally wraps around JSON
+        if raw.startswith("```"):
+            raw = re.sub(r"^```(?:json)?\s*", "", raw)
+            raw = re.sub(r"\s*```$", "", raw).strip()
         try:
             data = _json.loads(raw)
             cat = str(data.get("category", "info")).strip().lower()
