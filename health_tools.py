@@ -120,6 +120,13 @@ def parse_health_export(payload: dict) -> dict:
             stand_h = _latest_qty(metrics[key])
             break
 
+    # --- Steps ---
+    steps: Optional[float] = None
+    for key in ("step_count", "stepCount"):
+        if key in metrics:
+            steps = _sum_qty(metrics[key])
+            break
+
     # --- Heart ---
     resting_hr: Optional[float] = None
     for key in ("resting_heart_rate", "restingHeartRate"):
@@ -132,6 +139,13 @@ def parse_health_export(payload: dict) -> dict:
                 "heart_rate_variability", "heartRateVariability", "hrv"):
         if key in metrics:
             hrv = _latest_qty(metrics[key])
+            break
+
+    # --- SpO2 ---
+    spo2: Optional[float] = None
+    for key in ("blood_oxygen_saturation", "bloodOxygenSaturation", "oxygenSaturation"):
+        if key in metrics:
+            spo2 = _latest_qty(metrics[key])
             break
 
     # --- Most recent workout ---
@@ -161,8 +175,10 @@ def parse_health_export(payload: dict) -> dict:
         "move_kcal": round(move_kcal) if move_kcal is not None else None,
         "exercise_min": round(exercise_min) if exercise_min is not None else None,
         "stand_h": round(stand_h) if stand_h is not None else None,
+        "steps": round(steps) if steps is not None else None,
         "resting_hr": round(resting_hr) if resting_hr is not None else None,
         "hrv": round(hrv) if hrv is not None else None,
+        "spo2": round(spo2, 1) if spo2 is not None else None,
         "last_workout": last_workout,
     }
 
@@ -223,17 +239,26 @@ def format_for_brief(
     if ring_parts:
         parts.append("Aktivitaetsringe: " + ", ".join(ring_parts))
 
+    # Schritte
+    if info.get("steps") is not None:
+        step_line = f"Schritte: {info['steps']:,}".replace(",", ".")
+        d = _delta(info["steps"], (prev or {}).get("steps"))
+        if d and d != "gleich":
+            step_line += f" ({d} als gestern)"
+        parts.append(step_line)
+
     # Herzwerte
     hr_parts: list[str] = []
     if info.get("resting_hr") is not None:
         hr_parts.append(f"Ruhepuls {info['resting_hr']} bpm")
     if info.get("hrv") is not None:
         hrv_line = f"HRV {info['hrv']} ms"
-        # HRV: hoeher = besser
         d = _delta(info["hrv"], (prev or {}).get("hrv"))
         if d and d != "gleich":
             hrv_line += f" ({d} als gestern)"
         hr_parts.append(hrv_line)
+    if info.get("spo2") is not None:
+        hr_parts.append(f"SpO2 {info['spo2']} Prozent")
     if hr_parts:
         parts.append(", ".join(hr_parts))
 
