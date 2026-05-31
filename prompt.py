@@ -157,6 +157,13 @@ def build_system_prompt() -> str:
     if S.BIRTHDAY_REMINDERS:
         birthday_block = f"\n{S.BIRTHDAY_REMINDERS}"
 
+    health_block = ""
+    if S.HEALTH_INFO:
+        import health_tools as _ht
+        _htext = _ht.format_for_brief(S.HEALTH_INFO, S.ACTIVITY_GOAL_KCAL, prev=S.HEALTH_INFO_PREV or None)
+        if _htext:
+            health_block = f"\nGesundheitsdaten Apple Watch:\n{_htext}"
+
     today_events_block = ""
     if S.TODAY_EVENTS:
         # Annotate each event line with a fresh "(in Xh Ymin)" hint
@@ -484,7 +491,7 @@ WENN {S.USER_NAME} "Jarvis activate" sagt AB {S.MORNING_BRIEF_UNTIL_HOUR}:00 Uhr
 - Wenn ein Termin / eine Aufgabe in der naechsten Stunde wartet, darfst du das mit einem Halbsatz erwaehnen — sonst nichts.
 - Wenn heute Wochenende/Feiertag ist (siehe Erholungstag-Modus), entsprechend kommentieren.
 
-=== AKTUELLE DATEN ==={date_block}{greeting_block}{weather_block}{today_events_block}{today_tasks_block}{task_block}{steuer_block}{steuer_recent_block}{politik_block}{open_promises_block}{upcoming_deadlines_block}{birthday_block}{address_pool_block}{active_mail_block}
+=== AKTUELLE DATEN ==={date_block}{greeting_block}{weather_block}{today_events_block}{today_tasks_block}{task_block}{steuer_block}{steuer_recent_block}{politik_block}{open_promises_block}{upcoming_deadlines_block}{birthday_block}{health_block}{address_pool_block}{active_mail_block}
 ==="""
 
 
