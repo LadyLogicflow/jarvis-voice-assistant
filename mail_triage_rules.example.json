@@ -49,7 +49,7 @@
     "Apple": {
       "INBOX.Spam": "Junk",
       "INBOX.Elster": "INBOX.Elster",
-      "INBOX.gelesen_automatisch": "gelesen_automatisch"
+      "INBOX.Gelesen_automatisch": "Gelesen_automatisch"
     }
   },
 
