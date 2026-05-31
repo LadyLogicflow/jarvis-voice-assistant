@@ -128,7 +128,8 @@ def parse_health_export(payload: dict) -> dict:
             break
 
     hrv: Optional[float] = None
-    for key in ("heart_rate_variability_sdnn", "heartRateVariabilitySDNN", "hrv"):
+    for key in ("heart_rate_variability_sdnn", "heartRateVariabilitySDNN",
+                "heart_rate_variability", "heartRateVariability", "hrv"):
         if key in metrics:
             hrv = _latest_qty(metrics[key])
             break
