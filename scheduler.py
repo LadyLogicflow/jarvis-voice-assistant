@@ -29,6 +29,7 @@ from tenacity import (
 import browser_tools  # for fetch_news (politik feed)
 import google_calendar_tools
 import health_tools
+from holidays import check_free_day
 import offer_monitor
 from prompt import llm_text, pick_address
 import settings as S
@@ -632,6 +633,19 @@ _MORNING_BRIEF_PROMPT = (
     "Unter 7 Saetze gesamt, fliessende Sprache. Keine ACTION-Tags."
 )
 
+_MORNING_BRIEF_PROMPT_WEEKEND = (
+    "Du bist Jarvis. Guten-Morgen-Briefing fuer {addr} — heute ist {day_label}. "
+    "Kein Arbeitsmodus. Kein Steuerrecht. Keine Aufgaben. "
+    "Liefere ein kurzes, entspanntes Wochenend-Briefing: "
+    "Datum + Wochentag erwaehnen, Wetter mit einem konkreten Freizeitvorschlag "
+    "('18 Grad, kein Regen — guter Tag fuer einen laengeren Spaziergang.'), "
+    "Gesundheitsdaten falls vorhanden in einem lockeren Satz kommentieren "
+    "(Vortagsvergleich nutzen wenn verfuegbar, Ton etwas wohlwollender als unter der Woche). "
+    "Geburtstage diese Woche falls vorhanden erwaehnen. "
+    "Ton: entspannt, leicht humorvoll, butler-typisch trocken — aber kein "
+    "Arbeitsstress. Unter 5 Saetze. Keine ACTION-Tags."
+)
+
 
 async def morning_brief_scheduler() -> None:
     """Long-running task: fetch the morning brief once per day at or
@@ -667,32 +681,35 @@ async def morning_brief_scheduler() -> None:
             else:
                 try:
                     addr = pick_address()
-                    system_prompt = _MORNING_BRIEF_PROMPT.format(addr=addr)
+                    is_free, day_label = check_free_day(datetime.date.today())
+                    if is_free:
+                        system_prompt = _MORNING_BRIEF_PROMPT_WEEKEND.format(
+                            addr=addr, day_label=day_label
+                        )
+                    else:
+                        system_prompt = _MORNING_BRIEF_PROMPT.format(addr=addr)
                     today_block = ""
-                    if S.TODAY_TASKS:
-                        today_block += f"\nHeutige Aufgaben:\n{S.TODAY_TASKS}"
-                    if S.TODAY_EVENTS:
-                        today_block += f"\nHeutige Termine:\n{S.TODAY_EVENTS}"
-                    # Offene Vorhaben (Issue #117) — aus Cache lesen statt
-                    # erneuten DB-Call (refresh_morning_brief_data hat bereits
-                    # refresh_open_promises() ausgefuehrt und S.OPEN_PROMISES befuellt)
-                    if S.OPEN_PROMISES:
-                        today_block += f"\n{S.OPEN_PROMISES}"
-                    # Geburtstage diese Woche (Issue #120)
+                    if not is_free:
+                        # Arbeitsblöcke nur unter der Woche
+                        if S.TODAY_TASKS:
+                            today_block += f"\nHeutige Aufgaben:\n{S.TODAY_TASKS}"
+                        if S.TODAY_EVENTS:
+                            today_block += f"\nHeutige Termine:\n{S.TODAY_EVENTS}"
+                        if S.OPEN_PROMISES:
+                            today_block += f"\n{S.OPEN_PROMISES}"
+                        if now.weekday() == 0 and S.WEEKLY_OFFERS:
+                            today_block += f"\n{S.WEEKLY_OFFERS}"
+                        if S.UPCOMING_DEADLINES:
+                            today_block += f"\n{S.UPCOMING_DEADLINES}"
+                        if S.STEUER_RECENT:
+                            today_block += f"\nSteuerrecht aktuell (3 Tage): {S.STEUER_RECENT[:400]}"
+                        elif S.STEUER_BRIEF:
+                            today_block += f"\nSteuerrecht: {S.STEUER_BRIEF}"
+                        if S.POLITIK_BRIEF:
+                            today_block += f"\nNachrichten: {S.POLITIK_BRIEF}"
+                    # Geburtstage + Gesundheit immer
                     if S.BIRTHDAY_REMINDERS:
                         today_block += f"\n{S.BIRTHDAY_REMINDERS}"
-                    # Supermarkt-Angebote (Issue #122) — nur montags, wenn vorhanden
-                    if now.weekday() == 0 and S.WEEKLY_OFFERS:
-                        today_block += f"\n{S.WEEKLY_OFFERS}"
-                    # Anstehende Fristen (Issue #119)
-                    if S.UPCOMING_DEADLINES:
-                        today_block += f"\n{S.UPCOMING_DEADLINES}"
-                    if S.STEUER_RECENT:
-                        today_block += f"\nSteuerrecht aktuell (3 Tage): {S.STEUER_RECENT[:400]}"
-                    elif S.STEUER_BRIEF:
-                        today_block += f"\nSteuerrecht: {S.STEUER_BRIEF}"
-                    if S.POLITIK_BRIEF:
-                        today_block += f"\nNachrichten: {S.POLITIK_BRIEF}"
                     if S.WEATHER_INFO:
                         w = S.WEATHER_INFO
                         rain = ""
