@@ -233,6 +233,10 @@ async def health_webhook(request: Request) -> dict:
         payload = await request.json()
     except Exception:
         raise HTTPException(status_code=400, detail="invalid JSON")
+    # Log raw metric names so we can debug field-name mismatches.
+    raw = payload.get("data", payload)
+    metric_names = [m.get("name", "?") for m in raw.get("metrics", [])]
+    log.info(f"/health: empfangene Metriken: {metric_names}")
     parsed = health_tools.parse_health_export(payload)
     # Rotate: gestrige Werte sichern bevor wir ueberschreiben.
     if S.HEALTH_INFO and S.HEALTH_INFO.get("date") != parsed.get("date"):
