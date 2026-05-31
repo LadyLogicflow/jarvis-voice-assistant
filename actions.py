@@ -590,6 +590,24 @@ async def execute_action(action: dict) -> str:
         return ("Erledigt — Mail ist als gelesen markiert."
                 if ok else "Markierung fehlgeschlagen, ist aber im Auge behalten.")
 
+    elif t == "MARK_MAIL_WERBUNG":
+        # Werbung-Shortcut: als gelesen markieren + in Werbung-Ordner verschieben.
+        # Liest werbung_folder + account_folder_map aus mail_triage_rules.json.
+        active = session_state.get("default").active_mail
+        if not active:
+            return "Keine aktive Mail zum Verschieben."
+        import mail_triage as _triage
+        _rules = _triage._load_rules()
+        _folder = _rules.get("werbung_folder", "INBOX.Gelesen_automatisch")
+        _overrides = _rules.get("account_folder_map", {}).get(active.account, {})
+        _folder = _overrides.get(_folder, _folder)
+        await mail_actions.mark_mail_read(active.account, active.uid)
+        moved = await mail_actions.move_mail(active.account, active.uid, _folder)
+        session_state.clear_active_mail("default")
+        if moved:
+            return f"Erledigt — als Werbung markiert und nach '{_folder}' verschoben."
+        return "Als gelesen markiert, Verschieben hat leider nicht geklappt."
+
     elif t == "DRAFT_REPLY":
         # Initialer Antwort-Entwurf zur aktiven Mail. Payload OPTIONAL:
         # wenn leer, schlaegt Jarvis proaktiv basierend auf

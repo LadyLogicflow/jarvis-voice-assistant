@@ -389,6 +389,7 @@ AKTIONEN - Schreibe die passende Aktion ans ENDE deiner Antwort. Der Text VOR de
 [ACTION:READ_MAIL] - Liest die aktuelle Mail (die zuletzt eingegangene und gemeldete) komplett vor. Nutze wenn {addr} sagt "vorlesen", "lies vor", "was steht drin" — also nachdem Jarvis eine neue Mail gemeldet hat und sie den Inhalt hoeren moechte. KEIN Text davor, NUR die Aktion ausgeben.
 [ACTION:SUMMARIZE_MAIL] - Fasst die aktuelle Mail in 2-3 Saetzen zusammen statt wortwoertlich vorzulesen. Nutze wenn {addr} sagt "zusammenfassung", "fass zusammen", "kurz", "kurze Zusammenfassung", "worum geht's". KEIN Text davor, NUR die Aktion.
 [ACTION:MARK_MAIL_READ] - Markiert die aktuelle Mail im IMAP als gelesen und beendet damit den Mail-Workflow. Nutze wenn {addr} sagt "ignorieren", "egal", "lass" — also wenn weder Antwort noch Aufgabe aus der Mail entstehen soll. Schreibe einen kurzen Halbsatz davor wie "Markiere als erledigt." dann die Aktion.
+[ACTION:MARK_MAIL_WERBUNG] - Markiert die aktuelle Mail als gelesen UND verschiebt sie in den Werbung-Ordner (Gelesen_automatisch). Nutze wenn {addr} sagt "Werbung", "ist Werbung", "das ist Werbung", "Werbung, weg damit", "schieb das in Werbung". KEIN Text davor, NUR die Aktion.
 [ACTION:DELETE_MAIL] - Verschiebt die aktuelle Mail in den Papierkorb. Nutze wenn {addr} sagt "löschen", "weg damit", "in den Papierkorb". KEIN Text davor, NUR die Aktion.
 [ACTION:REMEMBER_SENDER] - Speichert den Absender der aktuellen Mail als stille Regel: zukünftige Mails von dieser Adresse werden automatisch als gelesen markiert. Nutze wenn {addr} sagt "ja" oder "merken" als Antwort auf die "Absender merken?"-Frage bei einer Info-Mail. KEIN Text davor, NUR die Aktion.
 [ACTION:MAIL_TO_TASK] - Erstellt aus der aktuellen Mail eine Todoist-Aufgabe im Eingang (Inbox), markiert die Mail anschliessend als gelesen. Nutze wenn {addr} sagt "Aufgabe daraus", "Aufgabe", "ja, Aufgabe" oder zustimmt nachdem Du eine Aufgabe vorgeschlagen hast. KEIN Text davor, NUR die Aktion.
@@ -442,6 +443,7 @@ DIREKT-AKTIONEN (jederzeit moeglich, sobald eine Mail aktiv ist):
 - "Antworten" / "Ja, antworten" / "Beantworten" -> [ACTION:DRAFT_REPLY] (ohne Anweisung — Jarvis schlaegt proaktiv vor)
 - "Aufgabe" / "Aufgabe daraus" / "Mach eine Aufgabe draus" -> [ACTION:MAIL_TO_TASK]
 - "Ignorieren" / "Egal" / "Lass" / "Nichts tun" -> [ACTION:MARK_MAIL_READ]
+- "Werbung" / "Ist Werbung" / "Das ist Werbung" / "Schieb in Werbung" -> [ACTION:MARK_MAIL_WERBUNG]
 - "Antworte mit: ..." (mit konkretem Inhalt) -> [ACTION:DRAFT_REPLY] inhalt
 
 WICHTIG: NICHT nachfragen "Was soll ich antworten?" — sofort den Vorschlag liefern. Falls Jarvis ohne Eckpunkte keinen Vorschlag bauen kann, gibt _generate_draft_body intern eine NEED_INPUT-Antwort zurueck und {addr} wird gefragt was sie sagen will.
