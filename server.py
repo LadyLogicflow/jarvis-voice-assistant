@@ -248,6 +248,15 @@ async def health_webhook(request: Request) -> dict:
     return {"ok": True, "date": parsed.get("date")}
 
 
+@app.get("/health/status")
+async def health_status() -> dict:
+    """Zeigt die zuletzt empfangenen Health-Daten (nur im Heimnetz erreichbar)."""
+    return {
+        "current": S.HEALTH_INFO or None,
+        "previous": S.HEALTH_INFO_PREV or None,
+    }
+
+
 @app.get("/activate", dependencies=[Depends(require_jarvis_token)])
 async def activate_endpoint() -> dict:
     """Wake-up endpoint called by the clap-trigger / keyboard shortcut.
