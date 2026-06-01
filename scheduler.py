@@ -724,14 +724,15 @@ async def morning_brief_scheduler() -> None:
                             f"\nWetter heute: {day_desc}, "
                             f"max. {max_t} Grad (min. {min_t} Grad){rain}"
                         )
-                    if S.HEALTH_INFO:
+                    # Morgens: Vortages-Daten bevorzugen (heute 7am ~ 0 kcal)
+                    _health_src = S.HEALTH_INFO_PREV if S.HEALTH_INFO_PREV else S.HEALTH_INFO
+                    if _health_src:
                         health_block = health_tools.format_for_brief(
-                            S.HEALTH_INFO,
-                            S.ACTIVITY_GOAL_KCAL,
-                            prev=S.HEALTH_INFO_PREV or None,
+                            _health_src, S.ACTIVITY_GOAL_KCAL
                         )
                         if health_block:
-                            today_block += f"\nGesundheitsdaten:\n{health_block}"
+                            _label = "Gesundheitsdaten gestern" if S.HEALTH_INFO_PREV else "Gesundheitsdaten"
+                            today_block += f"\n{_label}:\n{health_block}"
                     user_msg = (
                         f"Datum: {now.strftime('%A, %d.%m.%Y')}, "
                         f"Uhrzeit: {now.strftime('%H:%M')}"
@@ -823,12 +824,12 @@ async def _generate_proactive_message(slot: str) -> str:
         today_block += f"\n{S.OPEN_PROMISES}"
     if S.UPCOMING_DEADLINES:
         today_block += f"\n{S.UPCOMING_DEADLINES}"
-    if S.HEALTH_INFO:
-        health_block = health_tools.format_for_brief(
-            S.HEALTH_INFO, S.ACTIVITY_GOAL_KCAL, prev=S.HEALTH_INFO_PREV or None
-        )
+    _health_src = S.HEALTH_INFO_PREV if S.HEALTH_INFO_PREV else S.HEALTH_INFO
+    if _health_src:
+        health_block = health_tools.format_for_brief(_health_src, S.ACTIVITY_GOAL_KCAL)
         if health_block:
-            today_block += f"\nGesundheitsdaten:\n{health_block}"
+            _label = "Gesundheitsdaten gestern" if S.HEALTH_INFO_PREV else "Gesundheitsdaten"
+            today_block += f"\n{_label}:\n{health_block}"
     user_msg = f"Aktuelle Tagesdaten:{today_block or ' (keine offenen Punkte)'}"
     resp = await S.ai.messages.create(
         model="claude-haiku-4-5-20251001",
