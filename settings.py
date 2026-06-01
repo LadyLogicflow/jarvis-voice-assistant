@@ -99,6 +99,7 @@ GREETING_COOLDOWN = float(config.get("greeting_cooldown", 10.0))
 ACTIVATE_COOLDOWN = float(config.get("activate_cooldown", 90.0))
 REFRESH_COOLDOWN = float(config.get("refresh_cooldown", 30.0))
 CALENDAR_DAYS = int(config.get("calendar_days", 7))
+MICROSOFT_CALENDAR_ICS_URL: str = config.get("microsoft_calendar_ics_url", "")
 NEWS_URL = config.get(
     "news_url",
     "https://www.tagesschau.de/infoservices/alle-meldungen-100~rss2.xml",

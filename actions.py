@@ -377,7 +377,16 @@ async def execute_action(action: dict) -> str:
         return result
 
     elif t == "CALENDAR":
-        return await google_calendar_tools.get_events(days=S.CALENDAR_DAYS)
+        import microsoft_calendar_tools
+        results = []
+        google_result = await google_calendar_tools.get_events(days=S.CALENDAR_DAYS)
+        if google_result:
+            results.append(google_result)
+        if S.MICROSOFT_CALENDAR_ICS_URL:
+            ms_result = await microsoft_calendar_tools.get_events(days=S.CALENDAR_DAYS)
+            if ms_result:
+                results.append(ms_result)
+        return "\n\n".join(results) if results else "Keine Termine in den naechsten Tagen."
 
     elif t == "ADDCAL":
         parts = p.split("|", 1)
