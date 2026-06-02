@@ -106,14 +106,9 @@ NEWS_URL = config.get(
 )
 NEWS_SOURCE_NAME = config.get("news_source_name", "Tagesschau")
 
-# Morning brief: full briefing (weather, today's events/tasks, Steuer/Politik)
+# Morning brief: full briefing (weather, today's events/tasks, Steuer)
 # is delivered on Activate before this hour. After it, a short greeting only.
 MORNING_BRIEF_UNTIL_HOUR = int(config.get("morning_brief_until_hour", 11))
-POLITIK_NEWS_URL = config.get(
-    "politik_news_url",
-    "https://www.tagesschau.de/inland/index~rss2.xml",
-)
-POLITIK_NEWS_NAME = config.get("politik_news_name", "Tagesschau Inland")
 
 # Address pool — Jarvis randomly varies how he calls Catrin so the
 # greeting doesn't sound canned.
@@ -181,6 +176,8 @@ def _normalize_account(raw: dict) -> dict:
         "port": int(raw.get("port", 993)),
         "ssl": bool(raw.get("ssl", True)),
         "folder": raw.get("folder", "INBOX"),
+        "sent_folder": raw.get("sent_folder", "Sent"),
+        "drafts_folder": raw.get("drafts_folder", config.get("drafts_folder", "Drafts")),
         "env_key": env_key,
     }
 
@@ -272,12 +269,11 @@ STEUER_RECENT_DATE: str = ""
 # Morning-brief state. Refreshed on activate before MORNING_BRIEF_UNTIL_HOUR.
 TODAY_TASKS: str = ""        # Todoist tasks due today + overdue
 TODAY_EVENTS: str = ""        # Google Calendar events for today
-POLITIK_BRIEF: str = ""       # Tagesschau Inland summary
-POLITIK_BRIEF_DATE: str = ""
 OPEN_PROMISES: str = ""       # Offene Vorhaben (Issue #117), cache
 
 UPCOMING_DEADLINES: str = ""  # Anstehende Fristen (Issue #119), cache
 BIRTHDAY_REMINDERS: str = ""  # Geburtstage dieser Woche (Issue #120), cache
+BIRTHDAY_ROUND: str = ""      # Runde Geburtstage diese Woche (Issue #144), freitags
 
 # Abschluss-Ritual (Issue #121): Anzahl heute per DONETASK abgeschlossener Tasks.
 # Wird in actions.py inkrementiert, in settings damit alle Module drauf zugreifen.
@@ -318,3 +314,7 @@ ACTIVITY_GOAL_KCAL: int = int(config.get("activity_goal_kcal", 500))
 # Struktur: {"to_addr": str, "to_name": str}
 # Geleert nach erfolgreichem MAIL_FORWARD_SEND oder manuell.
 PENDING_MAIL_FORWARD: dict = {}
+
+# Ausstehende Antworten (Follow-up Tracker). Gefuellt durch
+# followup_tracker.format_followups_block() beim Morgen-Briefing.
+PENDING_FOLLOWUPS: str = ""

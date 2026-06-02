@@ -26,7 +26,6 @@ from tenacity import (
     wait_exponential,
 )
 
-import browser_tools  # for fetch_news (politik feed)
 import google_calendar_tools
 import health_tools
 from holidays import check_free_day
@@ -222,68 +221,16 @@ def trim_to_complete_sentences(text: str) -> str:
     return text[: last_dot + 1].strip()
 
 
-async def refresh_politik_brief() -> None:
-    """Fetch Inland + Wirtschaft news (Tagesschau) and have Claude
-    pick max 3 — eine pro Thema, ein aussagefaehiger Satz pro Eintrag.
-    Optional eine 4. positive Goodnews wenn die Headlines was Konkret-
-    Erfreuliches hergeben.
+def _is_round_birthday(age: int) -> bool:
+    """Returns True when `age` qualifies as a 'round' birthday.
 
-    Cached per day like the Steuer-Brief."""
-    today = datetime.date.today().isoformat()
-    if S.POLITIK_BRIEF and S.POLITIK_BRIEF_DATE == today:
-        return
-    try:
-        # Inland + Wirtschaft parallel laden
-        inland_task = browser_tools.fetch_news(
-            S.POLITIK_NEWS_URL, S.POLITIK_NEWS_NAME
-        )
-        wirtschaft_task = browser_tools.fetch_news(
-            "https://www.tagesschau.de/wirtschaft/index~rss2.xml",
-            "Tagesschau Wirtschaft",
-        )
-        inland_raw, wirtschaft_raw = await asyncio.gather(
-            inland_task, wirtschaft_task, return_exceptions=True
-        )
-        if isinstance(inland_raw, Exception):
-            inland_raw = ""
-        if isinstance(wirtschaft_raw, Exception):
-            wirtschaft_raw = ""
-        combined = (
-            f"=== POLITIK / INLAND ===\n{inland_raw[:2500]}\n\n"
-            f"=== WIRTSCHAFT ===\n{wirtschaft_raw[:2500]}"
-        )
-        resp = await S.ai.messages.create(
-            model="claude-haiku-4-5-20251001",
-            max_tokens=600,
-            system=(
-                "Du bist Jarvis. Aus den folgenden Schlagzeilen aus Politik und "
-                "Wirtschaft waehle die DREI WICHTIGSTEN aus — Mix aus beiden "
-                "Bereichen, abhaengig davon was der Tag hergibt.\n\n"
-                "Format STRENG:\n"
-                "- Genau 3 Nachrichten, je 1 vollstaendiger aussagefaehiger "
-                "Satz (Subjekt + Praedikat + Objekt, mit Punkt am Ende).\n"
-                "- KEINE Aufzaehlung mit Bulletpoints, KEINE Nummerierung. "
-                "Schreibe die 3 Saetze einfach hintereinander.\n"
-                "- Wenn EINE der vorhandenen Headlines klar positiv / "
-                "konstruktiv / loesungsorientiert ist (z.B. erfolgreicher "
-                "Abschluss, Fortschritt, Hilfsaktion, Erfolg im Sport, "
-                "wissenschaftlicher Durchbruch) — bring sie als VIERTEN Satz, "
-                "ebenfalls in einem vollstaendigen Satz mit Punkt. "
-                "Wenn nichts Positives drin ist: KEINE 4. Meldung erfinden, "
-                "sondern bei 3 Saetzen aufhoeren.\n\n"
-                "WICHTIG: Beende JEDEN Satz mit einem Punkt. Brich KEINEN "
-                "Satz ab. Lieber kuerzer formulieren als unfertige Saetze. "
-                "KEINE Begruessung. KEINE direkte Anrede. KEINE Tags."
-            ),
-            messages=[{"role": "user", "content": combined}],
-        )
-        out = trim_to_complete_sentences(llm_text(resp).strip())
-        S.POLITIK_BRIEF = out
-        S.POLITIK_BRIEF_DATE = today
-        log.info(f"Politik-Brief: {S.POLITIK_BRIEF[:120]}")
-    except Exception as e:
-        log.warning(f"refresh_politik_brief failed: {type(e).__name__}: {e}")
-        S.POLITIK_BRIEF = ""
+    Rule (Issue #144):
+    - 70 and above: every 5 years (70, 75, 80, ...)
+    - Below 70: every 10 years (10, 20, 30, 40, 50, 60)
+    """
+    if age >= 70:
+        return age % 5 == 0
+    return age % 10 == 0
 
 
 async def refresh_birthday_reminders() -> None:
@@ -291,13 +238,27 @@ async def refresh_birthday_reminders() -> None:
 
     Ergebnis wird in S.BIRTHDAY_REMINDERS gespeichert (Issue #120).
     Format: "Geburtstage diese Woche: • Max Mueller (morgen, 15.06.)"
+
+    Freitags (Issue #144): zus\xe4tzlich runde Geburtstage berechnen und
+    in S.BIRTHDAY_ROUND speichern.
+    Format: "Runde Geburtstage diese Woche: • Max M\xfcller (50, Freitag 06.06.)"
+
     Bei nicht verfuegbarer API: stille Degradation (leerer String).
     """
     try:
         import google_contacts_tools
         contacts = await google_contacts_tools.read_all_contacts()
         today = datetime.date.today()
+        is_friday = today.weekday() == 4  # 0=Mon, 4=Fri
+
         hits: list[str] = []
+        round_hits: list[str] = []
+
+        _WEEKDAYS_DE = [
+            "Montag", "Dienstag", "Mittwoch", "Donnerstag",
+            "Freitag", "Samstag", "Sonntag",
+        ]
+
         for c in contacts:
             if not c.birthday:
                 continue
@@ -324,13 +285,33 @@ async def refresh_birthday_reminders() -> None:
                 else:
                     when = f"in {delta} Tagen"
                 hits.append(f"• {c.name} ({when}, {date_str})")
+
+                # Runde Geburtstage (freitags): nur wenn Geburtsjahr bekannt
+                if is_friday:
+                    birth_year = c.birthday.get("year")
+                    if birth_year:
+                        age = next_bd.year - birth_year
+                        if age > 0 and _is_round_birthday(age):
+                            weekday_label = _WEEKDAYS_DE[next_bd.weekday()]
+                            round_hits.append(
+                                f"• {c.name} ({age}, {weekday_label} {date_str})"
+                            )
+
         S.BIRTHDAY_REMINDERS = (
             "Geburtstage diese Woche: " + ", ".join(hits) if hits else ""
         )
-        log.info(f"refresh_birthday_reminders: {len(hits)} Treffer")
+        if is_friday and round_hits:
+            S.BIRTHDAY_ROUND = "Runde Geburtstage diese Woche: " + ", ".join(round_hits)
+        else:
+            S.BIRTHDAY_ROUND = ""
+        log.info(
+            f"refresh_birthday_reminders: {len(hits)} Treffer, "
+            f"{len(round_hits)} runde (freitags={is_friday})"
+        )
     except Exception as e:
         log.warning(f"refresh_birthday_reminders failed: {type(e).__name__}: {e}")
         S.BIRTHDAY_REMINDERS = ""
+        S.BIRTHDAY_ROUND = ""
 
 
 async def refresh_open_promises() -> None:
@@ -344,6 +325,19 @@ async def refresh_open_promises() -> None:
     except Exception as e:
         log.warning(f"refresh_open_promises failed: {type(e).__name__}: {e}")
         S.OPEN_PROMISES = ""
+
+
+async def refresh_pending_followups() -> None:
+    """Lade ausstehende Mail-Follow-ups und speichere als S.PENDING_FOLLOWUPS."""
+    try:
+        import followup_tracker
+        followup_tracker.prune_old(max_age_days=14)
+        S.PENDING_FOLLOWUPS = followup_tracker.format_followups_block(max_age_days=7)
+        if S.PENDING_FOLLOWUPS:
+            log.info(f"refresh_pending_followups: {len(S.PENDING_FOLLOWUPS)} Zeichen")
+    except Exception as e:
+        log.warning(f"refresh_pending_followups failed: {type(e).__name__}: {e}")
+        S.PENDING_FOLLOWUPS = ""
 
 
 # Issue #119 -- Fristen-Bewusstsein ----------------------------------------
@@ -445,7 +439,7 @@ async def refresh_upcoming_deadlines() -> None:
 
 async def refresh_morning_brief_data() -> None:
     """Refresh all the extra data needed for the full morning briefing
-    (today's tasks, today's calendar, politik news, birthday reminders).
+    (today's tasks, today's calendar, birthday reminders).
     Called from the activate path before MORNING_BRIEF_UNTIL_HOUR.
 
     refresh_upcoming_deadlines() runs after the first gather because it
@@ -453,9 +447,9 @@ async def refresh_morning_brief_data() -> None:
     await asyncio.gather(
         refresh_today_tasks(),
         refresh_today_events(),
-        refresh_politik_brief(),
         refresh_open_promises(),
         refresh_birthday_reminders(),
+        refresh_pending_followups(),
     )
     # Second pass: deadline check needs tasks + events already in S.*
 
@@ -634,39 +628,35 @@ async def refresh_offers() -> None:
 
 _MORNING_BRIEF_PROMPT = (
     "Du bist Jarvis. Guten-Morgen-Briefing fuer {addr}. "
-    "Liefere ein vollstaendiges Tages-Briefing mit allen verfuegbaren Bloecken: "
-    "Wochentag + exaktes Datum, Wetter (nur Maximaltemperatur + Regen ja/nein), "
-    "heutige Termine, heutige Aufgaben, Steuerrecht-Schlagzeile (falls vorhanden), "
-    "Politik (falls vorhanden). "
-    "Falls Gesundheitsdaten vorhanden: Schlaf und Aktivitaetsringe in EINEM trockenen "
-    "Jarvis-Satz kommentieren — mit Vortagsvergleich wenn verfuegbar. "
-    "Bei Verbesserung: knappe, echte Anerkennung ohne Jubel "
-    "('Schlaf besser als gestern — bemerkenswert.'). "
-    "Bei Verschlechterung: trocken anspornen, kein Nagging "
-    "('Bewegungsring unter gestern. Eine Runde um den Block wuerde ich als "
-    "medizinisch indiziert bezeichnen.'). "
-    "Bei schlechten Ringen ohne Vortagsdaten: einmalig sachlich hinweisen. "
-    "Unter 7 Saetze gesamt, fliessende Sprache. Keine ACTION-Tags."
+    "STRENGE LAENGENVORGABE: maximal 3 Saetze gesamt. "
+    "Inhalt (nach Prioritaet, alles in diese 3 Saetze packen): "
+    "Wochentag + exaktes Datum + Wetter (Maximaltemperatur + Regen ja/nein); "
+    "wichtigster Termin / wichtigste Aufgabe heute falls vorhanden; "
+    "Geburtstag-Hinweis falls vorhanden (runde Geburtstage bevorzugt). "
+    "Steuerrecht-Schlagzeile nur wenn Platz bleibt. "
+    "Keine Nachrichten / Politik. "
+    "Falls Gesundheitsdaten vorhanden: in EINEM der 3 Saetze trockenen "
+    "Jarvis-Kommentar einbauen (Vortagsvergleich nutzen wenn verfuegbar). "
+    "Fliessende Sprache, butler-typisch trocken. Keine ACTION-Tags."
 )
 
 _MORNING_BRIEF_PROMPT_WEEKEND = (
     "Du bist Jarvis. Guten-Morgen-Briefing fuer {addr} — heute ist {day_label}. "
-    "Kein Arbeitsmodus. Kein Steuerrecht. Keine Aufgaben. "
-    "Liefere ein kurzes, entspanntes Wochenend-Briefing: "
-    "Datum + Wochentag erwaehnen, Wetter mit einem konkreten Freizeitvorschlag "
-    "('18 Grad, kein Regen — guter Tag fuer einen laengeren Spaziergang.'), "
-    "Gesundheitsdaten falls vorhanden in einem lockeren Satz kommentieren "
-    "(Vortagsvergleich nutzen wenn verfuegbar, Ton etwas wohlwollender als unter der Woche). "
-    "Geburtstage diese Woche falls vorhanden erwaehnen. "
-    "Ton: entspannt, leicht humorvoll, butler-typisch trocken — aber kein "
-    "Arbeitsstress. Unter 5 Saetze. Keine ACTION-Tags."
+    "Kein Arbeitsmodus. Kein Steuerrecht. Keine Aufgaben. Keine Nachrichten. "
+    "STRENGE LAENGENVORGABE: maximal 3 Saetze. "
+    "Inhalt: Datum + Wochentag erwaehnen, Wetter mit einem konkreten "
+    "Freizeitvorschlag ('18 Grad, kein Regen — guter Tag fuer einen laengeren "
+    "Spaziergang.'), Geburtstage falls vorhanden kurz erwaehnen. "
+    "Gesundheitsdaten falls vorhanden in einen Satz einbauen "
+    "(Vortagsvergleich nutzen wenn verfuegbar, Ton wohlwollend). "
+    "Ton: entspannt, leicht humorvoll, butler-typisch trocken. Keine ACTION-Tags."
 )
 
 
 async def morning_brief_scheduler() -> None:
     """Long-running task: fetch the morning brief once per day at or
     after `S.MORNING_HOUR`. Refreshes BOTH the Steuer-Brief and the
-    today's-tasks/events/politik caches, then pushes the brief via the
+    today's-tasks/events caches, then pushes the brief via the
     registered proactive handler (Telegram + UI if open).
 
     Uses '>=' on the hour (not '=='): if the server was asleep at exactly
@@ -713,6 +703,8 @@ async def morning_brief_scheduler() -> None:
                             today_block += f"\nHeutige Termine:\n{S.TODAY_EVENTS}"
                         if S.OPEN_PROMISES:
                             today_block += f"\n{S.OPEN_PROMISES}"
+                        if S.PENDING_FOLLOWUPS:
+                            today_block += f"\n{S.PENDING_FOLLOWUPS}"
                         if now.weekday() == 0 and S.WEEKLY_OFFERS:
                             today_block += f"\n{S.WEEKLY_OFFERS}"
                         if S.UPCOMING_DEADLINES:
@@ -721,11 +713,11 @@ async def morning_brief_scheduler() -> None:
                             today_block += f"\nSteuerrecht aktuell (3 Tage): {S.STEUER_RECENT[:400]}"
                         elif S.STEUER_BRIEF:
                             today_block += f"\nSteuerrecht: {S.STEUER_BRIEF}"
-                        if S.POLITIK_BRIEF:
-                            today_block += f"\nNachrichten: {S.POLITIK_BRIEF}"
                     # Geburtstage + Gesundheit immer
                     if S.BIRTHDAY_REMINDERS:
                         today_block += f"\n{S.BIRTHDAY_REMINDERS}"
+                    if S.BIRTHDAY_ROUND:
+                        today_block += f"\n{S.BIRTHDAY_ROUND}"
                     if S.WEATHER_INFO:
                         w = S.WEATHER_INFO
                         rain = ""
@@ -838,6 +830,8 @@ async def _generate_proactive_message(slot: str) -> str:
         today_block += f"\nHeutige Termine:\n{S.TODAY_EVENTS}"
     if S.OPEN_PROMISES:
         today_block += f"\n{S.OPEN_PROMISES}"
+    if S.PENDING_FOLLOWUPS:
+        today_block += f"\n{S.PENDING_FOLLOWUPS}"
     if S.UPCOMING_DEADLINES:
         today_block += f"\n{S.UPCOMING_DEADLINES}"
     _health_src = S.HEALTH_INFO_PREV if S.HEALTH_INFO_PREV else S.HEALTH_INFO
@@ -1248,3 +1242,292 @@ async def bring_monitor_scheduler() -> None:
             log.warning(f"bring_monitor_scheduler: {type(e).__name__}: {e}")
 
         await asyncio.sleep(_BRING_MONITOR_INTERVAL)
+
+
+# ---------------------------------------------------------------------------
+# Geburtstags-Entwurf-Scheduler (Issue #144): freitags 08:00 runde
+# Geburtstage als IMAP-Entwurf anlegen und per Telegram melden.
+# ---------------------------------------------------------------------------
+
+_BIRTHDAY_DRAFT_CONGRATULATION_PROMPT = """\
+Du bist Jarvis und schreibst im Namen von Catrin Essberger eine \
+Geburtstagsglueckwunsch-Mail.
+Empfaenger: {name}, wird {age} Jahre alt.
+Beziehung: {funktion} (falls leer: foermlich-professionell).
+Kurz, persoenlich, 2-3 Saetze. Kein generisches 'Herzlichen Glueckwunsch \
+zum Geburtstag' als Ersteinstieg.
+Ton: {tone}.
+Betreff: bitte auch vorschlagen.
+Antwortformat: JSON {{"subject": "...", "body": "..."}}"""
+
+
+async def birthday_draft_scheduler() -> None:
+    """Long-running task: jeden Freitag um 08:00 runde Geburtstage als
+    IMAP-Entwurf ablegen und Catrin per Telegram benachrichtigen.
+
+    Voraussetzungen:
+    - S.BIRTHDAY_ROUND wurde von refresh_birthday_reminders() befuellt
+    - mail_actions.MAIL_MONITOR_ACCOUNTS hat mindestens einen Eintrag
+    - birthday_drafts.py verhindert doppelte Entwuerfe pro Kontakt + Jahr
+
+    Kein automatisches Senden — Catrin gibt manuell frei.
+    """
+    triggered_for_week: str = ""  # ISO-Woche als Dedup-Guard
+    _TRIGGER_WEEKDAY = 4   # Freitag
+    _TRIGGER_TIME = "08:00"
+
+    while True:
+        try:
+            now = datetime.datetime.now()
+            iso_week = f"{now.isocalendar().year}-W{now.isocalendar().week:02d}"
+            current_hhmm = now.strftime("%H:%M")
+
+            if (now.weekday() == _TRIGGER_WEEKDAY
+                    and current_hhmm >= _TRIGGER_TIME
+                    and triggered_for_week != iso_week):
+                triggered_for_week = iso_week
+                log.info("birthday_draft_scheduler: Freitag-Trigger — runde Geburtstage pruefen")
+
+                try:
+                    await _process_birthday_drafts(now)
+                except Exception as e:
+                    log.warning(
+                        f"birthday_draft_scheduler: _process_birthday_drafts failed: "
+                        f"{type(e).__name__}: {e}"
+                    )
+        except Exception as e:
+            log.warning(f"birthday_draft_scheduler loop error: {type(e).__name__}: {e}")
+
+        await asyncio.sleep(60)
+
+
+async def _process_birthday_drafts(now: datetime.datetime) -> None:
+    """Bearbeite S.BIRTHDAY_ROUND: erstelle IMAP-Entwuerfe fuer alle
+    runden Geburtstage bei denen noch kein Entwurf existiert."""
+    import email.utils as _email_utils
+    import re as _re
+    from email.message import EmailMessage as _EmailMessage
+
+    import birthday_drafts
+    import mail_actions
+    import persons_db
+
+    round_str = S.BIRTHDAY_ROUND
+    if not round_str:
+        log.info("birthday_draft_scheduler: S.BIRTHDAY_ROUND leer — nichts zu tun")
+        return
+
+    # Format: "Runde Geburtstage diese Woche: • Max Mueller (50, Freitag 06.06.)"
+    # Extrahiere Eintraege: Name, Alter, Datum
+    entries_raw = round_str.replace("Runde Geburtstage diese Woche:", "").strip()
+    # Trenne an "• " (Bullet), ueberspringe leere
+    entry_list = [e.strip() for e in entries_raw.split("•") if e.strip()]
+
+    if not entry_list:
+        log.info("birthday_draft_scheduler: keine Eintraege in BIRTHDAY_ROUND")
+        return
+
+    # Sicherstellen dass mindestens ein IMAP-Konto konfiguriert ist
+    if not S.MAIL_MONITOR_ACCOUNTS:
+        log.warning("birthday_draft_scheduler: keine MAIL_MONITOR_ACCOUNTS — Abbruch")
+        return
+
+    account = S.MAIL_MONITOR_ACCOUNTS[0]
+    current_year = now.year
+
+    for entry in entry_list:
+        # Parsen: "Max Mueller (50, Freitag 06.06.)"
+        m = _re.match(r"^(.+?)\s*\((\d+),\s*\w+\s+(\d{2}\.\d{2}\.)\),?$", entry)
+        if not m:
+            log.warning(f"birthday_draft_scheduler: Kann Eintrag nicht parsen: {entry!r}")
+            continue
+
+        name = m.group(1).strip()
+        age = int(m.group(2))
+
+        # Doppelt-Schutz
+        if birthday_drafts.was_draft_created(name, current_year):
+            log.info(f"birthday_draft_scheduler: Entwurf fuer {name!r} ({current_year}) bereits vorhanden — skip")
+            continue
+
+        # E-Mail-Adresse aus persons_db oder google_contacts_tools holen
+        email_addr = _find_email_for_name(name)
+        if not email_addr:
+            log.info(f"birthday_draft_scheduler: keine E-Mail fuer {name!r} — skip")
+            continue
+
+        # Funktion aus persons_db fuer den Ton
+        funktion = ""
+        profiles = persons_db.search_by_name(name)
+        if profiles:
+            funktion = profiles[0].funktion or ""
+
+        # Ton bestimmen
+        funktion_lower = funktion.lower()
+        if any(kw in funktion_lower for kw in ("kollege", "kollegin", "freund", "freundin")):
+            tone = "kollegial-herzlich"
+        else:
+            tone = "foermlich-professionell"
+
+        # Glueckwunsch per Haiku generieren
+        prompt = _BIRTHDAY_DRAFT_CONGRATULATION_PROMPT.format(
+            name=name,
+            age=age,
+            funktion=funktion or "nicht angegeben",
+            tone=tone,
+        )
+        try:
+            resp = await S.ai.messages.create(
+                model="claude-haiku-4-5-20251001",
+                max_tokens=400,
+                system="Du bist Jarvis. Antworte NUR mit JSON, kein Praeamble.",
+                messages=[{"role": "user", "content": prompt}],
+            )
+            raw_json = resp.content[0].text.strip() if resp.content else ""
+            # JSON aus der Antwort extrahieren
+            import json as _json
+            # Manchmal gibt das Modell Markdown-Codeblock
+            json_text = _re.sub(r"```(?:json)?\s*", "", raw_json).strip(" `\n")
+            draft_data = _json.loads(json_text)
+            subject = draft_data.get("subject", f"Alles Gute zum {age}. Geburtstag, {name}")
+            body = draft_data.get("body", "")
+        except Exception as e:
+            log.warning(
+                f"birthday_draft_scheduler: LLM-Fehler fuer {name!r}: "
+                f"{type(e).__name__}: {e}"
+            )
+            continue
+
+        # IMAP-Entwurf ablegen (neues Schreiben, kein Reply — kein Re:-Prefix)
+        from_addr = account.get("user", "")
+        _msg = _EmailMessage()
+        _msg["From"] = from_addr
+        _msg["To"] = email_addr
+        _msg["Subject"] = subject
+        _msg["Date"] = _email_utils.formatdate(localtime=True)
+        _msg["Message-ID"] = _email_utils.make_msgid()
+        _msg.set_content(body)
+        msg_bytes = bytes(_msg)
+        # Entwurfs-Ordner aus Account-Config
+        drafts_folder = account.get("drafts_folder", "Drafts")
+        ok, detail = await _append_birthday_draft(account, msg_bytes, drafts_folder)
+
+        if ok:
+            birthday_drafts.mark_draft_created(name, current_year, subject)
+            log.info(
+                f"birthday_draft_scheduler: Entwurf fuer {name!r} in "
+                f"{detail!r} gespeichert"
+            )
+            # Telegram-Benachrichtigung
+            try:
+                import telegram_bot
+                tg_msg = (
+                    f"Entwurf fuer {name} ({age}) erstellt — "
+                    f"liegt als Entwurf im Entwurfsordner."
+                )
+                await telegram_bot.send_user_text(tg_msg)
+            except Exception as e:
+                log.warning(
+                    f"birthday_draft_scheduler: Telegram-Benachrichtigung fehlgeschlagen: "
+                    f"{type(e).__name__}: {e}"
+                )
+        else:
+            log.warning(
+                f"birthday_draft_scheduler: IMAP-Append fuer {name!r} fehlgeschlagen: "
+                f"{detail}"
+            )
+
+
+def _find_email_for_name(name: str) -> str:
+    """Sucht die primaere E-Mail-Adresse eines Kontakts anhand des Namens.
+
+    Prueft zuerst persons_db, dann gibt einen leeren String zurueck wenn
+    keine Adresse bekannt ist.
+
+    Args:
+        name: Anzeigename des Kontakts.
+
+    Returns:
+        E-Mail-Adresse als String oder leerer String wenn nicht gefunden.
+    """
+    import persons_db
+
+    profiles = persons_db.search_by_name(name)
+    if profiles:
+        email = profiles[0].primary_email
+        if email:
+            return email
+        if profiles[0].secondary_emails:
+            return profiles[0].secondary_emails[0]
+    return ""
+
+
+async def _append_birthday_draft(
+    account: dict, msg_bytes: bytes, preferred_folder: str
+) -> tuple[bool, str]:
+    """Lege Entwurf in den konfigurierten Drafts-Ordner ab.
+
+    Versucht zuerst den bevorzugten Ordner, faellt dann auf die bekannten
+    Alternativ-Namen aus mail_actions.DRAFTS_FOLDER_GUESSES zurueck.
+
+    Args:
+        account: Account-Dict aus S.MAIL_MONITOR_ACCOUNTS.
+        msg_bytes: RFC822-Bytes des Entwurfs.
+        preferred_folder: Konfigurierter Drafts-Ordner (z.B. "Drafts").
+
+    Returns:
+        Tuple (success, folder_name_or_error).
+    """
+    import mail_actions
+
+    account_name = account.get("name", "default")
+
+    # Preferred folder zuerst versuchen, dann Fallbacks
+    from mail_actions import DRAFTS_FOLDER_GUESSES
+    candidates = [preferred_folder] + [
+        f for f in DRAFTS_FOLDER_GUESSES if f != preferred_folder
+    ]
+
+    try:
+        import asyncio as _asyncio
+        import aioimaplib
+
+        cls = aioimaplib.IMAP4_SSL if account["ssl"] else aioimaplib.IMAP4
+        client = cls(host=account["host"], port=account["port"], timeout=30)
+        await _asyncio.wait_for(client.wait_hello_from_server(), timeout=30)
+        resp = await _asyncio.wait_for(
+            client.login(account["user"], account["password"]), timeout=30
+        )
+        if getattr(resp, "result", None) != "OK":
+            return False, f"LOGIN rejected for {account['user']!r}"
+
+        last_err = "kein Drafts-Folder gefunden"
+        for folder in candidates:
+            try:
+                result = await client.append(msg_bytes, mailbox=folder)
+                result_code = getattr(result, "result", None) or (
+                    result[0] if isinstance(result, tuple) and result else None
+                )
+                if result_code == "OK":
+                    log.info(f"_append_birthday_draft[{account_name}] -> {folder!r}")
+                    try:
+                        await client.logout()
+                    except Exception:
+                        pass
+                    return True, folder
+                last_err = f"folder={folder!r} code={result_code}"
+            except Exception as exc:
+                last_err = f"folder={folder!r} {type(exc).__name__}: {exc}"
+                continue
+
+        try:
+            await client.logout()
+        except Exception:
+            pass
+        return False, last_err
+
+    except Exception as e:
+        log.warning(
+            f"_append_birthday_draft[{account_name}]: {type(e).__name__}: {e}"
+        )
+        return False, f"{type(e).__name__}: {e}"
