@@ -89,5 +89,7 @@ def enrich_from_texts(
                 profile.notes.append(note)
                 persons_db.upsert(profile)
                 updated += 1
+                import activity_log as _al
+                _al.log_action("contact_enriched")
                 log.debug("person_enrichment: '%s' -> %s (%s)", text, profile.name, source_label)
     return updated

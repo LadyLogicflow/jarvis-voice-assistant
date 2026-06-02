@@ -666,8 +666,14 @@ async def morning_brief_scheduler() -> None:
     while True:
         now = datetime.datetime.now()
         today = datetime.date.today().isoformat()
-        if now.hour >= S.MORNING_HOUR and triggered_today != today:
+        # Issue #145: Wochenende — Morgen-Briefing erst um 09:00
+        _is_weekend = now.weekday() in (5, 6)
+        _brief_hour = 9 if _is_weekend else S.MORNING_HOUR
+        if now.hour >= _brief_hour and triggered_today != today:
             triggered_today = today
+            # Issue #145: Tages-Aktivitaetslog zuruecksetzen
+            import activity_log as _al
+            _al.reset()
             try:
                 gather_tasks = [
                     refresh_data(force=True),
@@ -901,6 +907,38 @@ _EVENING_BRIEF_PROMPT = (
 )
 
 
+def _format_jarvis_actions(summary: dict) -> str:
+    """Formt die Tages-Aktivitaets-Zusammenfassung in einen lesbaren Text.
+
+    Args:
+        summary: Rueckgabewert von activity_log.get_daily_summary().
+
+    Returns:
+        Kommaseparierter Satz der Aktionen oder leerer String wenn nichts
+        protokolliert wurde.
+    """
+    parts = []
+    if summary["mail_triage"] > 0:
+        n = summary["mail_triage"]
+        parts.append(f"{n} Mail{'s' if n != 1 else ''} sortiert")
+    if summary["followup_saved"] > 0:
+        n = summary["followup_saved"]
+        parts.append(f"{n} Follow-up{'s' if n != 1 else ''} vorgemerkt")
+    if summary["followup_resolved"] > 0:
+        n = summary["followup_resolved"]
+        parts.append(f"{n} Antwort{'en' if n != 1 else ''} erkannt")
+    if summary["contact_enriched"] > 0:
+        n = summary["contact_enriched"]
+        parts.append(f"{n} Kontakt{'e' if n != 1 else ''} aktualisiert")
+    for name in summary["draft_created"]:
+        parts.append(f"Geburtstagsentwurf fuer {name} vorbereitet")
+    for ev in summary["calendar_added"]:
+        parts.append(f"Termin '{ev}' eingetragen")
+    if not parts:
+        return ""
+    return ", ".join(parts[:-1]) + (" und " + parts[-1] if len(parts) > 1 else parts[0])
+
+
 async def build_evening_brief() -> str:
     """Sammle die Tageszusammenfassung und formuliere das Abschluss-Ritual.
 
@@ -933,6 +971,11 @@ async def build_evening_brief() -> str:
             f"build_evening_brief: calendar fetch failed: {type(e).__name__}: {e}"
         )
 
+    # 4. JARVIS Eigenleistungs-Log (Issue #145)
+    import activity_log as _al
+    _jarvis_summary = _al.get_daily_summary()
+    _jarvis_actions_text = _format_jarvis_actions(_jarvis_summary)
+
     # Kontext fuer den LLM zusammenstellen
     parts: list[str] = []
     if tasks_done > 0:
@@ -943,11 +986,28 @@ async def build_evening_brief() -> str:
     if tomorrow_event:
         parts.append(f"Erster Termin morgen: {tomorrow_event}")
 
+    # JARVIS-Eigenleistung: entweder konkrete Aktionen oder Selbstironie-Hinweis
+    if _jarvis_actions_text:
+        parts.append(f"JARVIS hat heute autonom folgendes erledigt: {_jarvis_actions_text}")
+        jarvis_instruction = (
+            "Baue die JARVIS-Eigenleistung als natuerlichen Satz ein "
+            "(z.B. 'Heute habe ich 14 Mails sortiert und einen Geburtstagsentwurf vorbereitet.'). "
+            "Ton: leicht stolz, aber diskret butlerhaft."
+        )
+    else:
+        jarvis_instruction = (
+            "JARVIS hat heute nichts autonom erledigt. "
+            "Formuliere eine kurze selbstironische Bemerkung im Butler-Stil "
+            "(trocken-britisch, ein Satz). "
+            "Beispiel: 'Ich bin heute weitgehend dekorativer Natur gewesen.'"
+        )
+
     user_content = (
         "Tagesdaten:\n" + "\n".join(parts)
         if parts
         else "Keine besonderen Tagesdaten vorhanden."
     )
+    user_content += f"\n\nHinweis fuer JARVIS-Eigenleistungs-Satz: {jarvis_instruction}"
 
     system_prompt = _EVENING_BRIEF_PROMPT.format(addr=addr)
     try:
@@ -1066,6 +1126,11 @@ async def proactive_briefs_scheduler() -> None:
             now = datetime.datetime.now()
             today = datetime.date.today().isoformat()
             current_hhmm = now.strftime("%H:%M")
+            # Issue #145: Proaktive Briefs (12:30, 16:00, 18:00) an Wochenenden
+            # nicht senden — Abend-Briefing laeuft separat via evening_brief_scheduler.
+            if now.weekday() in (5, 6):
+                await asyncio.sleep(30)
+                continue
             for slot in S.PROACTIVE_BRIEFS_TIMES:
                 if current_hhmm < slot:
                     continue
@@ -1418,6 +1483,8 @@ async def _process_birthday_drafts(now: datetime.datetime) -> None:
                 f"birthday_draft_scheduler: Entwurf fuer {name!r} in "
                 f"{detail!r} gespeichert"
             )
+            import activity_log as _al
+            _al.log_action("draft_created", name)
             # Telegram-Benachrichtigung
             try:
                 import telegram_bot
