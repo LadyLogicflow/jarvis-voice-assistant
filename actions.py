@@ -1619,12 +1619,13 @@ async def execute_action(action: dict) -> str:
 
     elif t == "SPEISEPLAN":
         # On-demand: heute bis Freitag. Payload p enthaelt optionale Wuensche.
-        # Wenn heute bereits im Plan ist, gecachten Plan zeigen (Wuensche ignorieren).
+        # Cache nur nutzen wenn KEINE Wuensche angegeben — mit Wuenschen immer neu generieren.
         import meal_plan as _mp
         today_str = datetime.date.today().isoformat()
-        if S.MEAL_PLAN_WEEK and today_str in S.MEAL_PLAN_WEEK:
-            return _mp.format_meal_plan_telegram()
         wishes = p.strip() if p else ""
+        if not wishes and S.MEAL_PLAN_WEEK and today_str in S.MEAL_PLAN_WEEK:
+            return _mp.format_meal_plan_telegram()
+        log.info(f"SPEISEPLAN: generiere neu (wishes={wishes[:60]!r})")
         plan = await _mp.generate_meal_plan(start_today=True, wishes=wishes)
         if not plan:
             return (
