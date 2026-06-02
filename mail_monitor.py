@@ -68,16 +68,20 @@ def _learn_from_mail(
     """
     import datetime as _dt
 
-    # persons_db: update last_contact timestamp for known senders.
+    # persons_db: update last_contact + auto-save mail note for known senders.
     if sender_email:
         try:
             import persons_db
             profile = persons_db.find_by_email(sender_email)
             if profile is not None:
-                profile.last_contact = _dt.date.today().isoformat()
+                today = _dt.date.today().isoformat()
+                note_entry = f"{today}: Mail empfangen — {subject}"
+                if note_entry not in profile.notes:
+                    profile.notes.append(note_entry)
+                profile.last_contact = today
                 persons_db.upsert(profile)
                 log.debug(
-                    "mail_monitor[%s] learn: updated last_contact for %s (%s)",
+                    "mail_monitor[%s] learn: saved mail note for %s (%s)",
                     account, profile.name, sender_email,
                 )
         except Exception as exc:
@@ -240,6 +244,7 @@ async def _summarize_body(sender: str, subject: str, body: str) -> str:
 def _format_for_telegram(
     account_name: str, sender: str, subject: str,
     category: str, summary: str = "", reply_needed: bool = False,
+    prior_context: str = "",
 ) -> str:
     icon = {
         "handlungsbedarf": "🔴",
@@ -250,6 +255,8 @@ def _format_for_telegram(
         f"{icon} Neue Mail [{account_name}]\n"
         f"Von: {sender}\nBetreff: {subject}"
     )
+    if prior_context:
+        base += f"\n📋 {prior_context}"
     if summary:
         base += f"\n\n{summary}"
     if reply_needed:
@@ -555,6 +562,22 @@ async def _process_new_uids(account: dict, client, uids: list[int]) -> None:
                 continue
 
             if category in S.MAIL_MONITOR_FORWARD:
+                # Prior-context aus persons_db VOR dem Lernen abfragen,
+                # damit nur echte fruehere Eintraege (nicht der aktuelle) angezeigt werden.
+                prior_context = ""
+                if sender_email:
+                    try:
+                        import persons_db as _pdb
+                        _profile = _pdb.find_by_email(sender_email)
+                        if _profile and _profile.notes:
+                            # Letzten 2 Eintraege (ohne den heute gerade ankommenden)
+                            today_prefix = __import__("datetime").date.today().isoformat()
+                            old_notes = [n for n in _profile.notes if not n.startswith(today_prefix)]
+                            if old_notes:
+                                prior_context = "Bekannt: " + " | ".join(old_notes[-2:])
+                    except Exception:
+                        pass
+
                 # Passive learning (Issue #102): index sender + subject so
                 # future draft replies have better context.
                 try:
@@ -585,7 +608,8 @@ async def _process_new_uids(account: dict, client, uids: list[int]) -> None:
                 except Exception as e:
                     log.warning(f"mail_monitor[{name}] summary fetch failed: {type(e).__name__}: {e}")
                 caption = _format_for_telegram(name, sender, subject, category,
-                                               summary=summary, reply_needed=reply_needed)
+                                               summary=summary, reply_needed=reply_needed,
+                                               prior_context=prior_context)
                 # Telegram: voice-note + caption, sofern nicht in
                 # Telegram-Quiet-Hours.
                 if tg_quiet:
