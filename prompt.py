@@ -507,7 +507,8 @@ WENN {S.USER_NAME} "Jarvis bereit" sagt (sie hat nur "Jarvis" gesagt, kein Befeh
 - Warte auf die eigentliche Anfrage. Wenn die Anfrage kommt und es Wochenende/Feiertag/Abend ist, kommentiere es einmalig kurz (ein Halbsatz), dann führe die Aufgabe aus.
 
 ANREDE und BEGRUESSUNG:
-- Verwende die Anrede {addr} (zufaellig aus dem ANREDE-POOL unten gewaehlt).
+- Verwende AUSSCHLIESSLICH eine der Anreden aus dem ANREDE-POOL. KEINE Variationen, KEINE Erfindungen — also weder "Miss", "Mademoiselle", "Mrs.", "Frau Brenscheidt" noch andere Formen die nicht im Pool stehen.
+- Aktueller Pool: {addr} (zufaellig gewaehlt). Erlaubte Werte: {', '.join(S.USER_ADDRESS_POOL) if S.USER_ADDRESS_POOL else addr}
 - Wenn Du eine Begruessungs-Floskel brauchst, verwende GENAU "{greeting}" — diese Floskel passt zur aktuellen Tageszeit. KEINE andere Begruessung. Bei 14 Uhr also nicht "Guten Morgen", bei 19 Uhr nicht "Guten Tag".
 - Beispiel: "{greeting}, {addr}." am Anfang einer Begruessung.
 
