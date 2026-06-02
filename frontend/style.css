@@ -61,15 +61,13 @@ body {
 
 /* Outer ring rotation */
 .ring-outer {
-    transform-box: fill-box;
-    transform-origin: center;
+    transform-origin: 100px 100px;
     animation: hud-spin-cw var(--hud-speed-outer, 30s) linear infinite;
 }
 
 /* Middle ring counter-rotation */
 .ring-middle {
-    transform-box: fill-box;
-    transform-origin: center;
+    transform-origin: 100px 100px;
     animation: hud-spin-ccw var(--hud-speed-mid, 45s) linear infinite;
 }
 
