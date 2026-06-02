@@ -130,6 +130,14 @@ async def refresh_data(force: bool = False) -> None:
     S.TASKS_INFO = tasks
     log.info(f"Wetter: {S.WEATHER_INFO}")
     log.info(f"Tasks: {len(S.TASKS_INFO)} geladen")
+    # Person-Enrichment: Aufgaben auf bekannte Kontakte scannen
+    try:
+        import person_enrichment
+        n = person_enrichment.enrich_from_texts(S.TASKS_INFO, "Aufgabe")
+        if n:
+            log.info(f"person_enrichment: {n} Profile aus Aufgaben aktualisiert")
+    except Exception as e:
+        log.debug(f"person_enrichment tasks failed: {e}")
 
 
 async def refresh_today_tasks() -> None:
@@ -183,6 +191,14 @@ async def refresh_today_events() -> None:
             if line.startswith("•") and today_short in line
         ]
         S.TODAY_EVENTS = "\n".join(keep)
+        # Person-Enrichment: Kalender-Events auf bekannte Kontakte scannen
+        try:
+            import person_enrichment
+            n = person_enrichment.enrich_from_texts(keep, "Termin")
+            if n:
+                log.info(f"person_enrichment: {n} Profile aus Kalender-Events aktualisiert")
+        except Exception as e:
+            log.debug(f"person_enrichment events failed: {e}")
     except Exception as e:
         log.warning(f"refresh_today_events failed: {type(e).__name__}: {e}")
         S.TODAY_EVENTS = ""
