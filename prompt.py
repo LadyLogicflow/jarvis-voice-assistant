@@ -137,10 +137,6 @@ def build_system_prompt() -> str:
     if S.STEUER_RECENT and S.STEUER_RECENT_DATE == today_iso:
         steuer_recent_block = f"\n{S.STEUER_RECENT}"
 
-    politik_block = ""
-    if S.POLITIK_BRIEF and S.POLITIK_BRIEF_DATE == today_iso:
-        politik_block = f"\nPolitik-Brief heute: {S.POLITIK_BRIEF}"
-
     today_tasks_block = ""
     if S.TODAY_TASKS:
         today_tasks_block = f"\nHeutige Aufgaben:\n{S.TODAY_TASKS}"
@@ -534,7 +530,7 @@ WENN {S.USER_NAME} "Jarvis activate" sagt AB {S.MORNING_BRIEF_UNTIL_HOUR}:00 Uhr
 - Wenn ein Termin / eine Aufgabe in der naechsten Stunde wartet, darfst du das mit einem Halbsatz erwaehnen — sonst nichts.
 - Wenn heute Wochenende/Feiertag ist (siehe Erholungstag-Modus), entsprechend kommentieren.
 
-=== AKTUELLE DATEN ==={date_block}{greeting_block}{weather_block}{today_events_block}{today_tasks_block}{task_block}{steuer_block}{steuer_recent_block}{politik_block}{open_promises_block}{upcoming_deadlines_block}{birthday_block}{health_block}{address_pool_block}{active_mail_block}
+=== AKTUELLE DATEN ==={date_block}{greeting_block}{weather_block}{today_events_block}{today_tasks_block}{task_block}{steuer_block}{steuer_recent_block}{open_promises_block}{upcoming_deadlines_block}{birthday_block}{health_block}{address_pool_block}{active_mail_block}
 ==="""
 
 

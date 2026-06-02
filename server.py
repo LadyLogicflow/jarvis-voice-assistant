@@ -45,6 +45,7 @@ from conversation import (
 from prompt import extract_action, get_system_prompt, llm_text, pick_address
 import scheduler
 from scheduler import (
+    birthday_draft_scheduler,
     bring_monitor_scheduler,
     evening_brief_scheduler,
     meal_plan_reminder_scheduler,
@@ -145,6 +146,7 @@ async def _lifespan(_app):  # type: ignore[no-untyped-def]  # AsyncGenerator
     task_planner = asyncio.create_task(planner.planner_loop())
     task_meal_plan = asyncio.create_task(meal_plan_scheduler())
     task_meal_reminder = asyncio.create_task(meal_plan_reminder_scheduler())
+    task_birthday_draft = asyncio.create_task(birthday_draft_scheduler())
     log.info(f"Steuerrecht-Scheduler gestartet (taeglich um {S.MORNING_HOUR}:00 Uhr)")
     log.info(f"Abschluss-Ritual aktiv (taeglich um {S.EVENING_HOUR}:00 Uhr)")
     log.info(f"Proaktive Briefs aktiv: {S.PROACTIVE_BRIEFS_TIMES}")
@@ -152,6 +154,7 @@ async def _lifespan(_app):  # type: ignore[no-untyped-def]  # AsyncGenerator
     log.info("Memory-Reindex-Scheduler aktiv (täglich 03:00 Uhr + Startup)")
     log.info("Task-Planer aktiv (stündlich, Mo–Fr 17–19 Uhr)")
     log.info("Speiseplanung aktiv (Donnerstag 07:30 + taeglich 17:30 Rezept-Reminder)")
+    log.info("Geburtstags-Entwurf-Scheduler aktiv (Freitag 08:00)")
     # Bring!-Monitor (Issue #123): nur starten wenn Zugangsdaten konfiguriert
     task_bring: asyncio.Task | None = None
     if S.BRING_EMAIL and S.BRING_PASSWORD:

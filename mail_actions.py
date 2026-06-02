@@ -282,6 +282,81 @@ async def append_to_drafts(account_name: str, msg_bytes: bytes) -> tuple[bool, s
                 pass
 
 
+async def save_draft(
+    to_addr: str,
+    subject: str,
+    body: str,
+    account_name: str = "",
+) -> tuple[bool, str]:
+    """Speichere eine neue Mail als Entwurf im konfigurierten Drafts-Ordner.
+
+    Verwendet den ersten konfigurierten IMAP-Account wenn ``account_name``
+    leer ist. Der Drafts-Ordner wird aus der Account-Konfiguration gelesen
+    (``drafts_folder``-Key, konfigurierbar via config.json); Fallback auf
+    ``DRAFTS_FOLDER_GUESSES``.
+
+    Args:
+        to_addr: Empfaenger-Adresse.
+        subject: Betreff der Mail.
+        body: Plaintext-Body.
+        account_name: Name des IMAP-Accounts aus MAIL_MONITOR_ACCOUNTS;
+            leer = erster Account.
+
+    Returns:
+        Tuple (ok, folder_or_error).
+    """
+    if not S.MAIL_MONITOR_ACCOUNTS:
+        return False, "Keine MAIL_MONITOR_ACCOUNTS konfiguriert"
+
+    if account_name:
+        acc = _account_by_name(account_name)
+        if not acc:
+            return False, f"Konto {account_name!r} nicht konfiguriert"
+    else:
+        acc = S.MAIL_MONITOR_ACCOUNTS[0]
+
+    from_addr = acc.get("user", "")
+    msg_bytes = build_reply_message(
+        from_addr=from_addr,
+        to_addr=to_addr,
+        subject=subject,
+        body=body,
+    )
+
+    # Bevorzugten Drafts-Ordner aus Account-Config lesen
+    preferred = acc.get("drafts_folder", "Drafts")
+    candidates = [preferred] + [f for f in DRAFTS_FOLDER_GUESSES if f != preferred]
+
+    client = None
+    try:
+        client = await _connect(acc)
+        last_err = "kein Drafts-Folder gefunden"
+        for folder in candidates:
+            try:
+                resp = await client.append(msg_bytes, mailbox=folder)
+                result = getattr(resp, "result", None) or (
+                    resp[0] if isinstance(resp, tuple) and resp else None
+                )
+                if result == "OK":
+                    log.info(f"save_draft[{acc['name']}] -> {folder!r}: {subject!r}")
+                    return True, folder
+                last_err = f"folder={folder!r} result={result}"
+            except Exception as exc:
+                last_err = f"folder={folder!r} {type(exc).__name__}: {exc}"
+                continue
+        log.warning(f"save_draft[{acc['name']}] failed: {last_err}")
+        return False, last_err
+    except Exception as e:
+        log.warning(f"save_draft[{acc['name']}]: {type(e).__name__}: {e}")
+        return False, f"{type(e).__name__}: {e}"
+    finally:
+        if client is not None:
+            try:
+                await client.logout()
+            except Exception:
+                pass
+
+
 def extract_calendar_invite(msg) -> dict | None:
     """Wenn die Mail einen Kalender-Termin enthaelt (text/calendar oder
     .ics-Anhang), gib ein dict mit den wichtigen Feldern zurueck.
