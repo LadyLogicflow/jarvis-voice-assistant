@@ -176,11 +176,12 @@ def _preferred_market() -> str:
     return ""
 
 
-async def generate_meal_plan(start_today: bool = False) -> dict:
+async def generate_meal_plan(start_today: bool = False, wishes: str = "") -> dict:
     """Generiert einen Speisenplan via Claude und persistiert ihn.
 
     start_today=True: von heute bis diesen Freitag (on-demand).
     start_today=False: naechster Samstag bis Freitag (Donnerstag-Scheduler).
+    wishes: optionale Sonderwuensche der Nutzerin, fliessen in den Prompt ein.
 
     Returns:
         dict mit Datums-String als Schluessel und Tages-Dict als Wert.
@@ -212,9 +213,13 @@ async def generate_meal_plan(start_today: bool = False) -> dict:
     season = _season_produce()
     weather = _weather_hint()
     offers = _offers_hint()
+    wishes_hint = (
+        f"BESONDERE WUENSCHE DIESE WOCHE (bitte unbedingt beruecksichtigen):\n{wishes}"
+        if wishes.strip() else ""
+    )
 
     context_blocks = "\n\n".join(
-        block for block in [diabetes_hint, weather, offers] if block
+        block for block in [diabetes_hint, weather, offers, wishes_hint] if block
     )
 
     days_block = "\n".join(

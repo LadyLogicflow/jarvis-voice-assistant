@@ -1168,16 +1168,17 @@ async def proactive_briefs_scheduler() -> None:
 # ---------------------------------------------------------------------------
 
 async def meal_plan_scheduler() -> None:
-    """Long-running task: jeden Donnerstag um 07:30 Uhr Speisenplan generieren
-    und per Telegram versenden.
+    """Long-running task: jeden Donnerstag um 09:00 Uhr Speisenplan generieren.
 
-    Nutzt das gleiche '>= HH:MM'-Muster wie proactive_briefs_scheduler:
-    falls der Server beim exakten Trigger-Zeitpunkt schlaeft und spaeter
-    aufwacht, wird der Plan dennoch erzeugt.
+    Ablauf:
+    1. Frage an Catrin senden (Telegram + Orb): besondere Wuensche?
+    2. Bis zu 15 Minuten auf Antwort warten (S.MEAL_PLAN_AWAITING_WISHES).
+    3. Plan mit Wuenschen (oder ohne, falls keine Antwort) generieren und senden.
     """
     triggered_for_week = ""  # ISO-Woche ("2026-W18") als Dedup-Guard
     _TRIGGER_WEEKDAY = 3   # Donnerstag
-    _TRIGGER_TIME = "07:30"
+    _TRIGGER_TIME = "09:00"
+    _WISHES_TIMEOUT = 900   # 15 Minuten
 
     while True:
         try:
@@ -1189,21 +1190,50 @@ async def meal_plan_scheduler() -> None:
                     and current_hhmm >= _TRIGGER_TIME
                     and triggered_for_week != iso_week):
                 triggered_for_week = iso_week
-                log.info("meal_plan_scheduler: Donnerstag-Trigger — Speisenplan wird generiert")
+                log.info("meal_plan_scheduler: Donnerstag-Trigger — Wunsch-Abfrage")
                 try:
                     import meal_plan as _mp
                     import telegram_bot
-                    plan = await _mp.generate_meal_plan()
+
+                    # Wuensche zuruecksetzen und auf Antwort warten
+                    S.MEAL_PLAN_WISHES = ""
+                    S.MEAL_PLAN_AWAITING_WISHES = True
+                    question = (
+                        "Ich erstelle gleich den Speiseplan fuer naechste Woche. "
+                        "Hast du besondere Wuensche?"
+                    )
+                    if _proactive_handler:
+                        await _proactive_handler(question)
+                    else:
+                        await telegram_bot.send_user_text(question)
+
+                    # Auf Antwort warten (max. 15 Minuten)
+                    waited = 0
+                    while S.MEAL_PLAN_AWAITING_WISHES and waited < _WISHES_TIMEOUT:
+                        await asyncio.sleep(30)
+                        waited += 30
+                    S.MEAL_PLAN_AWAITING_WISHES = False  # Sicherheitsreset
+
+                    wishes = S.MEAL_PLAN_WISHES.strip()
+                    if wishes:
+                        log.info(f"meal_plan_scheduler: Wuensche empfangen: '{wishes[:80]}'")
+                    else:
+                        log.info("meal_plan_scheduler: keine Wuensche, generiere ohne")
+
+                    plan = await _mp.generate_meal_plan(wishes=wishes)
                     if plan:
-                        text = _mp.format_meal_plan_telegram()
-                        await telegram_bot.send_user_text(text)
-                        log.info("meal_plan_scheduler: Plan per Telegram versendet")
+                        text = _mp.format_meal_plan_telegram(include_today_recipe=False)
+                        if _proactive_handler:
+                            await _proactive_handler(text)
+                        else:
+                            await telegram_bot.send_user_text(text)
+                        log.info("meal_plan_scheduler: Plan gesendet")
                     else:
                         log.warning("meal_plan_scheduler: Plan-Generierung lieferte leeres Ergebnis")
                 except Exception as e:
+                    S.MEAL_PLAN_AWAITING_WISHES = False
                     log.warning(
-                        f"meal_plan_scheduler: Fehler beim Generieren/Senden: "
-                        f"{type(e).__name__}: {e}"
+                        f"meal_plan_scheduler: Fehler: {type(e).__name__}: {e}"
                     )
         except Exception as e:
             log.warning(f"meal_plan_scheduler loop error: {type(e).__name__}: {e}")

@@ -300,6 +300,10 @@ MEAL_PLAN_REMINDER_TIME: str = config.get("meal_plan_reminder_time", "17:30")
 #                     "ingredients": list[str], "cook_time_minutes": int}}
 MEAL_PLAN_WEEK: dict = {}
 
+# Wunsch-Interaktion: Scheduler wartet auf Antwort bevor er den Plan generiert.
+MEAL_PLAN_AWAITING_WISHES: bool = False
+MEAL_PLAN_WISHES: str = ""
+
 # Apple Health / Apple Watch Daten (via Health Auto Export Webhook /health).
 # HEALTH_INFO = heutiger Stand. HEALTH_INFO_PREV = gestrige Werte (fuer Vergleich).
 # Wird bei jedem POST an /health rotiert: prev <- current, current <- neu.

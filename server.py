@@ -300,6 +300,15 @@ async def process_message(session_id: str, user_text: str, ws: WebSocket) -> Non
         # Seed a brand-new session with the persisted history (M6.2).
         conversations[session_id] = load_persistent_history()
 
+    # Speiseplan-Wunsch-Abfrage: Antwort abfangen bevor Claude sie verarbeitet.
+    if S.MEAL_PLAN_AWAITING_WISHES:
+        S.MEAL_PLAN_WISHES = user_text
+        S.MEAL_PLAN_AWAITING_WISHES = False
+        log.info(f"Web: Speisewunsch empfangen: '{user_text[:80]}'")
+        reply = "Notiert, ich plane entsprechend."
+        await speak(reply, ws, display=reply)
+        return
+
     if "activate" in user_text.lower():
         now = time.time()
         if now - _last_greeting_time < S.GREETING_COOLDOWN:
