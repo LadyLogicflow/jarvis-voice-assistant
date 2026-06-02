@@ -395,7 +395,10 @@ async def execute_action(action: dict) -> str:
         # Fix #73: Exception fangen und Catrin eine klare Fehlermeldung
         # geben statt still zu scheitern (silent fail).
         try:
-            return await google_calendar_tools.add_event(title, when)
+            result = await google_calendar_tools.add_event(title, when)
+            import activity_log as _al
+            _al.log_action("calendar_added", title)
+            return result
         except Exception as e:
             log.warning("ADDCAL fehlgeschlagen: %s: %s", type(e).__name__, e)
             return f"Termin konnte nicht angelegt werden: {e}"

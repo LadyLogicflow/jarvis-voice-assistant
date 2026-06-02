@@ -39,6 +39,37 @@ log = S.log
 # UID-tracker per account. {account_name: max_seen_uid}
 _max_seen: dict[str, int] = {}
 
+# UID-tracker for the Sent folder (separate state file per account).
+_max_seen_sent: dict[str, int] = {}
+
+# Sent-folder poll interval: 15 minutes. Fresh connect per poll.
+_SENT_POLL_INTERVAL = 15 * 60
+
+
+def _sent_state_path(account_name: str) -> str:
+    safe = "".join(c if c.isalnum() else "_" for c in account_name)
+    return os.path.join(os.path.dirname(__file__), f".jarvis_mail_sent_{safe}.json")
+
+
+def _load_sent_state(account_name: str) -> int:
+    p = _sent_state_path(account_name)
+    if not os.path.exists(p):
+        return 0
+    try:
+        with open(p) as f:
+            return int(json.load(f).get("max_seen_uid", 0))
+    except Exception:
+        return 0
+
+
+def _save_sent_state(account_name: str, uid: int) -> None:
+    try:
+        with open(_sent_state_path(account_name), "w") as f:
+            json.dump({"max_seen_uid": uid}, f)
+    except Exception as e:
+        log.warning(f"mail_monitor[{account_name}] sent state save failed: "
+                    f"{type(e).__name__}: {e}")
+
 
 # ---------------------------------------------------------------------------
 # Passive learning (Issue #102)
@@ -276,6 +307,179 @@ def _format_for_voice(sender: str, subject: str, reply_needed: bool = False) -> 
     return base
 
 
+# ---------------------------------------------------------------------------
+# Sent-folder classifier + poll (Follow-up Tracker)
+# ---------------------------------------------------------------------------
+_SENT_CLASSIFIER_PROMPT = (
+    "Du bist ein E-Mail-Assistent. Analysiere diese gesendete E-Mail. "
+    "Antworte mit JSON: {\"reply_expected\": true/false}\n"
+    "reply_expected = true wenn die Mail:\n"
+    "- Eine direkte Frage stellt die eine Antwort benoetigt\n"
+    "- Eine Anfrage, Bitte oder Auftrag enthaelt (Dokument anfordern, Termin vorschlagen, Genehmigung bitten)\n"
+    "- Ausdruecklich eine Rueckmeldung erbittet ('bitte geben Sie mir Bescheid', 'ich bitte um Rueckmeldung')\n"
+    "reply_expected = false bei: abschliessenden Antworten, FYI-Mails, "
+    "Weiterleitungen, Bestaetigungen, automatischen Mails.\n"
+    "Antworte NUR mit dem JSON-Objekt, nichts anderes."
+)
+
+
+async def _classify_outgoing(to_addr: str, subject: str, body_preview: str) -> bool:
+    """Returns True wenn eine Antwort auf diese gesendete Mail erwartet wird."""
+    import json as _json
+    user_msg = f"An: {to_addr}\nBetreff: {subject}\n\n{body_preview[:1500]}"
+    try:
+        resp = await S.ai.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=50,
+            system=_SENT_CLASSIFIER_PROMPT,
+            messages=[{"role": "user", "content": user_msg}],
+        )
+        raw = llm_text(resp).strip()
+        if raw.startswith("```"):
+            raw = re.sub(r"^```(?:json)?\s*", "", raw)
+            raw = re.sub(r"\s*```$", "", raw).strip()
+        data = _json.loads(raw)
+        return bool(data.get("reply_expected", False))
+    except Exception as e:
+        log.debug(f"mail_monitor: _classify_outgoing failed: {type(e).__name__}: {e}")
+        return False
+
+
+async def _poll_sent_folder_once(account: dict, aioimaplib_module) -> None:
+    """Single poll of the Sent folder: connect, check for new UIDs, disconnect.
+
+    For each new sent mail, classifies whether a reply is expected and if so
+    saves it to followup_tracker. State is persisted in a separate file per
+    account so we never re-scan old mails.
+    """
+    import followup_tracker as _ft
+    name = account["name"]
+    sent_folder = account.get("sent_folder", "Sent")
+
+    cls = aioimaplib_module.IMAP4_SSL if account["ssl"] else aioimaplib_module.IMAP4
+    client = cls(host=account["host"], port=account["port"], timeout=60)
+    try:
+        await asyncio.wait_for(client.wait_hello_from_server(), timeout=30)
+        login_resp = await asyncio.wait_for(
+            client.login(account["user"], account["password"]), timeout=30
+        )
+        if getattr(login_resp, "result", None) != "OK":
+            log.warning(f"mail_monitor[{name}] sent: login failed")
+            return
+
+        select_resp = await client.select(sent_folder)
+        if getattr(select_resp, "result", None) != "OK":
+            log.debug(
+                f"mail_monitor[{name}] sent: SELECT {sent_folder!r} failed — "
+                f"kein Gesendete-Ordner mit diesem Namen. "
+                f"'sent_folder' in config.json anpassen."
+            )
+            return
+
+        server_max = await _baseline_uid(client, sent_folder)
+        our_max = _max_seen_sent.get(name, 0)
+        if server_max <= our_max:
+            return
+
+        new_uids = await _uids_in_range(client, our_max, server_max)
+        if not new_uids:
+            new_uids = list(range(our_max + 1, server_max + 1))
+
+        log.info(f"mail_monitor[{name}] sent: {len(new_uids)} neue gesendete Mail(s)")
+
+        for uid in sorted(new_uids):
+            try:
+                typ, data = await client.uid("fetch", str(uid), "BODY.PEEK[HEADER]")
+                if typ != "OK" or not data:
+                    continue
+                byte_items = [b for b in data if isinstance(b, (bytes, bytearray))]
+                if not byte_items:
+                    continue
+                raw = max(byte_items, key=len)
+                msg = email.message_from_bytes(raw)
+
+                to_raw = _decode_header(msg.get("To", ""))
+                to_parsed = parseaddr(to_raw)
+                to_name = _decode_header(to_parsed[0]) if to_parsed[0] else ""
+                to_email = (to_parsed[1] or "").lower()
+                subject = _decode_header(msg.get("Subject", ""))
+                message_id = msg.get("Message-ID", "").strip()
+                date_str = msg.get("Date", "")
+
+                if not message_id or not subject:
+                    continue
+
+                # Try to fetch body preview for better classification.
+                # Apple iCloud rejects partial-range syntax — failure is expected.
+                body_preview = ""
+                try:
+                    typ2, data2 = await client.uid(
+                        "fetch", str(uid), "BODY.PEEK[TEXT]<0.2000>"
+                    )
+                    if typ2 == "OK" and data2:
+                        byte_items2 = [
+                            b for b in data2 if isinstance(b, (bytes, bytearray))
+                        ]
+                        if byte_items2:
+                            body_preview = max(byte_items2, key=len).decode(
+                                errors="replace"
+                            )[:2000]
+                except Exception:
+                    pass
+
+                reply_expected = await _classify_outgoing(
+                    to_raw or to_email, subject, body_preview
+                )
+                if reply_expected:
+                    _ft.save_followup(
+                        message_id=message_id,
+                        account=name,
+                        to_email=to_email,
+                        to_name=to_name,
+                        subject=subject,
+                        sent_date=date_str,
+                    )
+            except Exception as e:
+                log.debug(
+                    f"mail_monitor[{name}] sent uid={uid}: {type(e).__name__}: {e}"
+                )
+            finally:
+                _max_seen_sent[name] = max(_max_seen_sent.get(name, 0), uid)
+                _save_sent_state(name, _max_seen_sent[name])
+    except Exception as e:
+        log.warning(
+            f"mail_monitor[{name}] sent poll failed: {type(e).__name__}: {e}"
+        )
+    finally:
+        try:
+            await client.logout()
+        except Exception:
+            pass
+
+
+async def _sent_account_loop(account: dict, aioimaplib_module) -> None:
+    """Long-running task: poll the Sent folder every _SENT_POLL_INTERVAL seconds.
+
+    Uses a fresh IMAP connection per poll rather than a persistent IDLE session —
+    the infrequent interval makes connect/disconnect overhead negligible and keeps
+    the logic simpler.
+    """
+    name = account["name"]
+    _max_seen_sent[name] = _load_sent_state(name)
+    # Short initial delay so the INBOX connection settles first.
+    await asyncio.sleep(30)
+    while True:
+        try:
+            await _poll_sent_folder_once(account, aioimaplib_module)
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            log.debug(
+                f"mail_monitor[{name}] sent_loop: {type(e).__name__}: {e}"
+            )
+        await asyncio.sleep(_SENT_POLL_INTERVAL)
+
+
 # Callback the server registers to push spoken alerts to the Web-UI.
 # Stays None when the server hasn't wired it up — Telegram still works.
 _mail_alert_handler = None
@@ -344,6 +548,27 @@ async def _process_new_uids(account: dict, client, uids: list[int]) -> None:
                 log.warning(f"mail_monitor[{name}] uid={uid} empty headers, skipping; "
                             f"raw[0:300]={preview!r}")
                 continue
+
+            # Auto-resolve follow-ups: if this incoming mail is a reply to a
+            # tracked sent mail, mark it as answered in followup_tracker.
+            try:
+                import followup_tracker as _ft
+                in_reply_to = msg.get("In-Reply-To", "").strip()
+                references = msg.get("References", "").strip()
+                mids_to_check = ([in_reply_to] if in_reply_to else []) + references.split()
+                for _mid in mids_to_check:
+                    _mid = _mid.strip()
+                    if _mid and _ft.resolve_followup(_mid):
+                        log.info(
+                            f"mail_monitor[{name}] uid={uid}: "
+                            f"follow-up aufgeloest fuer message-id {_mid!r}"
+                        )
+                        break
+            except Exception as _exc:
+                log.debug(
+                    f"mail_monitor[{name}] uid={uid}: followup resolve: {_exc}"
+                )
+
             # We only fetch BODY.PEEK[HEADER] (Apple-strict-parser-friendly),
             # so the classifier runs on sender + subject only. Empty body
             # preview by design.
@@ -541,6 +766,8 @@ async def _process_new_uids(account: dict, client, uids: list[int]) -> None:
                 triage = {"action": "none"}
             if triage["action"] != "none":
                 log.info(f"mail_monitor[{name}] uid={uid}: triage -> {triage}")
+                import activity_log as _al
+                _al.log_action("mail_triage")
                 if triage["action"] == "mark_read":
                     await mail_actions.mark_mail_read(name, uid)
                 elif triage["action"] == "move":
@@ -883,9 +1110,13 @@ async def mail_monitor_main() -> None:
 
     log.info(f"mail_monitor active for {len(valid)} account(s); "
              f"forward_categories={S.MAIL_MONITOR_FORWARD}")
-    tasks = [asyncio.create_task(_account_loop(acc, aioimaplib)) for acc in valid]
+    inbox_tasks = [asyncio.create_task(_account_loop(acc, aioimaplib)) for acc in valid]
+    sent_tasks = [
+        asyncio.create_task(_sent_account_loop(acc, aioimaplib)) for acc in valid
+    ]
+    all_tasks = inbox_tasks + sent_tasks
     try:
-        await asyncio.gather(*tasks)
+        await asyncio.gather(*all_tasks)
     finally:
-        for t in tasks:
+        for t in all_tasks:
             t.cancel()
