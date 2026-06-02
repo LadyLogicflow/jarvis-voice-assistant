@@ -10,7 +10,57 @@
 <body>
     <div id="app">
         <div id="orb-container">
-            <div id="orb" class="idle"></div>
+          <svg id="orb" class="idle" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+              <filter id="glow">
+                <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
+                <feMerge><feMergeNode in="coloredBlur"/><feMergeNode in="SourceGraphic"/></feMerge>
+              </filter>
+              <filter id="glow-strong">
+                <feGaussianBlur stdDeviation="6" result="coloredBlur"/>
+                <feMerge><feMergeNode in="coloredBlur"/><feMergeNode in="SourceGraphic"/></feMerge>
+              </filter>
+              <radialGradient id="core-grad" cx="45%" cy="40%" r="60%">
+                <stop offset="0%" stop-color="#1a3a5c"/>
+                <stop offset="100%" stop-color="#050d1a"/>
+              </radialGradient>
+            </defs>
+
+            <!-- Outer glow ring (background atmosphere) -->
+            <circle class="hud-glow" cx="100" cy="100" r="92" fill="none" stroke-width="2"/>
+
+            <!-- Outer tick ring — rotates CW -->
+            <g class="ring-outer" transform="translate(100,100)">
+              <!-- Use a circle with stroke-dasharray to simulate tick marks -->
+              <circle r="88" fill="none" stroke-width="1.5" stroke-dasharray="2 2.67" class="hud-ring"/>
+              <!-- 4 longer accent marks at 0/90/180/270 degrees -->
+              <line x1="0" y1="-88" x2="0" y2="-78" class="hud-accent"/>
+              <line x1="88" y1="0" x2="78" y2="0" class="hud-accent"/>
+              <line x1="0" y1="88" x2="0" y2="78" class="hud-accent"/>
+              <line x1="-88" y1="0" x2="-78" y2="0" class="hud-accent"/>
+            </g>
+
+            <!-- Middle decorative ring — rotates CCW -->
+            <g class="ring-middle" transform="translate(100,100)">
+              <circle r="72" fill="none" stroke-width="1" stroke-dasharray="4 8" class="hud-ring-mid"/>
+              <!-- Corner bracket decorations at 4 positions -->
+              <g transform="rotate(45)">
+                <path d="M-68,-10 L-68,-68 L-10,-68" fill="none" stroke-width="1.5" class="hud-bracket"/>
+                <path d="M68,-10 L68,-68 L10,-68" fill="none" stroke-width="1.5" class="hud-bracket"/>
+                <path d="M-68,10 L-68,68 L-10,68" fill="none" stroke-width="1.5" class="hud-bracket"/>
+                <path d="M68,10 L68,68 L10,68" fill="none" stroke-width="1.5" class="hud-bracket"/>
+              </g>
+            </g>
+
+            <!-- Inner solid ring border -->
+            <circle cx="100" cy="100" r="56" fill="url(#core-grad)" class="hud-core-border"/>
+            <circle cx="100" cy="100" r="56" fill="none" stroke-width="2" class="hud-inner-ring"/>
+
+            <!-- J.A.R.V.I.S. text -->
+            <text x="100" y="95" text-anchor="middle" class="hud-title">J.A.R.V.I.S.</text>
+            <!-- Status dot -->
+            <circle cx="100" cy="112" r="3" class="hud-dot"/>
+          </svg>
         </div>
         <div id="status">Klicke den Orb um zu sprechen</div>
         <div id="transcript"></div>
