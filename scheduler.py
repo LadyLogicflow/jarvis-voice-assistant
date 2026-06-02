@@ -1304,7 +1304,9 @@ async def birthday_draft_scheduler() -> None:
 async def _process_birthday_drafts(now: datetime.datetime) -> None:
     """Bearbeite S.BIRTHDAY_ROUND: erstelle IMAP-Entwuerfe fuer alle
     runden Geburtstage bei denen noch kein Entwurf existiert."""
+    import email.utils as _email_utils
     import re as _re
+    from email.message import EmailMessage as _EmailMessage
 
     import birthday_drafts
     import mail_actions
@@ -1397,9 +1399,6 @@ async def _process_birthday_drafts(now: datetime.datetime) -> None:
             continue
 
         # IMAP-Entwurf ablegen (neues Schreiben, kein Reply — kein Re:-Prefix)
-        import email as _email_mod
-        import email.utils as _email_utils
-        from email.message import EmailMessage as _EmailMessage
         from_addr = account.get("user", "")
         _msg = _EmailMessage()
         _msg["From"] = from_addr
