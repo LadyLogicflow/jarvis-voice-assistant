@@ -1618,14 +1618,13 @@ async def execute_action(action: dict) -> str:
             return f"Bring!-Fehler: {type(e).__name__}"
 
     elif t == "SPEISEPLAN":
-        # Issue #125: Wochenplan generieren (oder bei vorhandenem Plan
-        # den aktuellen Plan anzeigen). Payload leer oder Plan vorhanden:
-        # gecachten Plan zurueckgeben. Nur wenn noch kein Plan existiert,
-        # wird ein neuer via Claude generiert.
+        # On-demand: immer von heute bis Freitag planen.
+        # Wenn heute bereits im Plan ist, gecachten Plan zeigen.
         import meal_plan as _mp
-        if S.MEAL_PLAN_WEEK:
+        today_str = datetime.date.today().isoformat()
+        if S.MEAL_PLAN_WEEK and today_str in S.MEAL_PLAN_WEEK:
             return _mp.format_meal_plan_telegram()
-        plan = await _mp.generate_meal_plan()
+        plan = await _mp.generate_meal_plan(start_today=True)
         if not plan:
             return (
                 f"Ich konnte den Speisenplan leider nicht erstellen, "
@@ -1718,6 +1717,7 @@ async def execute_action(action: dict) -> str:
             S.MEAL_PLAN_WEEK[target_date]["dish"] = new_dish
             S.MEAL_PLAN_WEEK[target_date]["recipe"] = ""
             S.MEAL_PLAN_WEEK[target_date]["ingredients"] = []
+        _mp.save_meal_plan()
         return (
             f"{weekday_raw} getauscht: '{old_dish}' -> '{new_dish}', "
             f"{pick_address()}."

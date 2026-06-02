@@ -131,6 +131,8 @@ async def _lifespan(_app):  # type: ignore[no-untyped-def]  # AsyncGenerator
     shared httpx client."""
     await refresh_data()
     session_state.load_all()
+    import meal_plan as _mp
+    _mp.load_meal_plan()
     scheduler.register_proactive_handler(_broadcast_proactive)
     register_mail_alert_handler(_mac_alert)
     # Startet Reindex beim Boot (im Hintergrund, blockiert nicht)
