@@ -19,11 +19,14 @@ import asyncio
 import datetime
 import json
 import logging
+import os
 from typing import Any
 
 import settings as S
 
 log = logging.getLogger("jarvis.meal_plan")
+
+MEAL_PLAN_CACHE_PATH = os.path.join(os.path.dirname(__file__), "meal_plan_cache.json")
 
 
 # ---------------------------------------------------------------------------
@@ -40,8 +43,17 @@ def _next_saturday() -> datetime.date:
     return today + datetime.timedelta(days=days_ahead)
 
 
-def _week_dates() -> list[datetime.date]:
-    """Liefert die 7 Tagesdaten Samstag bis Freitag der naechsten Woche."""
+def _week_dates(start_today: bool = False) -> list[datetime.date]:
+    """Liefert die Tagesdaten fuer die Speiseplanung.
+
+    start_today=True (on-demand): heute bis diesen Freitag (Mo–Fr).
+    start_today=False (Scheduler): naechster Samstag bis Freitag (7 Tage).
+    """
+    today = datetime.date.today()
+    if start_today and today.weekday() < 5:  # Mon–Fri
+        days_to_friday = 4 - today.weekday()
+        # On Friday days_to_friday == 0 → single-day plan (only today). Intentional.
+        return [today + datetime.timedelta(days=i) for i in range(days_to_friday + 1)]
     saturday = _next_saturday()
     return [saturday + datetime.timedelta(days=i) for i in range(7)]
 
@@ -165,26 +177,17 @@ def _preferred_market() -> str:
     return ""
 
 
-async def generate_meal_plan() -> dict:
-    """Generiert einen 7-tägigen Speisenplan (Samstag bis Freitag) via Claude.
+async def generate_meal_plan(start_today: bool = False, wishes: str = "") -> dict:
+    """Generiert einen Speisenplan via Claude und persistiert ihn.
 
-    Erstellt den Plan fuer die naechste Woche, berücksichtigt Personenzahl
-    pro Tag via Google Calendar und speichert das Ergebnis in
-    S.MEAL_PLAN_WEEK.
+    start_today=True: von heute bis diesen Freitag (on-demand).
+    start_today=False: naechster Samstag bis Freitag (Donnerstag-Scheduler).
+    wishes: optionale Sonderwuensche der Nutzerin, fliessen in den Prompt ein.
 
     Returns:
-        dict mit Datums-String als Schluessel und Tages-Dict als Wert:
-        {
-            "2026-05-30": {
-                "dish": "Lachs mit Spinat",
-                "recipe": "...",
-                "servings": 4,
-                "ingredients": ["300g Lachs", "200g Spinat", ...]
-            },
-            ...
-        }
+        dict mit Datums-String als Schluessel und Tages-Dict als Wert.
     """
-    dates = _week_dates()
+    dates = _week_dates(start_today=start_today)
 
     # Personenzahl pro Tag parallel abfragen
     servings_list = await asyncio.gather(
@@ -211,9 +214,13 @@ async def generate_meal_plan() -> dict:
     season = _season_produce()
     weather = _weather_hint()
     offers = _offers_hint()
+    wishes_hint = (
+        f"BESONDERE WUENSCHE DIESE WOCHE (bitte unbedingt beruecksichtigen):\n{wishes}"
+        if wishes.strip() else ""
+    )
 
     context_blocks = "\n\n".join(
-        block for block in [diabetes_hint, weather, offers] if block
+        block for block in [diabetes_hint, weather, offers, wishes_hint] if block
     )
 
     days_block = "\n".join(
@@ -252,7 +259,7 @@ async def generate_meal_plan() -> dict:
     )
 
     user_msg = (
-        f"Erstelle einen Speisenplan fuer die folgende Woche:\n\n{days_block}\n\n"
+        f"Erstelle einen Speisenplan fuer {len(dates)} Tag(e):\n\n{days_block}\n\n"
         f"Bitte generiere fuer jeden Tag ein vollstaendiges Abendessen mit "
         f"Rezept und Zutaten (angepasst an die jeweilige Personenanzahl)."
     )
@@ -302,13 +309,48 @@ async def generate_meal_plan() -> dict:
             "cook_time_minutes": int(entry.get("cook_time_minutes", 45)),
         }
 
+    # Clear before update so stale entries from prior generations are not kept.
+    S.MEAL_PLAN_WEEK.clear()
     S.MEAL_PLAN_WEEK.update(result)
     log.info(
         f"generate_meal_plan: Plan fuer {len(result)} Tage generiert "
         f"({list(result.keys())[0] if result else 'leer'} .. "
         f"{list(result.keys())[-1] if result else 'leer'})"
     )
+    save_meal_plan()
     return result
+
+
+def save_meal_plan() -> None:
+    """Persistiert S.MEAL_PLAN_WEEK atomar als JSON-Datei (temp + os.replace)."""
+    import tempfile
+    try:
+        dir_ = os.path.dirname(MEAL_PLAN_CACHE_PATH)
+        with tempfile.NamedTemporaryFile(
+            "w", encoding="utf-8", dir=dir_, delete=False, suffix=".tmp"
+        ) as f:
+            json.dump(S.MEAL_PLAN_WEEK, f, ensure_ascii=False, indent=2)
+            tmp_path = f.name
+        os.replace(tmp_path, MEAL_PLAN_CACHE_PATH)
+        log.info(f"save_meal_plan: {len(S.MEAL_PLAN_WEEK)} Eintraege gespeichert")
+    except Exception as e:
+        log.warning(f"save_meal_plan: {type(e).__name__}: {e}")
+
+
+def load_meal_plan() -> None:
+    """Laedt den persistierten Speisenplan beim Serverstart."""
+    if not os.path.exists(MEAL_PLAN_CACHE_PATH):
+        return
+    try:
+        with open(MEAL_PLAN_CACHE_PATH, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if isinstance(data, dict):
+            # Clear first so stale in-memory state is fully replaced by the cache.
+            S.MEAL_PLAN_WEEK.clear()
+            S.MEAL_PLAN_WEEK.update(data)
+            log.info(f"load_meal_plan: {len(data)} Eintraege geladen")
+    except Exception as e:
+        log.warning(f"load_meal_plan: {type(e).__name__}: {e}")
 
 
 async def get_today_recipe() -> str:
@@ -383,16 +425,17 @@ def _normalize_ingredient(ingredient: str) -> str:
     return normalized.strip().lower()
 
 
-def format_meal_plan_telegram() -> str:
-    """Formatiert den aktuellen Wochenplan fuer den Telegram-Versand.
+def format_meal_plan_telegram(include_today_recipe: bool = True) -> str:
+    """Formatiert den aktuellen Plan fuer Telegram.
 
-    Returns:
-        Formatierten Text fuer Telegram mit Plan fuer alle 7 Tage,
-        oder Fehlermeldung wenn kein Plan vorhanden.
+    Zeigt Übersicht aller Tage + das vollständige Rezept für heute
+    (wenn include_today_recipe=True und ein Eintrag für heute vorhanden).
     """
     if not S.MEAL_PLAN_WEEK:
         return "Kein Speisenplan verfuegbar."
 
+    today_str = datetime.date.today().isoformat()
+    today_entry = None
     lines = ["Wochenplan Abendessen:\n"]
     for date_str in sorted(S.MEAL_PLAN_WEEK.keys()):
         entry = S.MEAL_PLAN_WEEK[date_str]
@@ -404,10 +447,23 @@ def format_meal_plan_telegram() -> str:
         dish = entry.get("dish", "")
         servings = entry.get("servings", S.MEAL_PLAN_SERVINGS_DEFAULT)
         cook_time = entry.get("cook_time_minutes", 45)
+        marker = " ◄ heute" if date_str == today_str else ""
         lines.append(
             f"{day_label}: {dish} "
-            f"({servings} Pers., ca. {cook_time} Min.)"
+            f"({servings} Pers., ca. {cook_time} Min.){marker}"
         )
+        if date_str == today_str:
+            today_entry = entry
+
+    if include_today_recipe and today_entry:
+        dish = today_entry.get("dish", "")
+        ingredients = today_entry.get("ingredients", [])
+        recipe = today_entry.get("recipe", "")
+        lines.append(f"\n--- Rezept heute: {dish} ---")
+        if ingredients:
+            lines.append("Zutaten:\n" + "\n".join(f"  - {i}" for i in ingredients))
+        if recipe:
+            lines.append(f"\nZubereitung:\n{recipe}")
 
     market = _preferred_market()
     if market:
