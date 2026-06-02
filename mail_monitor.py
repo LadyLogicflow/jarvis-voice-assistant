@@ -99,6 +99,28 @@ def _learn_from_mail(
     """
     import datetime as _dt
 
+    # Extract a short plain-text snippet from the mail body for richer notes.
+    body_snippet = ""
+    try:
+        if msg.is_multipart():
+            for part in msg.walk():
+                if part.get_content_type() == "text/plain":
+                    raw = part.get_payload(decode=True)
+                    if raw:
+                        charset = part.get_content_charset() or "utf-8"
+                        body_snippet = raw.decode(charset, errors="replace").strip()
+                        break
+        else:
+            raw = msg.get_payload(decode=True)
+            if raw:
+                charset = msg.get_content_charset() or "utf-8"
+                body_snippet = raw.decode(charset, errors="replace").strip()
+        # Keep only first 200 chars; strip quoted reply lines ("> ...")
+        lines = [l for l in body_snippet.splitlines() if l and not l.startswith(">")]
+        body_snippet = " ".join(lines)[:200].strip()
+    except Exception:
+        body_snippet = ""
+
     # persons_db: update last_contact + auto-save mail note for known senders.
     if sender_email:
         try:
@@ -106,9 +128,11 @@ def _learn_from_mail(
             profile = persons_db.find_by_email(sender_email)
             if profile is not None:
                 today = _dt.date.today().isoformat()
-                note_entry = f"{today}: Mail empfangen — {subject}"
-                if note_entry not in profile.notes:
-                    profile.notes.append(note_entry)
+                note_text = f"{today}: Mail empfangen — {subject}"
+                if body_snippet:
+                    note_text += f" | {body_snippet[:150]}"
+                if note_text not in profile.notes:
+                    profile.notes.append(note_text)
                 profile.last_contact = today
                 persons_db.upsert(profile)
                 log.debug(
@@ -121,13 +145,14 @@ def _learn_from_mail(
                 account, type(exc).__name__, exc,
             )
 
-    # memory_search: index sender + subject so future draft-reply context
-    # retrieval can surface relevant prior correspondence.
+    # memory_search: index sender + subject + body snippet for richer recall.
     try:
         import memory_search
         date_str = msg.get("Date", "")
         display = sender or sender_email or "Unbekannt"
         text = f"Mail von {display}: {subject}"
+        if body_snippet:
+            text += f" — {body_snippet[:200]}"
         doc_id = memory_search.make_doc_id(
             "mail", f"{account}:{uid}:{sender_email}:{subject}"
         )
