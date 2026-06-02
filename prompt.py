@@ -428,7 +428,7 @@ AKTIONEN - Schreibe die passende Aktion ans ENDE deiner Antwort. Der Text VOR de
 [ACTION:MARK_MAIL_READ] - Markiert die aktuelle Mail im IMAP als gelesen und beendet damit den Mail-Workflow. Nutze wenn {addr} sagt "ignorieren", "egal", "lass" — also wenn weder Antwort noch Aufgabe aus der Mail entstehen soll. Schreibe einen kurzen Halbsatz davor wie "Markiere als erledigt." dann die Aktion.
 [ACTION:MARK_MAIL_WERBUNG] - Markiert die aktuelle Mail als gelesen UND verschiebt sie in den Werbung-Ordner (Gelesen_automatisch). Nutze wenn {addr} sagt "Werbung", "ist Werbung", "das ist Werbung", "Werbung, weg damit", "schieb das in Werbung". KEIN Text davor, NUR die Aktion.
 [ACTION:DELETE_MAIL] - Verschiebt die aktuelle Mail in den Papierkorb. Nutze wenn {addr} sagt "löschen", "weg damit", "in den Papierkorb". KEIN Text davor, NUR die Aktion.
-[ACTION:REMEMBER_SENDER] - Speichert den Absender der aktuellen Mail als stille Regel: zukünftige Mails von dieser Adresse werden automatisch als gelesen markiert. Nutze wenn {addr} sagt "ja" oder "merken" als Antwort auf die "Absender merken?"-Frage bei einer Info-Mail. KEIN Text davor, NUR die Aktion.
+[ACTION:REMEMBER_SENDER] - Speichert den Absender der aktuellen Mail als stille E-Mail-Filterregel (kein Notiz-Eintrag, kein Kontakt). Nutze wenn {addr} sagt "ja" oder "stumm schalten" als Antwort auf die "Absender stumm schalten?"-Frage bei einer Info-Mail. KEIN Text davor, NUR die Aktion. NIEMALS [ACTION:MEMORIZE] verwenden wenn es um das Stumm-Schalten eines Mail-Absenders geht.
 [ACTION:MAIL_TO_TASK] - Erstellt aus der aktuellen Mail eine Todoist-Aufgabe im Eingang (Inbox), markiert die Mail anschliessend als gelesen. Nutze wenn {addr} sagt "Aufgabe daraus", "Aufgabe", "ja, Aufgabe" oder zustimmt nachdem Du eine Aufgabe vorgeschlagen hast. KEIN Text davor, NUR die Aktion.
 [ACTION:MAIL_FORWARD_PENDING] name_oder_email - Sucht den Kontakt in der Personen-DB und bereitet die Weiterleitung der aktiven Mail vor. Jarvis nennt den gefundenen Kontakt mit E-Mail-Adresse und bittet um Bestaetigung. Payload kann ein Name sein ("Sandra") oder direkt eine E-Mail-Adresse. Nutze wenn {addr} sagt "leite die Mail an ... weiter", "weiterleiten an ...", "forward an ...". Beispiel: [ACTION:MAIL_FORWARD_PENDING] Sandra
 [ACTION:MAIL_FORWARD_SEND] - Leitet die aktive Mail an den vorbereiteten Empfaenger (gespeichert durch MAIL_FORWARD_PENDING) tatsaechlich weiter. Nur verwenden wenn {addr} die Weiterleitung bestaetigt hat ("Ja", "Ja, weiterleiten", "Mach das"). KEIN Text davor, NUR die Aktion.
@@ -484,6 +484,10 @@ DIREKT-AKTIONEN (jederzeit moeglich, sobald eine Mail aktiv ist):
 - "Antworte mit: ..." (mit konkretem Inhalt) -> [ACTION:DRAFT_REPLY] inhalt
 
 WICHTIG: NICHT nachfragen "Was soll ich antworten?" — sofort den Vorschlag liefern. Falls Jarvis ohne Eckpunkte keinen Vorschlag bauen kann, gibt _generate_draft_body intern eine NEED_INPUT-Antwort zurueck und {addr} wird gefragt was sie sagen will.
+
+NACH "Absender stumm schalten?" (Info-Mail):
+- "Ja" / "stumm schalten" / "merken" -> [ACTION:REMEMBER_SENDER] — speichert E-Mail-Filterregel. KEIN [ACTION:MEMORIZE], KEIN Notiz-Eintrag, KEIN Kontakt-Lookup.
+- "Nein" / "lass" -> [ACTION:MARK_MAIL_READ]
 
 NACH READ_MAIL ("Soll ich beantworten?"):
 - "Ja" / "antworten" -> [ACTION:DRAFT_REPLY]
