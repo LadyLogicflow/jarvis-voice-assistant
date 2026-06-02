@@ -30,25 +30,24 @@
             <circle class="hud-glow" cx="100" cy="100" r="92" fill="none" stroke-width="2"/>
 
             <!-- Outer tick ring — rotates CW -->
-            <g class="ring-outer" transform="translate(100,100)">
-              <!-- Use a circle with stroke-dasharray to simulate tick marks -->
-              <circle r="88" fill="none" stroke-width="1.5" stroke-dasharray="2 2.67" class="hud-ring"/>
+            <g class="ring-outer">
+              <circle cx="100" cy="100" r="88" fill="none" stroke-width="1.5" stroke-dasharray="2 2.67" class="hud-ring"/>
               <!-- 4 longer accent marks at 0/90/180/270 degrees -->
-              <line x1="0" y1="-88" x2="0" y2="-78" class="hud-accent"/>
-              <line x1="88" y1="0" x2="78" y2="0" class="hud-accent"/>
-              <line x1="0" y1="88" x2="0" y2="78" class="hud-accent"/>
-              <line x1="-88" y1="0" x2="-78" y2="0" class="hud-accent"/>
+              <line x1="100" y1="12"  x2="100" y2="22"  class="hud-accent"/>
+              <line x1="188" y1="100" x2="178" y2="100" class="hud-accent"/>
+              <line x1="100" y1="188" x2="100" y2="178" class="hud-accent"/>
+              <line x1="12"  y1="100" x2="22"  y2="100" class="hud-accent"/>
             </g>
 
             <!-- Middle decorative ring — rotates CCW -->
-            <g class="ring-middle" transform="translate(100,100)">
-              <circle r="72" fill="none" stroke-width="1" stroke-dasharray="4 8" class="hud-ring-mid"/>
-              <!-- Corner bracket decorations at 4 positions -->
-              <g transform="rotate(45)">
-                <path d="M-68,-10 L-68,-68 L-10,-68" fill="none" stroke-width="1.5" class="hud-bracket"/>
-                <path d="M68,-10 L68,-68 L10,-68" fill="none" stroke-width="1.5" class="hud-bracket"/>
-                <path d="M-68,10 L-68,68 L-10,68" fill="none" stroke-width="1.5" class="hud-bracket"/>
-                <path d="M68,10 L68,68 L10,68" fill="none" stroke-width="1.5" class="hud-bracket"/>
+            <g class="ring-middle">
+              <circle cx="100" cy="100" r="72" fill="none" stroke-width="1" stroke-dasharray="4 8" class="hud-ring-mid"/>
+              <!-- Corner bracket decorations at 4 positions, rotated 45° around center -->
+              <g transform="rotate(45, 100, 100)">
+                <path d="M32,90  L32,32  L90,32"  fill="none" stroke-width="1.5" class="hud-bracket"/>
+                <path d="M168,90 L168,32 L110,32" fill="none" stroke-width="1.5" class="hud-bracket"/>
+                <path d="M32,110 L32,168 L90,168" fill="none" stroke-width="1.5" class="hud-bracket"/>
+                <path d="M168,110 L168,168 L110,168" fill="none" stroke-width="1.5" class="hud-bracket"/>
               </g>
             </g>
 
