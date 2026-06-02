@@ -1335,7 +1335,7 @@ async def _process_birthday_drafts(now: datetime.datetime) -> None:
 
     for entry in entry_list:
         # Parsen: "Max Mueller (50, Freitag 06.06.)"
-        m = _re.match(r"^(.+?)\s*\((\d+),\s*\w+\s+(\d{2}\.\d{2}\.)\)$", entry)
+        m = _re.match(r"^(.+?)\s*\((\d+),\s*\w+\s+(\d{2}\.\d{2}\.)\),?$", entry)
         if not m:
             log.warning(f"birthday_draft_scheduler: Kann Eintrag nicht parsen: {entry!r}")
             continue
@@ -1396,14 +1396,19 @@ async def _process_birthday_drafts(now: datetime.datetime) -> None:
             )
             continue
 
-        # IMAP-Entwurf ablegen
+        # IMAP-Entwurf ablegen (neues Schreiben, kein Reply — kein Re:-Prefix)
+        import email as _email_mod
+        import email.utils as _email_utils
+        from email.message import EmailMessage as _EmailMessage
         from_addr = account.get("user", "")
-        msg_bytes = mail_actions.build_reply_message(
-            from_addr=from_addr,
-            to_addr=email_addr,
-            subject=subject,
-            body=body,
-        )
+        _msg = _EmailMessage()
+        _msg["From"] = from_addr
+        _msg["To"] = email_addr
+        _msg["Subject"] = subject
+        _msg["Date"] = _email_utils.formatdate(localtime=True)
+        _msg["Message-ID"] = _email_utils.make_msgid()
+        _msg.set_content(body)
+        msg_bytes = bytes(_msg)
         # Entwurfs-Ordner aus Account-Config
         drafts_folder = account.get("drafts_folder", "Drafts")
         ok, detail = await _append_birthday_draft(account, msg_bytes, drafts_folder)
@@ -1419,7 +1424,7 @@ async def _process_birthday_drafts(now: datetime.datetime) -> None:
                 import telegram_bot
                 tg_msg = (
                     f"Entwurf fuer {name} ({age}) erstellt — "
-                    f"liegt als Entwurf im Posteingang."
+                    f"liegt als Entwurf im Entwurfsordner."
                 )
                 await telegram_bot.send_user_text(tg_msg)
             except Exception as e:

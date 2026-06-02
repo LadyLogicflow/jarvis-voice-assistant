@@ -106,14 +106,9 @@ NEWS_URL = config.get(
 )
 NEWS_SOURCE_NAME = config.get("news_source_name", "Tagesschau")
 
-# Morning brief: full briefing (weather, today's events/tasks, Steuer/Politik)
+# Morning brief: full briefing (weather, today's events/tasks, Steuer)
 # is delivered on Activate before this hour. After it, a short greeting only.
 MORNING_BRIEF_UNTIL_HOUR = int(config.get("morning_brief_until_hour", 11))
-POLITIK_NEWS_URL = config.get(
-    "politik_news_url",
-    "https://www.tagesschau.de/inland/index~rss2.xml",
-)
-POLITIK_NEWS_NAME = config.get("politik_news_name", "Tagesschau Inland")
 
 # Address pool — Jarvis randomly varies how he calls Catrin so the
 # greeting doesn't sound canned.

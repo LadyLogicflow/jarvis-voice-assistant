@@ -167,7 +167,8 @@ async def _lifespan(_app):  # type: ignore[no-untyped-def]  # AsyncGenerator
     finally:
         tasks_to_cancel = [task_reindex, task_brief, task_evening, task_proactive,
                            task_telegram, task_mail, task_weekly, task_memory,
-                           task_planner, task_meal_plan, task_meal_reminder]
+                           task_planner, task_meal_plan, task_meal_reminder,
+                           task_birthday_draft]
         if task_bring is not None:
             tasks_to_cancel.append(task_bring)
         for t in tasks_to_cancel:
