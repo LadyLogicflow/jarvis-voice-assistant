@@ -1617,6 +1617,16 @@ async def execute_action(action: dict) -> str:
             log.warning(f"BRING_LIST: {type(e).__name__}: {e}")
             return f"Bring!-Fehler: {type(e).__name__}"
 
+    elif t == "SPEISEPLAN_SHOW":
+        # Bestehenden Plan anzeigen — kein Neuerstellen, keine Wunsch-Abfrage.
+        import meal_plan as _mp
+        if not S.MEAL_PLAN_WEEK:
+            return (
+                f"Es gibt noch keinen Speisenplan, {pick_address()}. "
+                f"Sag 'Erstell einen Speiseplan' und ich frage dich nach deinen Wuenschen."
+            )
+        return _mp.format_meal_plan_telegram()
+
     elif t == "SPEISEPLAN":
         # On-demand: heute bis Freitag. Payload p enthaelt optionale Wuensche.
         # Cache nur nutzen wenn KEINE Wuensche angegeben — mit Wuenschen immer neu generieren.
