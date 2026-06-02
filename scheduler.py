@@ -1189,6 +1189,9 @@ async def meal_plan_scheduler() -> None:
             if (now.weekday() == _TRIGGER_WEEKDAY
                     and current_hhmm >= _TRIGGER_TIME
                     and triggered_for_week != iso_week):
+                # triggered_for_week is set BEFORE the attempt. If sending the
+                # question fails, we do NOT retry this week (fail-once-per-week).
+                # This prevents duplicate questions if the server restarts mid-day.
                 triggered_for_week = iso_week
                 log.info("meal_plan_scheduler: Donnerstag-Trigger — Wunsch-Abfrage")
                 try:
@@ -1212,7 +1215,7 @@ async def meal_plan_scheduler() -> None:
                     while S.MEAL_PLAN_AWAITING_WISHES and waited < _WISHES_TIMEOUT:
                         await asyncio.sleep(30)
                         waited += 30
-                    S.MEAL_PLAN_AWAITING_WISHES = False  # Sicherheitsreset
+                    S.MEAL_PLAN_AWAITING_WISHES = False
 
                     wishes = S.MEAL_PLAN_WISHES.strip()
                     if wishes:
@@ -1222,6 +1225,7 @@ async def meal_plan_scheduler() -> None:
 
                     plan = await _mp.generate_meal_plan(wishes=wishes)
                     if plan:
+                        # include_today_recipe=False: plan covers next week, not today.
                         text = _mp.format_meal_plan_telegram(include_today_recipe=False)
                         if _proactive_handler:
                             await _proactive_handler(text)
@@ -1230,11 +1234,15 @@ async def meal_plan_scheduler() -> None:
                         log.info("meal_plan_scheduler: Plan gesendet")
                     else:
                         log.warning("meal_plan_scheduler: Plan-Generierung lieferte leeres Ergebnis")
-                except Exception as e:
+                except BaseException as e:
+                    # BaseException (not just Exception) catches CancelledError so
+                    # the flag is never left stuck True after task cancellation.
                     S.MEAL_PLAN_AWAITING_WISHES = False
                     log.warning(
                         f"meal_plan_scheduler: Fehler: {type(e).__name__}: {e}"
                     )
+                    if not isinstance(e, Exception):
+                        raise  # Re-raise CancelledError so asyncio can clean up
         except Exception as e:
             log.warning(f"meal_plan_scheduler loop error: {type(e).__name__}: {e}")
         await asyncio.sleep(60)

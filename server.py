@@ -302,10 +302,13 @@ async def process_message(session_id: str, user_text: str, ws: WebSocket) -> Non
 
     # Speiseplan-Wunsch-Abfrage: Antwort abfangen bevor Claude sie verarbeitet.
     if S.MEAL_PLAN_AWAITING_WISHES:
-        S.MEAL_PLAN_WISHES = user_text
+        S.MEAL_PLAN_WISHES = user_text[:500]  # Laenge begrenzen
         S.MEAL_PLAN_AWAITING_WISHES = False
         log.info(f"Web: Speisewunsch empfangen: '{user_text[:80]}'")
-        reply = "Notiert, ich plane entsprechend."
+        reply = (
+            "Danke — ich notiere das als Wunsch fuer den Speiseplan "
+            "und generiere gleich."
+        )
         await speak(reply, ws, display=reply)
         return
 

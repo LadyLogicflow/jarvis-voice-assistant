@@ -284,11 +284,12 @@ async def _handle_message(update, context, *, source_text: Optional[str] = None)
 
         # Speiseplan-Wunsch-Abfrage: Antwort abfangen bevor Claude sie verarbeitet.
         if S.MEAL_PLAN_AWAITING_WISHES:
-            S.MEAL_PLAN_WISHES = user_text
+            S.MEAL_PLAN_WISHES = user_text[:500]  # Laenge begrenzen
             S.MEAL_PLAN_AWAITING_WISHES = False
             log.info(f"Telegram: Speisewunsch empfangen: '{user_text[:80]}'")
             await update.message.reply_text(
-                "Notiert, ich plane entsprechend."
+                "Danke — ich notiere das als Wunsch fuer den Speiseplan "
+                "und generiere gleich."
             )
             return
 

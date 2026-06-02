@@ -52,6 +52,7 @@ def _week_dates(start_today: bool = False) -> list[datetime.date]:
     today = datetime.date.today()
     if start_today and today.weekday() < 5:  # Mon–Fri
         days_to_friday = 4 - today.weekday()
+        # On Friday days_to_friday == 0 → single-day plan (only today). Intentional.
         return [today + datetime.timedelta(days=i) for i in range(days_to_friday + 1)]
     saturday = _next_saturday()
     return [saturday + datetime.timedelta(days=i) for i in range(7)]
@@ -308,6 +309,8 @@ async def generate_meal_plan(start_today: bool = False, wishes: str = "") -> dic
             "cook_time_minutes": int(entry.get("cook_time_minutes", 45)),
         }
 
+    # Clear before update so stale entries from prior generations are not kept.
+    S.MEAL_PLAN_WEEK.clear()
     S.MEAL_PLAN_WEEK.update(result)
     log.info(
         f"generate_meal_plan: Plan fuer {len(result)} Tage generiert "
@@ -319,10 +322,16 @@ async def generate_meal_plan(start_today: bool = False, wishes: str = "") -> dic
 
 
 def save_meal_plan() -> None:
-    """Persistiert S.MEAL_PLAN_WEEK als JSON-Datei."""
+    """Persistiert S.MEAL_PLAN_WEEK atomar als JSON-Datei (temp + os.replace)."""
+    import tempfile
     try:
-        with open(MEAL_PLAN_CACHE_PATH, "w", encoding="utf-8") as f:
+        dir_ = os.path.dirname(MEAL_PLAN_CACHE_PATH)
+        with tempfile.NamedTemporaryFile(
+            "w", encoding="utf-8", dir=dir_, delete=False, suffix=".tmp"
+        ) as f:
             json.dump(S.MEAL_PLAN_WEEK, f, ensure_ascii=False, indent=2)
+            tmp_path = f.name
+        os.replace(tmp_path, MEAL_PLAN_CACHE_PATH)
         log.info(f"save_meal_plan: {len(S.MEAL_PLAN_WEEK)} Eintraege gespeichert")
     except Exception as e:
         log.warning(f"save_meal_plan: {type(e).__name__}: {e}")
@@ -336,6 +345,8 @@ def load_meal_plan() -> None:
         with open(MEAL_PLAN_CACHE_PATH, "r", encoding="utf-8") as f:
             data = json.load(f)
         if isinstance(data, dict):
+            # Clear first so stale in-memory state is fully replaced by the cache.
+            S.MEAL_PLAN_WEEK.clear()
             S.MEAL_PLAN_WEEK.update(data)
             log.info(f"load_meal_plan: {len(data)} Eintraege geladen")
     except Exception as e:
