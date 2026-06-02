@@ -28,8 +28,8 @@ body {
 }
 
 #orb {
-    width: 200px;
-    height: 200px;
+    width: 320px;
+    height: 320px;
     transition: width 0.4s ease, height 0.4s ease;
 }
 
