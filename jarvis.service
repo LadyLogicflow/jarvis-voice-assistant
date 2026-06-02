@@ -10,6 +10,9 @@ WorkingDirectory=/home/caterina/jarvis-voice-assistant-master
 ExecStart=/home/caterina/jarvis-voice-assistant-master/.venv/bin/python server.py
 Restart=on-failure
 RestartSec=10
+TimeoutStopSec=15
+KillMode=mixed
+KillSignal=SIGTERM
 StandardOutput=journal
 StandardError=journal
 
