@@ -257,7 +257,7 @@ def _format_for_telegram(
     elif category == "handlungsbedarf":
         base += "\n\n→ Aufgabe anlegen?"
     elif category == "info":
-        base += "\n\n→ Absender stumm schalten? (ja = zukuenftige Mails auto-gelesen)"
+        base += "\n\n→ Mails vom Absender zukünftig immer als gelesen markieren?"
     return base
 
 
