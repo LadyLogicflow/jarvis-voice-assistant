@@ -97,6 +97,18 @@ def add(
     )
     _notes.append(note)
     _save()
+    try:
+        import memory_search as _ms
+        import asyncio as _asyncio
+        doc_id = _ms.make_doc_id("note", note.id)
+        try:
+            loop = _asyncio.get_running_loop()
+            loop.run_in_executor(None, _ms.index_text, note.text, "note", doc_id,
+                                 {"kind": note.kind, "note_id": note.id})
+        except RuntimeError:
+            _ms.index_text(note.text, "note", doc_id, {"kind": note.kind, "note_id": note.id})
+    except Exception:
+        pass
     return note
 
 
