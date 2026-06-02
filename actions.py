@@ -1618,13 +1618,14 @@ async def execute_action(action: dict) -> str:
             return f"Bring!-Fehler: {type(e).__name__}"
 
     elif t == "SPEISEPLAN":
-        # On-demand: immer von heute bis Freitag planen.
-        # Wenn heute bereits im Plan ist, gecachten Plan zeigen.
+        # On-demand: heute bis Freitag. Payload p enthaelt optionale Wuensche.
+        # Wenn heute bereits im Plan ist, gecachten Plan zeigen (Wuensche ignorieren).
         import meal_plan as _mp
         today_str = datetime.date.today().isoformat()
         if S.MEAL_PLAN_WEEK and today_str in S.MEAL_PLAN_WEEK:
             return _mp.format_meal_plan_telegram()
-        plan = await _mp.generate_meal_plan(start_today=True)
+        wishes = p.strip() if p else ""
+        plan = await _mp.generate_meal_plan(start_today=True, wishes=wishes)
         if not plan:
             return (
                 f"Ich konnte den Speisenplan leider nicht erstellen, "
