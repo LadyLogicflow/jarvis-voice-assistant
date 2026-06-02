@@ -1,0 +1,17 @@
+[Unit]
+Description=JARVIS Personal Assistant
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=caterina
+WorkingDirectory=/home/caterina/jarvis-voice-assistant-master
+ExecStart=/usr/bin/python3 server.py
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
