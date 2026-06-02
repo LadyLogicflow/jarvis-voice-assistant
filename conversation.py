@@ -116,6 +116,14 @@ async def append_message(session_id: str, role: str, content: str) -> None:
     persist to disk when persistence is enabled."""
     conv = conversations.setdefault(session_id, [])
     conv.append({"role": role, "content": content})
+    if content:
+        try:
+            import memory_search as _ms
+            _doc_id = _ms.make_doc_id(f"conversation_{role}", content)
+            loop = asyncio.get_running_loop()
+            loop.run_in_executor(None, _ms.index_text, content, "conversation", _doc_id, {"role": role})
+        except Exception:
+            pass
     if len(conv) > MAX_CONVERSATION_HISTORY:
         del conv[: len(conv) - MAX_CONVERSATION_HISTORY]
     await save_persistent_history(session_id, conv)

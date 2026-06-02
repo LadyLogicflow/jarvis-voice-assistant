@@ -97,6 +97,35 @@ def upsert(profile: PersonProfile) -> None:
     _load()
     _persons[profile.contact_id] = profile
     _save()
+    try:
+        import memory_search as _ms
+        import asyncio as _asyncio
+
+        def _reindex_profile() -> None:
+            for _note_text in profile.notes:
+                if _note_text.strip():
+                    _did = _ms.make_doc_id("person_note", f"{profile.contact_id}:{_note_text}")
+                    _ms.index_text(
+                        f"Notiz zu {profile.name}: {_note_text.strip()}",
+                        "person", _did,
+                        {"person_name": profile.name, "person_id": profile.contact_id},
+                    )
+            for _pt in profile.open_points:
+                if _pt.strip():
+                    _did = _ms.make_doc_id("person_open", f"{profile.contact_id}:{_pt}")
+                    _ms.index_text(
+                        f"Offener Punkt mit {profile.name}: {_pt.strip()}",
+                        "person", _did,
+                        {"person_name": profile.name, "person_id": profile.contact_id},
+                    )
+
+        try:
+            _loop = _asyncio.get_running_loop()
+            _loop.run_in_executor(None, _reindex_profile)
+        except RuntimeError:
+            _reindex_profile()
+    except Exception:
+        pass
 
 
 def delete(contact_id: str) -> bool:
