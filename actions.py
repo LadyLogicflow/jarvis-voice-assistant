@@ -1134,6 +1134,8 @@ async def execute_action(action: dict) -> str:
                 "phones": [prof.primary_phone] + prof.secondary_phones if prof.primary_phone else prof.secondary_phones,
                 "anrede": prof.anrede,
                 "funktion": prof.funktion,
+                "last_contact": getattr(prof, "last_contact", ""),
+                "notes": list(getattr(prof, "notes", [])),
             })
         for c in apple_hits:
             if c.id in seen_ids:
@@ -1175,6 +1177,11 @@ async def execute_action(action: dict) -> str:
                     out_parts.append("Telefon: " + ", ".join(phone_list) + ".")
         if r["anrede"]:
             out_parts.append(f"Bevorzugte Anrede: {r['anrede']}.")
+        if r.get("last_contact"):
+            out_parts.append(f"Letzter Kontakt: {r['last_contact']}.")
+        if r.get("notes"):
+            recent = r["notes"][-3:]
+            out_parts.append("Notizen: " + " | ".join(recent))
         return " ".join(out_parts)
 
     elif t == "CONTACTS_INFO":
