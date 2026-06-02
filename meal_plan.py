@@ -459,18 +459,18 @@ def format_meal_plan_telegram(include_today_recipe: bool = True) -> str:
         dish = today_entry.get("dish", "")
         ingredients = today_entry.get("ingredients", [])
         recipe = today_entry.get("recipe", "")
-        lines.append(f"\n--- Rezept heute: {dish} ---")
+        lines.append(f"\nRezept heute — {dish}:")
         if ingredients:
-            lines.append("Zutaten:\n" + "\n".join(f"  - {i}" for i in ingredients))
+            lines.append("Zutaten: " + ", ".join(ingredients))
         if recipe:
-            lines.append(f"\nZubereitung:\n{recipe}")
+            lines.append(f"\nZubereitung: {recipe}")
 
     market = _preferred_market()
     if market:
-        lines.append(f"\nEmpfohlener Einkaufsmarkt diese Woche: {market}")
+        lines.append(f"\nEinkauf empfohlen: {market}")
     lines.append(
-        "\nSende [ACTION:SPEISEPLAN_SWAP] Tag|Neues Gericht zum Tauschen "
-        "oder [ACTION:EINKAUF_FREIGEBEN] zum Übertragen auf die Einkaufsliste."
+        "\nSag mir, wenn du einen Tag aendern moechtest "
+        "oder die Zutaten auf die Einkaufsliste uebertragen willst."
     )
     return "\n".join(lines)
 
