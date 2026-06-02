@@ -662,7 +662,13 @@ async def morning_brief_scheduler() -> None:
     Uses '>=' on the hour (not '=='): if the server was asleep at exactly
     7:00 and the loop wakes up at 7:05, the brief still fires today.
     """
-    triggered_today = ""
+    # Pre-fill guard so a restart after the brief hour does not re-fire.
+    _now_init = datetime.datetime.now()
+    _is_weekend_init = _now_init.weekday() in (5, 6)
+    _brief_hour_init = 9 if _is_weekend_init else S.MORNING_HOUR
+    triggered_today = (
+        datetime.date.today().isoformat() if _now_init.hour >= _brief_hour_init else ""
+    )
     while True:
         now = datetime.datetime.now()
         today = datetime.date.today().isoformat()
@@ -1032,7 +1038,10 @@ async def evening_brief_scheduler() -> None:
     Uses the same '>=' pattern as morning_brief_scheduler so the brief
     still fires if the loop woke up a few minutes after EVENING_HOUR:00.
     """
-    triggered_today = ""
+    _now_init = datetime.datetime.now()
+    triggered_today = (
+        datetime.date.today().isoformat() if _now_init.hour >= S.EVENING_HOUR else ""
+    )
     while True:
         try:
             now = datetime.datetime.now()
@@ -1120,7 +1129,15 @@ async def proactive_briefs_scheduler() -> None:
     appended when there is an overdue open promise and no followup was sent
     today yet (Issue #124).
     """
-    triggered: dict[str, str] = {}  # slot "HH:MM" -> ISO date last fired
+    # Pre-fill all slots already past today so a restart doesn't re-fire them.
+    _now_init = datetime.datetime.now()
+    _today_init = datetime.date.today().isoformat()
+    _hhmm_init = _now_init.strftime("%H:%M")
+    triggered: dict[str, str] = {
+        slot: _today_init
+        for slot in S.PROACTIVE_BRIEFS_TIMES
+        if _hhmm_init >= slot
+    }
     while True:
         try:
             now = datetime.datetime.now()
@@ -1255,7 +1272,12 @@ async def meal_plan_reminder_scheduler() -> None:
     Sendet nur wenn ein Speisenplan vorhanden ist und ein Eintrag fuer
     heute existiert. Kein Push wenn quiet hours aktiv.
     """
-    triggered_today = ""
+    _now_init = datetime.datetime.now()
+    triggered_today = (
+        datetime.date.today().isoformat()
+        if _now_init.strftime("%H:%M") >= S.MEAL_PLAN_REMINDER_TIME
+        else ""
+    )
 
     while True:
         try:
