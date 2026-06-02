@@ -155,7 +155,7 @@ async def _lifespan(_app):  # type: ignore[no-untyped-def]  # AsyncGenerator
     log.info("Wochenausblick aktiv (Sonntag 18:00)")
     log.info("Memory-Reindex-Scheduler aktiv (täglich 03:00 Uhr + Startup)")
     log.info("Task-Planer aktiv (stündlich, Mo–Fr 17–19 Uhr)")
-    log.info("Speiseplanung aktiv (Donnerstag 07:30 + taeglich 17:30 Rezept-Reminder)")
+    log.info("Speiseplanung aktiv (Donnerstag 09:00 + taeglich 17:30 Rezept-Reminder)")
     log.info("Geburtstags-Entwurf-Scheduler aktiv (Freitag 08:00)")
     # Bring!-Monitor (Issue #123): nur starten wenn Zugangsdaten konfiguriert
     task_bring: asyncio.Task | None = None
