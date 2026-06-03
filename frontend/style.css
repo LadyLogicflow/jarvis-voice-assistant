@@ -55,6 +55,7 @@ body {
     fill: var(--hud-color, #00d4ff);
     opacity: 0.85;
     filter: url(#glow);
+    text-transform: uppercase;
 }
 
 /* Outer ring rotation */

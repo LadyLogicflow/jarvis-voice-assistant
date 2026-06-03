@@ -27,13 +27,13 @@
                 <feMerge><feMergeNode in="coloredBlur"/><feMergeNode in="SourceGraphic"/></feMerge>
               </filter>
 
-              <!-- Gläserne Kugel: sehr transparent, Lichtquelle oben-links -->
+              <!-- Gläserne Kugel: dunkel, Lichtquelle oben-links -->
               <radialGradient id="core-grad" cx="36%" cy="30%" r="72%">
-                <stop offset="0%"   stop-color="#e8f4ff" stop-opacity="0.55"/>
-                <stop offset="22%"  stop-color="#60a4d8" stop-opacity="0.22"/>
-                <stop offset="55%"  stop-color="#0820a0" stop-opacity="0.12"/>
-                <stop offset="82%"  stop-color="#001050" stop-opacity="0.30"/>
-                <stop offset="100%" stop-color="#000a28" stop-opacity="0.65"/>
+                <stop offset="0%"   stop-color="#e8f4ff" stop-opacity="0.50"/>
+                <stop offset="22%"  stop-color="#60a4d8" stop-opacity="0.28"/>
+                <stop offset="55%"  stop-color="#0820a0" stop-opacity="0.55"/>
+                <stop offset="82%"  stop-color="#001050" stop-opacity="0.72"/>
+                <stop offset="100%" stop-color="#000a28" stop-opacity="0.92"/>
               </radialGradient>
 
               <!-- Primärer Spiegelglanz oben-links (Glaslinse) -->
@@ -92,18 +92,19 @@
             <!-- Kugelrand -->
             <circle cx="100" cy="100" r="56" fill="none" stroke-width="2" class="hud-inner-ring"/>
 
-            <!-- Ein J.A.R.V.I.S.-Label scrollt über den Äquator (Kugel dreht sich CW).
-                 font-size=9 SVG-Einheiten (≈18px auf 400px-Canvas), kein CSS-Override.
-                 Label ~59 SVG-Einheiten breit, danach 22 Leerzeichen ≈119 Einheiten Pause.
-                 Eine Wiederholung = 178 SVG-Einheiten; 3 Reps ab x=-200.
-                 SMIL to="178 0" = nahtlose Schleife, skalenunabhängig. -->
+            <!-- Ein J.A.R.V.I.S.-Label läuft einmal über die Kugel und verschwindet.
+                 Kugel dreht sich im Uhrzeigersinn (Text scrollt links→rechts).
+                 font-size=9 SVG-Einheiten (18px bei 400px-Canvas), text-transform
+                 in CSS erzwingt Großbuchstaben. Ein einzelnes Text-Element,
+                 x=-100 → Label tritt bei T≈87 ein, verlässt die Kugel bei T≈254.
+                 SMIL to="350 0" ergibt ~4s Pause zwischen zwei Durchläufen. -->
             <g clip-path="url(#sphere-clip)">
               <g>
                 <animateTransform attributeName="transform" type="translate"
-                  from="0 0" to="178 0" dur="8s" repeatCount="indefinite"/>
-                <text x="-200" y="104" class="hud-orbit-text"
+                  from="0 0" to="350 0" dur="8s" repeatCount="indefinite"/>
+                <text x="-100" y="104" class="hud-orbit-text"
                       font-family="'Courier New', Courier, monospace"
-                      font-size="9" font-weight="bold">J.A.R.V.I.S.                      J.A.R.V.I.S.                      J.A.R.V.I.S.                      </text>
+                      font-size="9" font-weight="bold">J.A.R.V.I.S.</text>
               </g>
             </g>
           </svg>
