@@ -1177,6 +1177,8 @@ async def execute_action(action: dict) -> str:
                 "funktion": prof.funktion,
                 "last_contact": getattr(prof, "last_contact", ""),
                 "notes": list(getattr(prof, "notes", [])),
+                "tax_assessments": list(getattr(prof, "tax_assessments", [])),
+                "advance_payments": list(getattr(prof, "advance_payments", [])),
             })
         for c in apple_hits:
             if c.id in seen_ids:
@@ -1223,6 +1225,34 @@ async def execute_action(action: dict) -> str:
         if r.get("notes"):
             recent = r["notes"][-3:]
             out_parts.append("Notizen: " + " | ".join(recent))
+        # Steuerbescheide (aus PDF-Analyse)
+        for ta in r.get("tax_assessments", []):
+            steuerart = ta.get("steuerart", "?")
+            jahr = ta.get("steuerjahr", "?")
+            betrag = ta.get("betrag_eur")
+            datum = ta.get("ausstellungsdatum", "")
+            faellig = ta.get("zahlungstermin") or ""
+            if betrag is not None:
+                try:
+                    b = float(betrag)
+                    richtung = "Erstattung" if b >= 0 else "Nachzahlung"
+                    betrag_str = f"{abs(b):,.2f}€".replace(",", "X").replace(".", ",").replace("X", ".")
+                    betrag_info = f"{richtung} {betrag_str}"
+                except (ValueError, TypeError):
+                    betrag_info = f"Betrag {betrag}€"
+            else:
+                betrag_info = ""
+            faellig_info = f", fällig {faellig}" if faellig and faellig != "null" else ""
+            datum_info = f" vom {datum}" if datum else ""
+            out_parts.append(
+                f"Steuerbescheid {steuerart} {jahr}{datum_info}: {betrag_info}{faellig_info}."
+            )
+        for ap in r.get("advance_payments", []):
+            steuerart = ap.get("steuerart", "?")
+            jahr = ap.get("vorauszahlungsjahr", "?")
+            datum = ap.get("ausstellungsdatum", "")
+            datum_info = f" vom {datum}" if datum else ""
+            out_parts.append(f"Vorauszahlungsbescheid {steuerart} {jahr}{datum_info}.")
         return " ".join(out_parts)
 
     elif t == "CONTACTS_INFO":
