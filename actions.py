@@ -381,15 +381,42 @@ async def execute_action(action: dict) -> str:
 
     elif t == "CALENDAR":
         import microsoft_calendar_tools
+        import datetime as _dt
+
+        # Compute time_min / time_max from optional payload ("heute" /
+        # "diese Woche" / "nächste Woche"). Falls kein Payload: default.
+        time_min = None
+        time_max = None
+        _range = p.strip().lower()
+        _today = _dt.date.today()
+        _now = _dt.datetime.now(_dt.timezone.utc)
+
+        if _range in ("heute", "today"):
+            time_min = _dt.datetime.combine(_today, _dt.time.min, tzinfo=_dt.timezone.utc)
+            time_max = _dt.datetime.combine(_today, _dt.time.max, tzinfo=_dt.timezone.utc)
+        elif _range in ("diese woche", "diese_woche", "woche", "this week"):
+            _sunday = _today + _dt.timedelta(days=(6 - _today.weekday()))
+            time_min = _now
+            time_max = _dt.datetime.combine(_sunday, _dt.time.max, tzinfo=_dt.timezone.utc)
+        elif "nächste" in _range or "naechste" in _range or "next week" in _range:
+            _next_monday = _today + _dt.timedelta(days=(7 - _today.weekday()))
+            _next_sunday = _next_monday + _dt.timedelta(days=6)
+            time_min = _dt.datetime.combine(_next_monday, _dt.time.min, tzinfo=_dt.timezone.utc)
+            time_max = _dt.datetime.combine(_next_sunday, _dt.time.max, tzinfo=_dt.timezone.utc)
+
         results = []
-        google_result = await google_calendar_tools.get_events(days=S.CALENDAR_DAYS)
+        google_result = await google_calendar_tools.get_events(
+            days=S.CALENDAR_DAYS, time_min=time_min, time_max=time_max,
+        )
         if google_result:
             results.append(google_result)
         if S.MICROSOFT_CALENDAR_ICS_URL:
-            ms_result = await microsoft_calendar_tools.get_events(days=S.CALENDAR_DAYS)
+            ms_result = await microsoft_calendar_tools.get_events(
+                days=S.CALENDAR_DAYS, time_min=time_min, time_max=time_max,
+            )
             if ms_result:
                 results.append(ms_result)
-        return "\n\n".join(results) if results else "Keine Termine in den naechsten Tagen."
+        return "\n\n".join(results) if results else "Keine Termine im angefragten Zeitraum."
 
     elif t == "ADDCAL":
         parts = p.split("|", 1)

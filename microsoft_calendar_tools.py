@@ -33,10 +33,13 @@ def _to_aware(dt: datetime.date) -> datetime.datetime:
     return datetime.datetime.combine(dt, datetime.time.min, tzinfo=datetime.timezone.utc)
 
 
-def _parse_ics(ics_bytes: bytes, days: int) -> list[tuple[datetime.datetime, str]]:
+def _parse_ics(ics_bytes: bytes, days: int,
+               time_min: datetime.datetime | None = None,
+               time_max: datetime.datetime | None = None) -> list[tuple[datetime.datetime, str]]:
     cal = Calendar.from_ical(ics_bytes)
     now = datetime.datetime.now(datetime.timezone.utc)
-    cutoff = now + datetime.timedelta(days=days)
+    t_min = time_min if time_min is not None else now
+    t_max = time_max if time_max is not None else (now + datetime.timedelta(days=days))
     events: list[tuple[datetime.datetime, str]] = []
 
     for component in cal.walk():
@@ -46,7 +49,7 @@ def _parse_ics(ics_bytes: bytes, days: int) -> list[tuple[datetime.datetime, str
         if not dtstart:
             continue
         start = _to_aware(dtstart.dt)
-        if not (now <= start <= cutoff):
+        if not (t_min <= start <= t_max):
             continue
 
         summary = str(component.get("SUMMARY", "(kein Titel)"))
@@ -76,7 +79,9 @@ def _parse_ics(ics_bytes: bytes, days: int) -> list[tuple[datetime.datetime, str
     return events
 
 
-async def get_events(days: int = 7) -> str:
+async def get_events(days: int = 7,
+                     time_min: datetime.datetime | None = None,
+                     time_max: datetime.datetime | None = None) -> str:
     url = S.MICROSOFT_CALENDAR_ICS_URL
     if not url:
         return ""
@@ -91,11 +96,11 @@ async def get_events(days: int = 7) -> str:
         return f"DIHAG-Kalender nicht erreichbar: {e}"
 
     try:
-        events = _parse_ics(ics_bytes, days)
+        events = _parse_ics(ics_bytes, days, time_min, time_max)
     except Exception as e:
         log.warning("ICS parse fehlgeschlagen: %s", e)
         return f"DIHAG-Kalender konnte nicht verarbeitet werden: {e}"
 
     if not events:
-        return f"Keine DIHAG-Termine in den naechsten {days} Tagen."
+        return "Keine DIHAG-Termine im angefragten Zeitraum."
     return "DIHAG-Kalender:\n" + "\n".join(line for _, line in events)

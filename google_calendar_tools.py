@@ -76,13 +76,17 @@ def _get_service():  # type: ignore[no-untyped-def]  # googleapiclient Resource
     return build("calendar", "v3", credentials=creds)
 
 
-async def get_events(days: int = 7, max_results: int = 10) -> str:
+async def get_events(days: int = 7, max_results: int = 10,
+                     time_min: datetime | None = None,
+                     time_max: datetime | None = None) -> str:
     """Fetch upcoming calendar events."""
     loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(None, _fetch_events, days, max_results)
+    return await loop.run_in_executor(None, _fetch_events, days, max_results, time_min, time_max)
 
 
-def _fetch_events(days: int, max_results: int) -> str:
+def _fetch_events(days: int, max_results: int,
+                  time_min: datetime | None = None,
+                  time_max: datetime | None = None) -> str:
     try:
         service = _get_service()
     except Exception as e:
@@ -90,13 +94,14 @@ def _fetch_events(days: int, max_results: int) -> str:
         return f"Kalender nicht erreichbar: {type(e).__name__}"
 
     now = datetime.now(timezone.utc)
-    end = now + timedelta(days=days)
+    t_min = time_min if time_min is not None else now
+    t_max = time_max if time_max is not None else (now + timedelta(days=days))
 
     try:
         result = service.events().list(
             calendarId="primary",
-            timeMin=now.isoformat(),
-            timeMax=end.isoformat(),
+            timeMin=t_min.isoformat(),
+            timeMax=t_max.isoformat(),
             maxResults=max_results,
             singleEvents=True,
             orderBy="startTime",
@@ -124,7 +129,7 @@ def _fetch_events(days: int, max_results: int) -> str:
             start_str = start
         lines.append(f"• {start_str} — {e.get('summary', '(kein Titel)')}")
 
-    return f"Kalender — nächste {len(lines)} Termine:\n" + "\n".join(lines)
+    return f"Kalender — {len(lines)} Termine:\n" + "\n".join(lines)
 
 
 async def add_event(title: str, when: str, duration_h: float = 1.0) -> str:

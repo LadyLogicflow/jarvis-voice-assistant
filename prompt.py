@@ -416,7 +416,7 @@ AKTIONEN - Schreibe die passende Aktion ans ENDE deiner Antwort. Der Text VOR de
 - Beispiel ohne Frage (User nennt Bereich): [ACTION:ADDTASK] Steuererklaerung pruefen | morgen | dihag
 - Beispiel mit Frage: User sagt "Trag eine Aufgabe ein", du fragst "Privat, HILO oder fuer DIHAG?", User antwortet "HILO", dann: [ACTION:ADDTASK] Aufgabentext | (kein Datum) | hilo
 [ACTION:DONETASK] aufgabe - Aufgabe in Todoist als erledigt markieren. Nutze wenn {addr} sagt dass etwas erledigt ist oder abgehakt werden soll.
-[ACTION:CALENDAR] - Termine aus Google Kalender abrufen. Nutze wenn {addr} nach Terminen, dem Kalender, was wann ansteht oder ihrer Woche fragt.
+[ACTION:CALENDAR] zeitraum - Termine aus Google Kalender abrufen. Payload steuert den Zeitraum — EXAKT einer dieser Werte: "heute" (nur heute), "diese Woche" (ab jetzt bis einschliesslich Sonntag), "nächste Woche" (Montag bis Sonntag naechster Woche). Ohne Payload: naechste {S.CALENDAR_DAYS} Tage. Beispiele: [ACTION:CALENDAR] heute — [ACTION:CALENDAR] diese Woche — [ACTION:CALENDAR] nächste Woche
 [ACTION:ADDCAL] titel | datum uhrzeit - Neuen Termin in Google Kalender eintragen. Beispiel: [ACTION:ADDCAL] Mandantengespraech | morgen 14 Uhr
 [ACTION:NOTE] titel | inhalt - Neue Notiz in macOS Notizen-App anlegen. Nutze wenn {addr} etwas notieren, festhalten oder merken moechte. Inhalt optional. Beispiel: [ACTION:NOTE] Mandant Müller | Hat wegen Betriebsprüfung angerufen, Rückruf morgen
 [ACTION:MAIL_LOG] - Zeigt was Jarvis heute mit eingehenden Mails gemacht hat (sortiert, getriaged, gemeldet). Nutze wenn {addr} fragt "was hast du mit den Mails gemacht", "was ist heute reingekommen", "welche Mails hast du bearbeitet", "zeig mir den Mail-Log". SOFORT ausfuehren — KEIN Text davor, NUR die Aktion.
