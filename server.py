@@ -32,7 +32,7 @@ from fastapi import (
     WebSocket,
     WebSocketDisconnect,
 )
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
 import settings as S
@@ -645,9 +645,17 @@ app.mount(
 )
 
 
+_STATIC_VER = str(int(time.time()))
+
+
 @app.get("/")
-async def serve_index() -> FileResponse:
-    return FileResponse(os.path.join(os.path.dirname(__file__), "frontend", "index.html"))
+async def serve_index():
+    filepath = os.path.join(os.path.dirname(__file__), "frontend", "index.html")
+    with open(filepath, encoding="utf-8") as f:
+        html = f.read()
+    html = html.replace('/static/style.css"', f'/static/style.css?v={_STATIC_VER}"')
+    html = html.replace('/static/main.js"', f'/static/main.js?v={_STATIC_VER}"')
+    return HTMLResponse(content=html)
 
 
 if __name__ == "__main__":
