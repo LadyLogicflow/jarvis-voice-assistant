@@ -21,6 +21,17 @@ log = S.log
 
 _PDF_DIR = "/tmp/jarvis_pdfs"
 
+# Analyse-Ergebnisse des laufenden Tages — werden um 20:30 in die
+# Abendzusammenfassung einbezogen und danach geleert.
+_daily_pdf_results: list[str] = []
+
+
+def pop_daily_pdf_results() -> list[str]:
+    """Gibt alle PDF-Analyse-Ergebnisse des Tages zurueck und leert die Liste."""
+    results = list(_daily_pdf_results)
+    _daily_pdf_results.clear()
+    return results
+
 # Haiku-Modell — konsistent mit dem Rest des Projekts.
 _HAIKU_MODEL = "claude-haiku-4-5-20251001"
 
@@ -281,7 +292,10 @@ def analyze_pdf_stub(filepath: str) -> str:
         # geloggt sobald er fertig ist.
         async def _run_and_log() -> None:
             result = await analyze_steuerbescheid(filepath)
-            log.info("pdf_tools: Hintergrund-Analyse fertig: %s", result.get("summary", ""))
+            summary = result.get("summary", "")
+            log.info("pdf_tools: Hintergrund-Analyse fertig: %s", summary)
+            if summary:
+                _daily_pdf_results.append(summary)
 
         loop.create_task(_run_and_log())
         return f"PDF empfangen, Analyse laeuft im Hintergrund: {filename}"

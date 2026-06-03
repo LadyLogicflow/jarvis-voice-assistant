@@ -1226,6 +1226,15 @@ async def generate_evening_summary(detailed: bool = False) -> str:
     except Exception as e:
         log.warning(f"generate_evening_summary: todoist failed: {type(e).__name__}: {e}")
 
+    # 4. PDF-Analysen des Tages (via E-Mail-Trigger)
+    try:
+        import pdf_tools as _pt
+        pdf_results = _pt.pop_daily_pdf_results()
+        if pdf_results:
+            parts.append("PDF-ANALYSEN HEUTE:\n" + "\n".join(pdf_results))
+    except Exception as e:
+        log.warning(f"generate_evening_summary: pdf_results failed: {type(e).__name__}: {e}")
+
     addr = pick_address()
     system_prompt = _EVENING_SUMMARY_PROMPT.format(addr=addr)
     user_content = (
