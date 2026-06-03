@@ -1161,7 +1161,7 @@ async def generate_evening_summary(detailed: bool = False) -> str:
     except Exception as e:
         log.warning(f"generate_evening_summary: mail_intelligence failed: {type(e).__name__}: {e}")
 
-    # 2. Google Calendar: Termine die heute stattgefunden haben.
+    # 2. Kalender: Termine die heute stattgefunden haben.
     # time_min=today_start stellt sicher dass auch Termine vor 20:30 enthalten
     # sind (get_events verwendet sonst 'jetzt' als Untergrenze).
     try:
@@ -1172,19 +1172,37 @@ async def generate_evening_summary(detailed: bool = False) -> str:
         today_start = datetime.datetime.combine(
             today, datetime.time.min, tzinfo=datetime.timezone.utc
         )
+        today_end = today_start + datetime.timedelta(days=1)
+
+        cal_events: list[str] = []
+
+        # 2a. Google Calendar (primaer)
         cal_text = await google_calendar_tools.get_events(
             days=1, max_results=30, time_min=today_start
         )
         if cal_text and cal_text != "KEINE_TERMINE":
-            # Regex verankert Datum an Position nach Bullet+Wochentag-Kuerzel
-            # (\w+ statt \w{2} damit locale-abhaengige 3-Zeichen-Kuerzel passen).
             _today_re = _re.compile(r"^•\s+\w+\s+" + _re.escape(today_short))
-            today_events = [
+            cal_events.extend(
                 line.strip() for line in cal_text.splitlines()
                 if _today_re.match(line.strip())
-            ]
-            if today_events:
-                parts.append("TERMINE HEUTE:\n" + "\n".join(today_events))
+            )
+
+        # 2b. DIHAG-Kalender (Microsoft/ICS), falls konfiguriert
+        if S.MICROSOFT_CALENDAR_ICS_URL:
+            import microsoft_calendar_tools
+            ms_text = await microsoft_calendar_tools.get_events(
+                days=1, time_min=today_start, time_max=today_end
+            )
+            if ms_text and not ms_text.startswith(
+                ("Keine DIHAG", "DIHAG-Kalender nicht", "DIHAG-Kalender konnte")
+            ):
+                for line in ms_text.splitlines():
+                    stripped = line.strip()
+                    if stripped.startswith("•"):
+                        cal_events.append(stripped)
+
+        if cal_events:
+            parts.append("TERMINE HEUTE:\n" + "\n".join(cal_events))
     except Exception as e:
         log.warning(f"generate_evening_summary: calendar failed: {type(e).__name__}: {e}")
 

@@ -318,15 +318,10 @@ async def _handle_jarvis_trigger(
     if not confirmation_parts:
         confirmation_parts.append("Jarvis-Befehl empfangen.")
 
-    confirmation = (
-        f"Jarvis-Trigger via E-Mail (Betreff: {subject!r}):\n"
-        + "\n".join(f"• {p}" for p in confirmation_parts)
+    log.info(
+        "mail_monitor[%s] uid=%s: jarvis-trigger verarbeitet: %s",
+        name, uid, "; ".join(confirmation_parts),
     )
-    try:
-        await telegram_bot.send_user_text(confirmation)
-    except Exception as e:
-        log.warning("mail_monitor[%s] uid=%s: Telegram-Bestätigung fehlgeschlagen: %s: %s",
-                    name, uid, type(e).__name__, e)
 
     # Queue for deletion after 24 h.
     _pending_jarvis_delete[(name, uid)] = _time.time()
