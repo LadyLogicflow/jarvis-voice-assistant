@@ -393,6 +393,81 @@ def search_knowledge(query: str, limit: int = 10) -> list[dict]:
         return []
 
 
+def get_mail_context_block(days: int = 1) -> str:
+    """Erzeugt einen kompakten Block für den Systemprompt (Issue #162).
+
+    Fasst die wichtigsten Wissenselemente der letzten N Tage zusammen.
+    Priorisiert: Fristen > Entscheidungen > Aufgaben > Personen > Fakten.
+    Gecappt auf 1500 Zeichen damit das Kontext-Budget nicht gesprengt wird.
+
+    Args:
+        days: Lookback-Fenster in Tagen (Default: 1 = letzte 24h).
+
+    Returns:
+        Formatierter Deutsch-Text-Block mit Quellenangaben,
+        oder kurzer Leer-Hinweis wenn nichts vorliegt.
+    """
+    _EMPTY = "\nMail-Wissen (letzte 24h): Keine neuen Informationen aus den Postfächern."
+    try:
+        return _build_mail_context_block(days=days, empty=_EMPTY)
+    except Exception as e:
+        log.warning("mail_intelligence: get_mail_context_block failed: %s: %s", type(e).__name__, e)
+        return _EMPTY
+
+
+def _build_mail_context_block(days: int, empty: str) -> str:
+    rows = get_recent_knowledge(days=days, limit=20)
+
+    if not rows:
+        return empty
+
+    _CAT_ORDER = ["deadline", "decision", "action", "person", "fact"]
+    _CAT_LABEL = {
+        "deadline": "Frist",
+        "decision": "Entscheidung",
+        "action": "Aufgabe",
+        "person": "Person",
+        "fact": "Info",
+    }
+
+    by_cat: dict[str, list[dict]] = {c: [] for c in _CAT_ORDER}
+    for row in rows:
+        cat = row.get("category", "fact")
+        if cat not in by_cat:
+            cat = "fact"
+        by_cat[cat].append(row)
+
+    lines: list[str] = []
+    for cat in _CAT_ORDER:
+        for row in by_cat[cat]:
+            label = _CAT_LABEL.get(cat, "Info")
+            sender = (row.get("sender_name") or row.get("sender") or "?")
+            date = (row.get("mail_date") or "")[:10]
+            content = (row.get("content") or "").strip()
+            account = row.get("account", "")
+
+            entry = f"[{label}] {sender}"
+            meta_parts = []
+            if account:
+                meta_parts.append(account)
+            if date:
+                meta_parts.append(date)
+            if meta_parts:
+                entry += " (" + ", ".join(meta_parts) + ")"
+            if content:
+                c = content[:100] + ("…" if len(content) > 100 else "")
+                entry += f": {c}"
+            lines.append(entry)
+
+    if not lines:
+        return empty
+
+    block = "\nMail-Wissen (letzte 24h):\n" + "\n".join(lines[:10])
+    if len(block) > 1500:
+        block = block[:1497] + "…"
+    return block
+
+
 def get_recent_knowledge(days: int = 7, limit: int = 20) -> list[dict]:
     """Liefert Wissenselemente der letzten N Tage.
 
