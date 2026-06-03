@@ -1972,4 +1972,20 @@ async def execute_action(action: dict) -> str:
             return f"Mail weitergeleitet an {to_name} ({to_addr})."
         return f"Weiterleitung an {to_name} fehlgeschlagen — bitte SMTP-Konfiguration pruefen."
 
+    elif t == "ANALYZE_PDF":
+        # Issue #109: Steuerbescheid-Analyse via PyMuPDF + Claude Haiku.
+        # payload = absoluter Pfad zur PDF-Datei.
+        path = action_data.get("path", "") or p.strip()
+        if not path:
+            return f"Kein PDF-Pfad angegeben, {pick_address()}."
+        if not os.path.exists(path):
+            return f"PDF nicht gefunden: {path}"
+        try:
+            from pdf_tools import analyze_steuerbescheid
+            result = await analyze_steuerbescheid(path)
+            return result.get("summary", f"PDF analysiert: {os.path.basename(path)}")
+        except Exception as exc:
+            log.warning("ANALYZE_PDF: Analyse fehlgeschlagen: %s: %s", path, exc)
+            return f"PDF-Analyse fehlgeschlagen ({os.path.basename(path)}): {type(exc).__name__}"
+
     return ""

@@ -43,3 +43,6 @@ icalendar>=5.0
 # Semantisches Gedächtnis (issue #57) — Vektorspeicher + Embeddings
 chromadb>=0.5.0
 sentence-transformers>=3.0.0
+
+# PDF-Analyse (issue #109) — Textextraktion aus Steuerbescheiden
+pymupdf>=1.24.0
