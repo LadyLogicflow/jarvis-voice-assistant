@@ -1101,7 +1101,7 @@ _EVENING_SUMMARY_PROMPT = (
     "Du bist Jarvis. Erstelle eine knappe Abendzusammenfassung fuer {addr}. "
     "Ton: trocken-butlerhaft, sachlich, leicht ironisch wenn passend. "
     "Format: fliessendes Deutsch, keine Listen, keine Markdown-Formatierung, "
-    "keine eckigen Klammern. Text wird vorgelesen (TTS), also natiuerliche Saetze. "
+    "keine eckigen Klammern. Text wird vorgelesen (TTS), also natuerliche Saetze. "
     "Maximal 5-7 Saetze insgesamt. "
     "Inhalt (nur was vorhanden ist): "
     "Was war heute wichtig laut E-Mail-Postfach (Kerninhalte kurz nennen); "
@@ -1124,9 +1124,10 @@ async def generate_evening_summary(detailed: bool = False) -> str:
     die anderen trotzdem verarbeitet.
 
     Args:
-        detailed: Falls True, werden mehr Details aufgenommen (v1:
-            Standard-Zusammenfassung, detailed-Flag ist vorbereitet
-            aber noch nicht anders implementiert).
+        detailed: Falls True, werden bis zu 20 Mail-Eintraege einbezogen
+            (statt 5) und main_info-Felder angehaengt. Kanal-Routing und
+            Kalender/Todoist-Ausgabe sind identisch — nur die Mail-Tiefe
+            aendert sich. Zukuenftig erweiterbar.
 
     Returns:
         Formulierter Text fuer TTS oder leerer String bei Fehler.
@@ -1160,15 +1161,24 @@ async def generate_evening_summary(detailed: bool = False) -> str:
     except Exception as e:
         log.warning(f"generate_evening_summary: mail_intelligence failed: {type(e).__name__}: {e}")
 
-    # 2. Google Calendar: Termine die heute stattgefunden haben
+    # 2. Google Calendar: Termine die heute stattgefunden haben.
+    # time_min=today_start stellt sicher dass auch Termine vor 20:30 enthalten
+    # sind (get_events verwendet sonst 'jetzt' als Untergrenze).
     try:
+        import re as _re
         today = datetime.date.today()
         today_short = today.strftime("%d.%m.")
-        cal_text = await google_calendar_tools.get_events(days=1, max_results=30)
+        today_start = datetime.datetime.combine(today, datetime.time.min)
+        cal_text = await google_calendar_tools.get_events(
+            days=1, max_results=30, time_min=today_start
+        )
         if cal_text and cal_text != "KEINE_TERMINE":
+            # Regex verankert Datum an Position nach Bullet+Wochentag-Kuerzel,
+            # verhindert False-Positives bei Datumsangaben im Termintitel.
+            _today_re = _re.compile(r"^•\s+\w{2}\s+" + _re.escape(today_short))
             today_events = [
                 line.strip() for line in cal_text.splitlines()
-                if line.startswith("•") and today_short in line
+                if _today_re.match(line.strip())
             ]
             if today_events:
                 parts.append("TERMINE HEUTE:\n" + "\n".join(today_events))
