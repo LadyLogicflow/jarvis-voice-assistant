@@ -87,6 +87,27 @@ body {
     animation: hud-pulse-speak 0.5s ease-in-out infinite;
 }
 
+/* Direct stroke/fill overrides for thinking + speaking — works even
+   when CSS custom-property inheritance into inline SVG is unreliable
+   (Safari, older Chromium on Pi). */
+#orb.thinking .hud-ring,
+#orb.thinking .hud-glow,
+#orb.thinking .hud-accent,
+#orb.thinking .hud-ring-mid,
+#orb.thinking .hud-bracket,
+#orb.thinking .hud-inner-ring { stroke: #ff4444; }
+#orb.thinking .hud-dot         { fill:   #ff4444; }
+#orb.thinking .hud-title       { fill:   #ff4444; }
+
+#orb.speaking .hud-ring,
+#orb.speaking .hud-glow,
+#orb.speaking .hud-accent,
+#orb.speaking .hud-ring-mid,
+#orb.speaking .hud-bracket,
+#orb.speaking .hud-inner-ring { stroke: #00ff88; }
+#orb.speaking .hud-dot         { fill:   #00ff88; }
+#orb.speaking .hud-title       { fill:   #00ff88; }
+
 /* Status dot blink (idle only) */
 #orb.idle .hud-dot {
     animation: hud-dot-blink 3s ease-in-out infinite;

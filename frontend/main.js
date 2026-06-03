@@ -387,7 +387,7 @@ orb.addEventListener('click', () => {
     }
 });
 
-function setOrbState(state) { orb.className = state; }
+function setOrbState(state) { orb.setAttribute('class', state); }
 
 function addTranscript(role, text) {
     const div = document.createElement('div');
