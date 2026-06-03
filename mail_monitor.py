@@ -19,6 +19,7 @@ import email.header
 import json
 import os
 import re
+import time as _time
 import sys
 from email.utils import parseaddr
 
@@ -50,7 +51,6 @@ _SENT_POLL_INTERVAL = 15 * 60
 # Mails with 'jarvis' in subject are queued for deletion 24h after arrival.
 # Format: {(account_name, uid): received_timestamp_float}
 # ---------------------------------------------------------------------------
-import time as _time
 
 _JARVIS_DELETE_AFTER = 24 * 60 * 60  # 24 hours in seconds
 _pending_jarvis_delete: dict[tuple[str, int], float] = {}
@@ -376,12 +376,17 @@ async def _flush_jarvis_deletes(accounts: list[dict]) -> None:
             if getattr(resp, "result", None) != "OK":
                 log.warning("mail_monitor[%s] jarvis-delete: login failed", acc_name)
                 continue
-            await client.select(acc["folder"])
+            select_resp = await client.select(acc["folder"])
+            if getattr(select_resp, "result", None) != "OK":
+                log.warning("mail_monitor[%s] jarvis-delete: SELECT %r failed", acc_name, acc["folder"])
+                continue
+            successfully_flagged: list[int] = []
             for uid in uids:
                 try:
                     await client.uid("store", str(uid), "+FLAGS", "(\\Deleted)")
                     log.info("mail_monitor[%s] uid=%s: jarvis-trigger mail als gelöscht markiert",
                              acc_name, uid)
+                    successfully_flagged.append(uid)
                 except Exception as e:
                     log.warning(
                         "mail_monitor[%s] uid=%s: STORE \\Deleted fehlgeschlagen: %s: %s",
@@ -397,7 +402,7 @@ async def _flush_jarvis_deletes(accounts: list[dict]) -> None:
             log.warning("mail_monitor[%s] jarvis-delete connection failed: %s: %s",
                         acc_name, type(e).__name__, e)
         else:
-            for uid in uids:
+            for uid in successfully_flagged:
                 _pending_jarvis_delete.pop((acc_name, uid), None)
 
 

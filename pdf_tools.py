@@ -50,11 +50,16 @@ def save_pdf(data: bytes, filename: str) -> str:
         OSError: Wenn die Datei nicht geschrieben werden kann.
     """
     os.makedirs(_PDF_DIR, exist_ok=True)
-    # Sanitize: only keep safe characters in the filename.
     safe_name = "".join(
         c if (c.isalnum() or c in "._- ") else "_" for c in filename
     ).strip() or "attachment.pdf"
     dest = os.path.join(_PDF_DIR, safe_name)
+    if os.path.exists(dest):
+        base, ext = os.path.splitext(safe_name)
+        counter = 1
+        while os.path.exists(dest):
+            dest = os.path.join(_PDF_DIR, f"{base}_{counter}{ext}")
+            counter += 1
     with open(dest, "wb") as f:
         f.write(data)
     log.info("pdf_tools: PDF gespeichert: %s (%d bytes)", dest, len(data))
