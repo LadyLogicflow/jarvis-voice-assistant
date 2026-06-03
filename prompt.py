@@ -223,6 +223,9 @@ def build_system_prompt() -> str:
     # Mail-Decision-Tree-Anker + Stress-Level (Issue #118):
     # Beide aus dem "default"-Slot lesen (Single-User-App, konsistent mit
     # broadcast_active_mail-Fallback).
+    import mail_intelligence as _mi
+    mail_knowledge_block = _mi.get_mail_context_block(days=1)
+
     import session_state as _ss
     _state = _ss.get("default")
     _active = _state.active_mail
@@ -547,7 +550,7 @@ WENN {S.USER_NAME} "Jarvis activate" sagt AB {S.MORNING_BRIEF_UNTIL_HOUR}:00 Uhr
 - Wenn ein Termin / eine Aufgabe in der naechsten Stunde wartet, darfst du das mit einem Halbsatz erwaehnen — sonst nichts.
 - Wenn heute Wochenende/Feiertag ist (siehe Erholungstag-Modus), entsprechend kommentieren.
 
-=== AKTUELLE DATEN ==={date_block}{greeting_block}{weather_block}{today_events_block}{today_tasks_block}{task_block}{steuer_block}{steuer_recent_block}{open_promises_block}{upcoming_deadlines_block}{birthday_block}{health_block}{address_pool_block}{active_mail_block}{pending_proactive_block}
+=== AKTUELLE DATEN ==={date_block}{greeting_block}{weather_block}{today_events_block}{today_tasks_block}{task_block}{steuer_block}{steuer_recent_block}{open_promises_block}{upcoming_deadlines_block}{birthday_block}{health_block}{mail_knowledge_block}{address_pool_block}{active_mail_block}{pending_proactive_block}
 ==="""
 
 
