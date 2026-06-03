@@ -21,6 +21,7 @@ from __future__ import annotations
 import asyncio
 import email
 import email.header
+import email.utils
 import json
 import os
 import re
@@ -79,34 +80,31 @@ def _save_state(account_name: str, uid: int) -> None:
 # Datenbank-Setup
 # ---------------------------------------------------------------------------
 
-def _get_db() -> sqlite3.Connection:
-    """Öffnet die SQLite-Datenbank und erstellt das Schema falls nötig."""
-    conn = sqlite3.connect(_DB_PATH)
-    conn.row_factory = sqlite3.Row
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS mail_knowledge (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            account TEXT NOT NULL,
-            mail_date TEXT,
-            sender TEXT,
-            sender_name TEXT,
-            subject TEXT,
-            category TEXT,
-            content TEXT,
-            raw_summary TEXT,
-            created_at TEXT NOT NULL
+def _init_db() -> None:
+    """Erstellt das Schema falls noch nicht vorhanden. Einmalig beim Start aufrufen."""
+    with sqlite3.connect(_DB_PATH) as conn:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS mail_knowledge (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                account TEXT NOT NULL,
+                mail_date TEXT,
+                sender TEXT,
+                sender_name TEXT,
+                subject TEXT,
+                category TEXT,
+                content TEXT,
+                raw_summary TEXT,
+                created_at TEXT NOT NULL
+            )
+        """)
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_mail_knowledge_account "
+            "ON mail_knowledge(account)"
         )
-    """)
-    conn.execute(
-        "CREATE INDEX IF NOT EXISTS idx_mail_knowledge_account "
-        "ON mail_knowledge(account)"
-    )
-    conn.execute(
-        "CREATE INDEX IF NOT EXISTS idx_mail_knowledge_date "
-        "ON mail_knowledge(mail_date)"
-    )
-    conn.commit()
-    return conn
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_mail_knowledge_date "
+            "ON mail_knowledge(mail_date)"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -145,6 +143,11 @@ def _extract_text_body(msg) -> str:
             charset = msg.get_content_charset() or "utf-8"
             return raw.decode(charset, errors="replace").strip()
     return ""
+
+
+def _esc(s: str) -> str:
+    """Verdoppelt geschweifte Klammern damit str.format() user-Daten nicht interpoliert."""
+    return s.replace("{", "{{").replace("}", "}}")
 
 
 # ---------------------------------------------------------------------------
@@ -198,8 +201,6 @@ async def _classify_relevance(
     Returns:
         True wenn RELEVANT, False wenn SKIP oder Fehler.
     """
-    def _esc(s: str) -> str:
-        return s.replace("{", "{{").replace("}", "}}")
     prompt = _RELEVANCE_PROMPT.format(
         sender=_esc(sender),
         subject=_esc(subject),
@@ -240,8 +241,6 @@ async def _extract_knowledge(
     Returns:
         Dict mit 'raw_summary' und 'items' Liste, oder None bei Fehler.
     """
-    def _esc(s: str) -> str:
-        return s.replace("{", "{{").replace("}", "}}")
     prompt = _EXTRACTION_PROMPT.format(
         sender_name=_esc(sender_name),
         sender=_esc(sender),
@@ -304,6 +303,13 @@ def _store_knowledge(
     # Wenn keine Items: raw_summary als einzelnes fact-Item speichern
     if not items and raw_summary:
         items = [{"category": "fact", "content": raw_summary}]
+
+    # RFC 2822 → ISO-Datum normalisieren damit Datums-Vergleiche funktionieren
+    try:
+        mail_date = email.utils.parsedate_to_datetime(mail_date).strftime("%Y-%m-%d")
+    except Exception:
+        pass  # unbekanntes Format: Rohwert behalten
+
     created_at = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
     try:
         with sqlite3.connect(_DB_PATH) as conn:
@@ -654,6 +660,8 @@ async def mail_intelligence_scheduler() -> None:
     if not accounts:
         log.info("mail_intelligence: keine Konten konfiguriert, Scheduler inaktiv")
         return
+
+    _init_db()
 
     interval = S.MAIL_INTELLIGENCE_INTERVAL
     log.info(
