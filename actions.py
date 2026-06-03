@@ -1171,11 +1171,10 @@ async def execute_action(action: dict) -> str:
             seen_ids.add(prof.contact_id)
             results.append({
                 "name": prof.name,
-                "emails": [prof.primary_email] + prof.secondary_emails if prof.primary_email else prof.secondary_emails,
-                "phones": [prof.primary_phone] + prof.secondary_phones if prof.primary_phone else prof.secondary_phones,
                 "anrede": prof.anrede,
                 "funktion": prof.funktion,
                 "last_contact": getattr(prof, "last_contact", ""),
+                "open_points": list(getattr(prof, "open_points", [])),
                 "notes": list(getattr(prof, "notes", [])),
                 "tax_assessments": list(getattr(prof, "tax_assessments", [])),
                 "advance_payments": list(getattr(prof, "advance_payments", [])),
@@ -1185,10 +1184,13 @@ async def execute_action(action: dict) -> str:
                 continue
             results.append({
                 "name": c.name,
-                "emails": list(c.emails),
-                "phones": list(c.phones),
                 "anrede": "",
                 "funktion": c.organization,
+                "last_contact": "",
+                "open_points": [],
+                "notes": [],
+                "tax_assessments": [],
+                "advance_payments": [],
             })
         if not results:
             return f"Ich finde niemanden mit dem Namen {query} in deinen Kontakten."
@@ -1198,34 +1200,26 @@ async def execute_action(action: dict) -> str:
                 f"Mehrere Treffer fuer {query}:\n{names}\n"
                 f"Sag praeziser welchen Du meinst."
             )
-        # Genau ein Treffer
+        # Genau ein Treffer — vollstaendiges Wissen, keine Kontaktdaten
         r = results[0]
+        out_parts: list[str] = []
+
         bits: list[str] = [r["name"]]
-        if r["funktion"]:
+        if r.get("funktion"):
             bits.append(f"({r['funktion']})")
-        out_parts = [" ".join(bits) + "."]
-        if r["emails"]:
-            email_list = [e for e in r["emails"] if e]
-            if email_list:
-                if len(email_list) == 1:
-                    out_parts.append(f"Mail: {email_list[0]}.")
-                else:
-                    out_parts.append("Mails: " + ", ".join(email_list) + ".")
-        if r["phones"]:
-            phone_list = [_format_phone_tts(pp) for pp in r["phones"] if pp]
-            if phone_list:
-                if len(phone_list) == 1:
-                    out_parts.append(f"Telefon: {phone_list[0]}.")
-                else:
-                    out_parts.append("Telefon: " + ", ".join(phone_list) + ".")
-        if r["anrede"]:
-            out_parts.append(f"Bevorzugte Anrede: {r['anrede']}.")
+        out_parts.append(" ".join(bits) + ".")
+
+        if r.get("anrede"):
+            out_parts.append(f"Anrede: {r['anrede']}.")
         if r.get("last_contact"):
             out_parts.append(f"Letzter Kontakt: {r['last_contact']}.")
-        if r.get("notes"):
-            recent = r["notes"][-3:]
-            out_parts.append("Notizen: " + " | ".join(recent))
-        # Steuerbescheide (aus PDF-Analyse)
+
+        for pt in r.get("open_points", []):
+            out_parts.append(f"Offener Punkt: {pt}")
+
+        for note in r.get("notes", []):
+            out_parts.append(f"Notiz: {note}")
+
         for ta in r.get("tax_assessments", []):
             steuerart = ta.get("steuerart", "?")
             jahr = ta.get("steuerjahr", "?")
@@ -1247,12 +1241,14 @@ async def execute_action(action: dict) -> str:
             out_parts.append(
                 f"Steuerbescheid {steuerart} {jahr}{datum_info}: {betrag_info}{faellig_info}."
             )
+
         for ap in r.get("advance_payments", []):
             steuerart = ap.get("steuerart", "?")
             jahr = ap.get("vorauszahlungsjahr", "?")
             datum = ap.get("ausstellungsdatum", "")
             datum_info = f" vom {datum}" if datum else ""
             out_parts.append(f"Vorauszahlungsbescheid {steuerart} {jahr}{datum_info}.")
+
         return " ".join(out_parts)
 
     elif t == "CONTACTS_INFO":
