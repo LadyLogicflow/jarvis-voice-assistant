@@ -274,6 +274,9 @@ async def execute_action(action: dict) -> str:
         return f"Geoeffnet: {p}"
 
     elif t == "SCREEN":
+        image_b64 = action.get("image_b64", "")
+        if image_b64:
+            return await screen_capture.describe_screen_from_b64(image_b64, S.ai)
         return await screen_capture.describe_screen(S.ai)
 
     elif t == "NEWS":

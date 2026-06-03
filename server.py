@@ -226,6 +226,7 @@ async def show_endpoint() -> dict:
 # Active WebSocket connections; debounce state for /activate.
 active_clients: list = []
 _inflight_tasks: dict[str, asyncio.Task] = {}
+_screen_futures: dict[str, asyncio.Future] = {}
 _last_activate_time: float = 0.0
 _last_greeting_time: float = 0.0
 
@@ -368,6 +369,18 @@ async def process_message(session_id: str, user_text: str, ws: WebSocket) -> Non
     if action["type"] == "SCREEN":
         await speak("Lassen Sie mich einen Blick auf Ihren Bildschirm werfen.", ws,
                     display="Lassen Sie mich einen Blick auf Ihren Bildschirm werfen.")
+        # Ask the browser to capture a frame; wait up to 30 s for screen_data.
+        fut: asyncio.Future[str] = asyncio.get_running_loop().create_future()
+        _screen_futures[session_id] = fut
+        try:
+            await ws.send_json({"type": "screen_request"})
+            image_b64 = await asyncio.wait_for(asyncio.shield(fut), timeout=30.0)
+            if image_b64:
+                action["image_b64"] = image_b64
+        except asyncio.TimeoutError:
+            log.warning("screen_request: no response from browser after 30 s")
+        finally:
+            _screen_futures.pop(session_id, None)
     elif action["type"] == "MAIL":
         await speak("Ich werfe einen Blick in Ihren Posteingang, Madam.", ws,
                     display="Ich werfe einen Blick in Ihren Posteingang, Madam.")
@@ -574,6 +587,10 @@ async def websocket_endpoint(ws: WebSocket) -> None:
             return True
         return False
 
+    def _on_pm_done(t: asyncio.Task) -> None:
+        if not t.cancelled() and t.exception() is not None:
+            log.exception("process_message error", exc_info=t.exception())
+
     try:
         while True:
             data = await ws.receive_json()
@@ -587,22 +604,25 @@ async def websocket_endpoint(ws: WebSocket) -> None:
                     except Exception:
                         pass
                 continue
+            if msg_type == "screen_data":
+                future = _screen_futures.get(session_id)
+                if future and not future.done():
+                    future.set_result(data.get("image", ""))
+                continue
 
             user_text = data.get("text", "").strip()
             if not user_text:
                 continue
 
-            # Cancel still-running prior message so the user can interrupt
-            # by simply talking again.
+            # Cancel still-running prior message so the user can interrupt.
             _cancel_inflight("new message arrived")
 
             log.info(f"You:    {user_text}")
             task = asyncio.create_task(process_message(session_id, user_text, ws))
             _inflight_tasks[session_id] = task
-            try:
-                await task
-            except asyncio.CancelledError:
-                log.info("process_message was cancelled")
+            task.add_done_callback(_on_pm_done)
+            # Not awaited: the loop stays live so screen_data / cancel messages
+            # can arrive while process_message is running.
 
     except Exception as e:
         log.exception(f"Client disconnected: {type(e).__name__}")

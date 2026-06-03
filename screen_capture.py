@@ -58,8 +58,14 @@ def capture_screen() -> bytes:
     return buf.getvalue()
 
 
+_VISION_PROMPT = (
+    "Beschreibe kurz auf Deutsch was auf diesem Bildschirm zu sehen ist. "
+    "Maximal 2-3 Saetze. Nenne die wichtigsten offenen Programme und Inhalte."
+)
+
+
 async def describe_screen(anthropic_client: "AsyncAnthropic") -> str:
-    """Capture screen and describe it using Claude Vision."""
+    """Capture screen with PIL and describe it using Claude Vision."""
     try:
         loop = asyncio.get_running_loop()
         png_bytes = await loop.run_in_executor(None, capture_screen)
@@ -68,6 +74,15 @@ async def describe_screen(anthropic_client: "AsyncAnthropic") -> str:
         return str(e)
 
     b64 = base64.b64encode(png_bytes).decode("utf-8")
+    return await _vision_call(b64, "image/png", anthropic_client)
+
+
+async def describe_screen_from_b64(image_b64: str, anthropic_client: "AsyncAnthropic") -> str:
+    """Describe a JPEG screenshot already captured by the browser client."""
+    return await _vision_call(image_b64, "image/jpeg", anthropic_client)
+
+
+async def _vision_call(b64: str, media_type: str, anthropic_client: "AsyncAnthropic") -> str:
     response = await anthropic_client.messages.create(
         model="claude-haiku-4-5-20251001",
         max_tokens=300,
@@ -76,16 +91,9 @@ async def describe_screen(anthropic_client: "AsyncAnthropic") -> str:
             "content": [
                 {
                     "type": "image",
-                    "source": {
-                        "type": "base64",
-                        "media_type": "image/png",
-                        "data": b64,
-                    },
+                    "source": {"type": "base64", "media_type": media_type, "data": b64},
                 },
-                {
-                    "type": "text",
-                    "text": "Beschreibe kurz auf Deutsch was auf diesem Bildschirm zu sehen ist. Maximal 2-3 Saetze. Nenne die wichtigsten offenen Programme und Inhalte.",
-                },
+                {"type": "text", "text": _VISION_PROMPT},
             ],
         }],
     )

@@ -144,6 +144,10 @@ function connect() {
             wsSend({ type: 'pong' });
             return;
         }
+        if (data.type === 'screen_request') {
+            handleScreenRequest();
+            return;
+        }
         if (data.type === 'cancelled') {
             // Server confirmed an in-flight action was aborted.
             audioQueue = [];
@@ -391,6 +395,39 @@ function addTranscript(role, text) {
     div.textContent = role === 'user' ? `Du: ${text}` : `Jarvis: ${text}`;
     transcript.appendChild(div);
     transcript.scrollTop = transcript.scrollHeight;
+}
+
+async function handleScreenRequest() {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
+        // iOS Safari and other browsers without getDisplayMedia
+        wsSend({ type: 'screen_data', image: '' });
+        status.textContent = 'Bildschirmaufnahme nicht verfügbar (iOS).';
+        setTimeout(() => { status.textContent = ''; }, 3000);
+        return;
+    }
+    let stream = null;
+    try {
+        stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+        const video = document.createElement('video');
+        video.srcObject = stream;
+        video.muted = true;
+        await video.play();
+        // Brief delay for first frame to populate
+        await new Promise(r => setTimeout(r, 200));
+        const maxW = 1280;
+        const ratio = Math.min(1, maxW / (video.videoWidth || maxW));
+        const canvas = document.createElement('canvas');
+        canvas.width  = Math.round((video.videoWidth  || maxW) * ratio);
+        canvas.height = Math.round((video.videoHeight || 720)  * ratio);
+        canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
+        const b64 = canvas.toDataURL('image/jpeg', 0.75).split(',')[1];
+        wsSend({ type: 'screen_data', image: b64 });
+    } catch (e) {
+        console.warn('[jarvis] screen capture failed:', e);
+        wsSend({ type: 'screen_data', image: '' });
+    } finally {
+        if (stream) stream.getTracks().forEach(t => t.stop());
+    }
 }
 
 connect();
