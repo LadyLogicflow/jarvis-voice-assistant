@@ -20,6 +20,7 @@ _counters: dict = {
     "contact_enriched":  0,
     "draft_created":     [],   # list[str] — Namen / Betreff
     "calendar_added":    [],   # list[str] — Event-Zusammenfassungen
+    "mail_processed":    [],   # list[str] — "HH:MM | Sender | Betreff | Aktion"
 }
 
 

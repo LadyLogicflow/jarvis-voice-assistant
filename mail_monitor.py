@@ -792,7 +792,17 @@ async def _process_new_uids(account: dict, client, uids: list[int]) -> None:
             if triage["action"] != "none":
                 log.info(f"mail_monitor[{name}] uid={uid}: triage -> {triage}")
                 import activity_log as _al
+                import datetime as _dt_triage
                 _al.log_action("mail_triage")
+                _triage_label = {
+                    "mark_read": "als gelesen markiert",
+                    "move": f"verschoben nach {triage.get('folder', 'Junk')}",
+                    "forward": f"weitergeleitet an {triage.get('to', '?')}",
+                }.get(triage["action"], triage["action"])
+                _al.log_action(
+                    "mail_processed",
+                    f"{_dt_triage.datetime.now().strftime('%H:%M')} | {sender} | {subject} | {_triage_label}",
+                )
                 if triage["action"] == "mark_read":
                     await mail_actions.mark_mail_read(name, uid)
                 elif triage["action"] == "move":
@@ -864,6 +874,12 @@ async def _process_new_uids(account: dict, client, uids: list[int]) -> None:
                                                prior_context=prior_context)
                 # Telegram: voice-note + caption, sofern nicht in
                 # Telegram-Quiet-Hours.
+                import activity_log as _al_notify
+                import datetime as _dt_notify
+                _al_notify.log_action(
+                    "mail_processed",
+                    f"{_dt_notify.datetime.now().strftime('%H:%M')} | {sender} | {subject} | gemeldet",
+                )
                 if tg_quiet:
                     log.info(f"mail_monitor[{name}] uid={uid}: telegram quiet hours, suppressed")
                 else:

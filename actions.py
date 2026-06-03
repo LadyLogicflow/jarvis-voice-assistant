@@ -1111,6 +1111,17 @@ async def execute_action(action: dict) -> str:
             return f"Ich finde nichts zu {query}, {pick_address()}."
         return f"Zu {query} habe ich:\n" + "\n".join(f"- {r}" for r in results[:15])
 
+    elif t == "MAIL_LOG":
+        import activity_log as _al
+        entries = _al.get_daily_summary().get("mail_processed", [])
+        if not entries:
+            return (
+                f"Heute habe ich noch keine Mails verarbeitet, {pick_address()}. "
+                f"Der Monitor laeuft und wird Sie informieren, sobald etwas ankommt."
+            )
+        lines = "\n".join(f"- {e}" for e in entries)
+        return f"Folgende Mails habe ich heute verarbeitet:\n{lines}"
+
     elif t == "LOOKUP_CONTACT":
         # "Was ist die Telefonnummer von X?" / "Wer ist X?".
         # Sucht in persons_db + Apple Kontakte (Substring auf Name).

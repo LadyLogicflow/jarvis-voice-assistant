@@ -466,7 +466,7 @@ async def process_message(session_id: str, user_text: str, ws: WebSocket) -> Non
     # max_tokens, (c) waste an LLM round-trip.
     if action["type"] in (
         "STEUERNEWS", "ADDTASK", "DONETASK", "ADDCAL", "NOTE",
-        "READ_MAIL", "SUMMARIZE_MAIL",
+        "MAIL_LOG", "READ_MAIL", "SUMMARIZE_MAIL",
         "DRAFT_REPLY", "DRAFT_REVISE", "DRAFT_APPROVE", "DRAFT_CANCEL",
         "MAIL_TO_TASK", "MARK_MAIL_READ", "DELETE_MAIL", "REMEMBER_SENDER",
         "MEMORIZE", "PROMISE_DONE",
