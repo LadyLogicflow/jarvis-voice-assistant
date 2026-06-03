@@ -34,10 +34,10 @@ body {
 }
 
 /* Colour tokens per state */
-#orb.idle      { --hud-color: #00d4ff; --hud-speed-outer: 30s; --hud-speed-mid: 45s; }
-#orb.listening { --hud-color: #4ab8ff; --hud-speed-outer: 8s;  --hud-speed-mid: 12s; }
-#orb.thinking  { --hud-color: #ffb700; --hud-speed-outer: 12s; --hud-speed-mid: 18s; }
-#orb.speaking  { --hud-color: #00ff88; --hud-speed-outer: 5s;  --hud-speed-mid: 7s;  }
+#orb.idle      { --hud-color: #00d4ff; --hud-speed-outer: 40s;  --hud-speed-mid: 60s;  }
+#orb.listening { --hud-color: #4ab8ff; --hud-speed-outer: 18s;  --hud-speed-mid: 26s;  }
+#orb.thinking  { --hud-color: #ffb700; --hud-speed-outer: 22s;  --hud-speed-mid: 32s;  }
+#orb.speaking  { --hud-color: #00ff88; --hud-speed-outer: 12s;  --hud-speed-mid: 18s;  }
 
 /* Ring elements use the token */
 .hud-glow        { stroke: var(--hud-color, #00d4ff); opacity: 0.15; }
@@ -73,18 +73,18 @@ body {
 
 /* Whole orb breathe / glow */
 #orb.idle {
-    animation: hud-breathe 4s ease-in-out infinite;
+    animation: hud-breathe 5s ease-in-out infinite;
 }
 #orb.listening {
-    animation: hud-pulse-listen 1.5s ease-in-out infinite;
+    animation: hud-pulse-listen 2.5s ease-in-out infinite;
 }
 #orb.thinking {
     --hud-color: #ff4444;
-    animation: hud-flicker-red 0.8s ease-in-out infinite;
+    animation: hud-flicker-red 1.6s ease-in-out infinite;
 }
 #orb.speaking {
     --hud-color: #00ff88;
-    animation: hud-pulse-speak 0.5s ease-in-out infinite;
+    animation: hud-pulse-speak 1.4s ease-in-out infinite;
 }
 
 /* Direct stroke/fill overrides for thinking + speaking — works even
