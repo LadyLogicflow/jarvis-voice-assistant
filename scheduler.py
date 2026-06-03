@@ -1168,14 +1168,17 @@ async def generate_evening_summary(detailed: bool = False) -> str:
         import re as _re
         today = datetime.date.today()
         today_short = today.strftime("%d.%m.")
-        today_start = datetime.datetime.combine(today, datetime.time.min)
+        # UTC-aware damit Google Calendar API kein HTTP 400 zurueckgibt
+        today_start = datetime.datetime.combine(
+            today, datetime.time.min, tzinfo=datetime.timezone.utc
+        )
         cal_text = await google_calendar_tools.get_events(
             days=1, max_results=30, time_min=today_start
         )
         if cal_text and cal_text != "KEINE_TERMINE":
-            # Regex verankert Datum an Position nach Bullet+Wochentag-Kuerzel,
-            # verhindert False-Positives bei Datumsangaben im Termintitel.
-            _today_re = _re.compile(r"^•\s+\w{2}\s+" + _re.escape(today_short))
+            # Regex verankert Datum an Position nach Bullet+Wochentag-Kuerzel
+            # (\w+ statt \w{2} damit locale-abhaengige 3-Zeichen-Kuerzel passen).
+            _today_re = _re.compile(r"^•\s+\w+\s+" + _re.escape(today_short))
             today_events = [
                 line.strip() for line in cal_text.splitlines()
                 if _today_re.match(line.strip())
