@@ -59,6 +59,7 @@ from scheduler import (
     weekly_outlook_scheduler,
 )
 from mail_monitor import mail_monitor_main, register_mail_alert_handler
+import mail_intelligence
 import health_tools
 import planner
 import session_state
@@ -189,6 +190,22 @@ async def _lifespan(_app):  # type: ignore[no-untyped-def]  # AsyncGenerator
         log.info("Bring!-Monitor aktiv (alle 15 Minuten)")
     else:
         log.info("Bring!-Monitor inaktiv (BRING_EMAIL/PASSWORD nicht konfiguriert)")
+    # Mail-Intelligence (Issue #161): passiver Wissensmonitor
+    task_mail_intelligence: asyncio.Task | None = None
+    if S.MAIL_INTELLIGENCE_ENABLED and S.MAIL_MONITOR_ACCOUNTS:
+        task_mail_intelligence = asyncio.create_task(
+            mail_intelligence.mail_intelligence_scheduler()
+        )
+        log.info(
+            "Mail-Intelligence aktiv (%d Konto(en), Intervall: %ds)",
+            len(S.MAIL_MONITOR_ACCOUNTS), S.MAIL_INTELLIGENCE_INTERVAL,
+        )
+    else:
+        log.info(
+            "Mail-Intelligence inaktiv "
+            "(MAIL_INTELLIGENCE_ENABLED=%s, Konten=%d)",
+            S.MAIL_INTELLIGENCE_ENABLED, len(S.MAIL_MONITOR_ACCOUNTS),
+        )
     try:
         yield
     finally:
@@ -198,6 +215,8 @@ async def _lifespan(_app):  # type: ignore[no-untyped-def]  # AsyncGenerator
                            task_birthday_draft]
         if task_bring is not None:
             tasks_to_cancel.append(task_bring)
+        if task_mail_intelligence is not None:
+            tasks_to_cancel.append(task_mail_intelligence)
         for t in tasks_to_cancel:
             t.cancel()
             try:

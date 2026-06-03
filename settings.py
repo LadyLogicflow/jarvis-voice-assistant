@@ -158,6 +158,12 @@ BROWSER_HEADLESS = bool(config.get("browser_headless", _no_display))
 MAIL_MONITOR_FORWARD = [c.lower() for c in config.get("mail_monitor_forward", ["handlungsbedarf"])]
 MAIL_MONITOR_FOLDER = config.get("mail_monitor_folder", "INBOX")
 
+# Mail-Intelligence (Issue #161): passiver E-Mail-Wissensmonitor.
+# Liest alle konfigurierten Postfächer still und extrahiert strukturierte
+# Informationen für JARVIS als zweites Gedächtnis. Kein Telegram, keine Aktionen.
+MAIL_INTELLIGENCE_ENABLED: bool = bool(config.get("mail_intelligence_enabled", True))
+MAIL_INTELLIGENCE_INTERVAL: int = int(config.get("mail_intelligence_interval", 1800))  # 30 min
+
 # Multi-account mail monitor (e.g. Apple iCloud + HILO at the same time).
 # Each entry in `mail_monitor_accounts` is a dict with name/host/user/
 # port/ssl/folder. The password for account "FOO" is read from the env
