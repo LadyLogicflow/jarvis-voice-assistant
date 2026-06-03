@@ -479,6 +479,7 @@ Wenn Jarvis proaktiv nach einem Vorhaben fragt ("Uebrigens — Sie wollten noch:
 [ACTION:REZEPT_HEUTE] - Gibt das Rezept des heutigen Abendessens erneut aus (Zutaten + Zubereitung + Kochzeit). Nutze wenn {addr} sagt "Rezept heute", "Was kochen wir heute?", "Heutiges Rezept", "Was gibt es heute". KEIN Text davor, NUR die Aktion.
 [ACTION:PROACTIVE_DELIVER] - Liefert die ausstehende proaktive Benachrichtigung aus (siehe "Ausstehende Benachrichtigung" unter AKTUELLE DATEN). Nur verwenden wenn eine solche Benachrichtigung vorliegt. KEIN Text davor, NUR die Aktion.
 [ACTION:PROACTIVE_DECLINE] - Schickt die ausstehende proaktive Benachrichtigung stattdessen auf Telegram. Jarvis bestaetigt kurz. Nur verwenden wenn {addr} ablehnt. KEIN Text davor, NUR die Aktion.
+[ACTION:ANALYZE_PDF] /pfad/zur/datei.pdf - Analysiert ein PDF als Steuerbescheid oder Vorauszahlungsbescheid via Claude Haiku. Extrahiert Mandant, Steuerart, Jahr, Betrag und Zahlungstermin und speichert das Ergebnis fuer den Mandanten. Nutze wenn {addr} sagt "Analysiere das PDF", "Was ist in dem PDF?", "Steuerbescheid auswerten", oder ein PDF-Pfad direkt genannt wird. Antwort: strukturierte Zusammenfassung des Bescheids. Beispiel: [ACTION:ANALYZE_PDF] /tmp/jarvis_pdfs/bescheid.pdf
 
 MAIL-WORKFLOW (Decision-Tree nach Mail-Eingang):
 Wenn eine aktive Mail existiert (siehe "Aktive Mail" unter AKTUELLE DATEN), reagiere auf folgende Befehle — {addr} kann SOFORT entscheiden, OHNE erst "vorlesen" zu sagen.

@@ -39,6 +39,10 @@ class PersonProfile:
     secondary_emails: list[str] = field(default_factory=list)
     primary_phone: str = ""
     secondary_phones: list[str] = field(default_factory=list)
+    # Issue #109: Steuerbescheide und Vorauszahlungsbescheide fuer diesen Mandanten.
+    # Jeder Eintrag ist ein dict wie von analyze_steuerbescheid() zurueckgegeben.
+    tax_assessments: list[dict] = field(default_factory=list)
+    advance_payments: list[dict] = field(default_factory=list)
 
 
 _DB_PATH = os.path.join(os.path.dirname(__file__), ".jarvis_persons.json")
@@ -252,3 +256,121 @@ def add_secondary_phone(contact_id: str, phone: str) -> bool:
         p.secondary_phones.append(phone)
         _save()
     return True
+
+
+# ---------------------------------------------------------------------------
+# Issue #109 — Steuerbescheid-Persistenz
+# ---------------------------------------------------------------------------
+
+def _find_or_create_mandant(mandant: str) -> PersonProfile:
+    """Sucht einen Mandanten case-insensitiv (Teilstring); legt ihn an falls
+    kein Treffer.
+
+    Args:
+        mandant: Name wie vom LLM extrahiert.
+
+    Returns:
+        PersonProfile des gefundenen oder neu angelegten Mandanten.
+    """
+    _load()
+    needle = mandant.strip().lower()
+    matches = [p for p in _persons.values() if p.name and needle in p.name.lower()]
+    if len(matches) > 1:
+        log.warning("persons_db: Mehrdeutiger Mandantenname %r — %d Treffer, erster wird verwendet", mandant, len(matches))
+    if matches:
+        return matches[0]
+    # Kein Treffer — neu anlegen
+    cid = new_id()
+    profile = PersonProfile(contact_id=cid, name=mandant.strip())
+    _persons[cid] = profile
+    _save()
+    log.info("persons_db: Mandant neu angelegt: %s (%s)", mandant, cid)
+    return profile
+
+
+def save_tax_assessment(mandant: str, data: dict) -> None:
+    """Speichert einen Steuerbescheid-Datensatz beim Mandanten.
+
+    Sucht den Mandanten case-insensitiv; legt ein neues Profil an wenn keins
+    gefunden wird. Doppelte Eintraege (gleicher Typ + Steuerart + Steuerjahr
+    + Ausstellungsdatum) werden uebersprungen.
+
+    Args:
+        mandant: Name des Steuerpflichtigen.
+        data:    Strukturiertes dict wie von analyze_steuerbescheid() fuer Typ
+                 "Steuerbescheid" zurueckgegeben.
+    """
+    profile = _find_or_create_mandant(mandant)
+    # Duplikat-Check auf Typ + Steuerart + Steuerjahr + Ausstellungsdatum
+    key = (
+        data.get("typ", ""),
+        data.get("steuerart", ""),
+        str(data.get("steuerjahr", "")),
+        data.get("ausstellungsdatum", ""),
+    )
+    for existing in profile.tax_assessments:
+        existing_key = (
+            existing.get("typ", ""),
+            existing.get("steuerart", ""),
+            str(existing.get("steuerjahr", "")),
+            existing.get("ausstellungsdatum", ""),
+        )
+        if existing_key == key:
+            log.info("persons_db: Steuerbescheid bereits gespeichert, uebersprungen: %s", key)
+            return
+    profile.tax_assessments.append({k: v for k, v in data.items() if k != "summary"})
+    _save()
+    log.info("persons_db: Steuerbescheid gespeichert fuer %s: %s", mandant, key)
+
+
+def save_advance_payment(mandant: str, data: dict) -> None:
+    """Speichert einen Vorauszahlungsbescheid beim Mandanten.
+
+    Analog zu save_tax_assessment. Duplikat-Check auf Steuerart +
+    Vorauszahlungsjahr + Ausstellungsdatum.
+
+    Args:
+        mandant: Name des Steuerpflichtigen.
+        data:    Strukturiertes dict fuer Typ "Vorauszahlungsbescheid".
+    """
+    profile = _find_or_create_mandant(mandant)
+    key = (
+        data.get("steuerart", ""),
+        str(data.get("vorauszahlungsjahr", "")),
+        data.get("ausstellungsdatum", ""),
+    )
+    for existing in profile.advance_payments:
+        existing_key = (
+            existing.get("steuerart", ""),
+            str(existing.get("vorauszahlungsjahr", "")),
+            existing.get("ausstellungsdatum", ""),
+        )
+        if existing_key == key:
+            log.info("persons_db: Vorauszahlungsbescheid bereits gespeichert, uebersprungen: %s", key)
+            return
+    profile.advance_payments.append({k: v for k, v in data.items() if k != "summary"})
+    _save()
+    log.info("persons_db: Vorauszahlungsbescheid gespeichert fuer %s: %s", mandant, key)
+
+
+def get_tax_assessments(mandant: str) -> list[dict]:
+    """Liefert alle Steuerbescheide eines Mandanten.
+
+    Sucht case-insensitiv per Teilstring-Matching auf dem Namen. Bei mehreren
+    Treffern werden alle Eintraege aller passenden Profile zusammengefuehrt.
+
+    Args:
+        mandant: Such-Name (z.B. "Mueller", "mueller", "Hans Mueller").
+
+    Returns:
+        Liste aller gespeicherten Steuerbescheid-Dicts; leer wenn kein Treffer.
+    """
+    if not mandant:
+        return []
+    _load()
+    needle = mandant.strip().lower()
+    result: list[dict] = []
+    for p in _persons.values():
+        if p.name and needle in p.name.lower():
+            result.extend(p.tax_assessments)
+    return result
