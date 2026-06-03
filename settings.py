@@ -332,3 +332,8 @@ PENDING_MAIL_FORWARD: dict = {}
 # Ausstehende Antworten (Follow-up Tracker). Gefuellt durch
 # followup_tracker.format_followups_block() beim Morgen-Briefing.
 PENDING_FOLLOWUPS: str = ""
+
+# Ausstehende proaktive Benachrichtigung (Issue #148). Gefuellt wenn
+# Jarvis eine Nachricht hat und zuerst fragt ob Catrin zuhören kann.
+# {"text": str, "category": str}. Geleert durch PROACTIVE_DELIVER/DECLINE.
+PENDING_PROACTIVE: dict = {}

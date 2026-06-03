@@ -1927,6 +1927,27 @@ async def execute_action(action: dict) -> str:
         lines.append("Bitte nennen Sie die genaue E-Mail-Adresse.")
         return "\n".join(lines)
 
+    elif t == "PROACTIVE_DELIVER":
+        # Issue #148: Liefert die ausstehende proaktive Benachrichtigung aus.
+        if not S.PENDING_PROACTIVE:
+            return f"Ich habe gerade keine ausstehende Meldung fuer Sie, {pick_address()}."
+        text = S.PENDING_PROACTIVE.get("text", "")
+        S.PENDING_PROACTIVE = {}
+        return text
+
+    elif t == "PROACTIVE_DECLINE":
+        # Issue #148: Catrin hat abgelehnt — Meldung per Telegram schicken und State leeren.
+        # Nur senden wenn Telegram die Meldung noch nicht hat (telegram_sent=False).
+        if not S.PENDING_PROACTIVE:
+            return f"Keine ausstehende Meldung, {pick_address()}."
+        text = S.PENDING_PROACTIVE.get("text", "")
+        already_sent = S.PENDING_PROACTIVE.get("telegram_sent", False)
+        S.PENDING_PROACTIVE = {}
+        if not already_sent:
+            import telegram_bot as _tg
+            asyncio.create_task(_tg.send_user_text(text))
+        return f"Sehr wohl, ich schicke es Ihnen auf das Telefon, {pick_address()}."
+
     elif t == "MAIL_FORWARD_SEND":
         # Issue #143: Leitet die aktive Mail an den gespeicherten Empfaenger
         # weiter. Setzt S.PENDING_MAIL_FORWARD voraus.

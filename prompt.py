@@ -288,6 +288,15 @@ def build_system_prompt() -> str:
             f"\n  Wenn {addr} \"nein\" / \"abbrechen\" / \"lass es\" sagt -> nichts tun, Weiterleitung verwerfen"
         )
 
+    pending_proactive_block = ""
+    if S.PENDING_PROACTIVE:
+        _cat = S.PENDING_PROACTIVE.get("category", "eine Meldung")
+        pending_proactive_block = (
+            f"\nAusstehende Benachrichtigung: {_cat} wartet auf Zustellung."
+            f"\n  Wenn {addr} \"ja\" / \"bitte\" / \"ja gerne\" / \"ich höre\" / \"weiter\" sagt -> [ACTION:PROACTIVE_DELIVER]"
+            f"\n  Wenn {addr} \"nein\" / \"nicht jetzt\" / \"auf Telegram\" / \"später\" / \"schick es\" sagt -> [ACTION:PROACTIVE_DECLINE]"
+        )
+
     hour = int(time.strftime("%H"))
     is_evening = hour >= 18
     is_morning_brief_time = hour < S.MORNING_BRIEF_UNTIL_HOUR
@@ -468,6 +477,8 @@ Wenn Jarvis proaktiv nach einem Vorhaben fragt ("Uebrigens — Sie wollten noch:
 [ACTION:SPEISEPLAN_SWAP] Wochentag|Neues Gericht - Tauscht ein einzelnes Gericht im aktuellen Plan. Neues Rezept wird automatisch generiert. Nutze wenn {addr} sagt "Tausch Montag gegen ...", "Montag lieber Pasta", "Ersetze Dienstag durch ...". Beispiel: [ACTION:SPEISEPLAN_SWAP] Montag|Pasta mit Gemüse
 [ACTION:EINKAUF_FREIGEBEN] - Uebertraegt alle Zutaten des Wochenplans auf die Bring!-Einkaufsliste fuer die Rewe-Lieferung. Nutze wenn {addr} sagt "Einkaufsliste freigeben", "Zutaten zu Bring hinzufuegen", "Einkauf bestellen", "Bring!-Liste fuellen". KEIN Text davor, NUR die Aktion.
 [ACTION:REZEPT_HEUTE] - Gibt das Rezept des heutigen Abendessens erneut aus (Zutaten + Zubereitung + Kochzeit). Nutze wenn {addr} sagt "Rezept heute", "Was kochen wir heute?", "Heutiges Rezept", "Was gibt es heute". KEIN Text davor, NUR die Aktion.
+[ACTION:PROACTIVE_DELIVER] - Liefert die ausstehende proaktive Benachrichtigung aus (siehe "Ausstehende Benachrichtigung" unter AKTUELLE DATEN). Nur verwenden wenn eine solche Benachrichtigung vorliegt. KEIN Text davor, NUR die Aktion.
+[ACTION:PROACTIVE_DECLINE] - Schickt die ausstehende proaktive Benachrichtigung stattdessen auf Telegram. Jarvis bestaetigt kurz. Nur verwenden wenn {addr} ablehnt. KEIN Text davor, NUR die Aktion.
 
 MAIL-WORKFLOW (Decision-Tree nach Mail-Eingang):
 Wenn eine aktive Mail existiert (siehe "Aktive Mail" unter AKTUELLE DATEN), reagiere auf folgende Befehle — {addr} kann SOFORT entscheiden, OHNE erst "vorlesen" zu sagen.
@@ -533,7 +544,7 @@ WENN {S.USER_NAME} "Jarvis activate" sagt AB {S.MORNING_BRIEF_UNTIL_HOUR}:00 Uhr
 - Wenn ein Termin / eine Aufgabe in der naechsten Stunde wartet, darfst du das mit einem Halbsatz erwaehnen — sonst nichts.
 - Wenn heute Wochenende/Feiertag ist (siehe Erholungstag-Modus), entsprechend kommentieren.
 
-=== AKTUELLE DATEN ==={date_block}{greeting_block}{weather_block}{today_events_block}{today_tasks_block}{task_block}{steuer_block}{steuer_recent_block}{open_promises_block}{upcoming_deadlines_block}{birthday_block}{health_block}{address_pool_block}{active_mail_block}
+=== AKTUELLE DATEN ==={date_block}{greeting_block}{weather_block}{today_events_block}{today_tasks_block}{task_block}{steuer_block}{steuer_recent_block}{open_promises_block}{upcoming_deadlines_block}{birthday_block}{health_block}{address_pool_block}{active_mail_block}{pending_proactive_block}
 ==="""
 
 

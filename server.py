@@ -68,36 +68,61 @@ from tts import speak
 log = S.log
 
 
+def _guess_proactive_category(text: str) -> str:
+    """Return a natural-language category label for the check-in question."""
+    lower = text.lower()
+    if any(k in lower for k in ("mail", "e-mail", "nachricht von", "schreibt", "absender")):
+        return "eine E-Mail-Meldung"
+    if any(k in lower for k in ("briefing", "morgen-brief", "morgenbrief", "wochenausblick")):
+        return "ein Briefing"
+    if any(k in lower for k in ("erinnerung", "termin", "frist", "deadline")):
+        return "eine Erinnerung"
+    if any(k in lower for k in ("angebot", "angebote")):
+        return "eine Angebots-Meldung"
+    return "eine Meldung"
+
+
 async def _broadcast_proactive(text: str) -> None:
     """Push a server-generated message to the UI and Telegram.
-    Brings Chrome to the foreground first so the user sees + hears it.
-    Telegram delivery is quiet-hours aware (handled by send_user_text).
-    Skips entirely during Mac quiet hours so proactive briefs stay silent
-    when the user is not at the desk (Issue #133)."""
+    When the web UI is connected, asks before delivering so Catrin can
+    decline and receive it on Telegram instead (Issue #148).
+    Falls back to Telegram-only when no client is connected.
+    Skips entirely during Mac quiet hours (Issue #133)."""
     if S.is_mac_quiet_hours():
         log.info("_broadcast_proactive: mac quiet hours, skipping")
         return
-    await telegram_send(text)
     if not active_clients:
-        log.info("proactive: no clients connected, skipping UI broadcast")
+        # No web UI — fall back to Telegram as before.
+        log.info("proactive: no clients connected, sending to Telegram")
+        await telegram_send(text)
         return
+    # Web UI connected — ask first, store for PROACTIVE_DELIVER/DECLINE.
+    # telegram_sent=False: PROACTIVE_DECLINE will forward to Telegram.
     target = active_clients[-1]
     loop = asyncio.get_running_loop()
     await loop.run_in_executor(None, _show_chrome)
-    await speak(text, target, display=text)
+    category = _guess_proactive_category(text)
+    S.PENDING_PROACTIVE = {"text": text, "category": category, "telegram_sent": False}
+    addr = pick_address()
+    question = f"{addr}, haben Sie einen Moment? Ich habe {category} für Sie."
+    await speak(question, target, display=question)
 
 
 async def _mac_alert(text: str) -> None:
-    """Mac-UI-only alert: bring Chrome to front + speak + display.
-    Does NOT send to Telegram — mail_monitor already does that via
-    send_user_voice so that the message_id can be tracked for reply-context.
-    Registered as the mail alert handler to avoid duplicate Telegram sends."""
+    """Mail-monitor alert: ask before delivering when web UI is connected.
+    mail_monitor already sent to Telegram, so PROACTIVE_DECLINE must NOT
+    re-send (telegram_sent=True). When no client is connected, does nothing."""
     if not active_clients:
         return
     target = active_clients[-1]
     loop = asyncio.get_running_loop()
     await loop.run_in_executor(None, _show_chrome)
-    await speak(text, target, display=text)
+    category = _guess_proactive_category(text)
+    # telegram_sent=True: mail_monitor already forwarded to Telegram.
+    S.PENDING_PROACTIVE = {"text": text, "category": category, "telegram_sent": True}
+    addr = pick_address()
+    question = f"{addr}, haben Sie einen Moment? Ich habe {category} für Sie."
+    await speak(question, target, display=question)
 
 
 async def broadcast_to_all_sessions(text: str) -> None:
@@ -474,6 +499,7 @@ async def process_message(session_id: str, user_text: str, ws: WebSocket) -> Non
         "ACCEPT_PERSON_ACTION", "DECLINE_PERSON_ACTION",
         "WEEKLY_OUTLOOK", "CONTACTS_INFO", "LOOKUP_CONTACT",
         "PLAN_NOW", "IMPORT_MAIL_HISTORY",
+        "PROACTIVE_DELIVER", "PROACTIVE_DECLINE",
     ):
         await append_message(session_id, "assistant", action_result)
         await speak(action_result, ws, display=action_result)
