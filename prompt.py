@@ -139,7 +139,16 @@ def build_system_prompt() -> str:
 
     today_tasks_block = ""
     if S.TODAY_TASKS:
-        today_tasks_block = f"\nHeutige Aufgaben:\n{S.TODAY_TASKS}"
+        _tlines = [l for l in S.TODAY_TASKS.splitlines() if l.strip()]
+        _total = len(_tlines)
+        _overdue = sum(1 for l in _tlines if "überfällig" in l)
+        if _total > 0:
+            if _overdue > 0:
+                today_tasks_block = (
+                    f"\nAufgaben heute: {_total} fällig, davon {_overdue} bereits überfällig."
+                )
+            else:
+                today_tasks_block = f"\nAufgaben heute: {_total} fällig."
 
     open_promises_block = ""
     if S.OPEN_PROMISES:
@@ -423,7 +432,7 @@ AKTIONEN - Schreibe die passende Aktion ans ENDE deiner Antwort. Der Text VOR de
 [ACTION:WEATHER] stadtname - Wettervorhersage fuer eine beliebige Stadt abrufen (3 Tage). Nutze diese Aktion wenn {addr} nach dem Wetter an einem bestimmten Ort fragt. Beispiel: [ACTION:WEATHER] Le Lavandou
 [ACTION:MAIL] - Ungelesene E-Mails aus Mail.app abrufen. Nutze diese Aktion wenn {addr} nach Mails oder dem Posteingang fragt. Gib einen ueberblickenden Butler-Kommentar — kein Vorlesen einzelner Mails.
 [ACTION:STEUERNEWS] - Aktuelle steuerrechtliche Neuigkeiten abrufen (BMF-Schreiben, BFH-Urteile). Nutze diese Aktion wenn nach Steuernews, BMF-Schreiben oder BFH-Urteilen gefragt wird.
-[ACTION:TASKS] - Offene Todoist-Aufgaben abrufen. Nutze wenn {addr} nach Aufgaben, To-dos, was ansteht oder was zu tun ist fragt.
+[ACTION:TASKS] - Heutige und überfällige Aufgaben mit zugehörigem Personen-Kontext abrufen. Nutze wenn {addr} fragt: "Was steht heute an?", "Was habe ich heute?", "Welche Aufgaben sind fällig?", nach To-dos, was ansteht oder was zu tun ist.
 [ACTION:ADDTASK] aufgabe text | faelligkeitsdatum | bereich - Neue Aufgabe in Todoist anlegen.
 - bereich ist EINER von: privat, hilo, dihag (klein geschrieben). Sortiert die Aufgabe in das richtige Todoist-Projekt.
 - WENN {addr} die Zugehoerigkeit nicht von selbst nennt: erst kurz FRAGEN ob die Aufgabe privat, HILO oder fuer DIHAG ist. Sprich HILO und DIHAG dabei als deutsche Worte aus (nicht buchstabiert: "Hilo" / "Dihag", nicht "H-I-L-O" / "D-I-H-A-G"). Erst NACH der Antwort die Action ausfuehren.

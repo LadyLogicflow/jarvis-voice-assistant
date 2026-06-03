@@ -331,11 +331,64 @@ async def execute_action(action: dict) -> str:
     elif t == "TASKS":
         if not S.TODOIST_TOKEN or S.TODOIST_TOKEN == "YOUR_TODOIST_API_TOKEN":
             return "Todoist API-Token nicht konfiguriert."
-        return await todoist_tools.get_tasks(
+        raw = await todoist_tools.get_tasks(
             S.TODOIST_TOKEN,
             project_ids=S.TODOIST_PROJECT_IDS or None,
             section_ids_per_project=S.TODOIST_SECTIONS_PER_PROJECT or None,
         )
+        if not raw or raw == "KEINE_TASKS":
+            return raw or "Keine offenen Aufgaben."
+
+        # Aufgaben auf heute/überfällig reduzieren und mit Personen-Kontext anreichern
+        import persons_db as _pdb
+        profiles = _pdb.all_profiles()
+
+        task_lines = [l for l in raw.splitlines() if l.startswith("•")]
+        due_lines = [l for l in task_lines if "(heute)" in l or "überfällig" in l]
+        if not due_lines:
+            due_lines = task_lines  # Fallback: alle zeigen wenn nichts heute fällig
+
+        output: list[str] = []
+        for line in due_lines:
+            output.append(line)
+            line_lower = line.lower()
+            for prof in profiles:
+                # Prüfen ob Vor- oder Nachname im Aufgabentext vorkommt
+                name_parts = [n for n in prof.name.split() if len(n) > 2]
+                if not any(part.lower() in line_lower for part in name_parts):
+                    continue
+                context: list[str] = []
+                if prof.funktion:
+                    context.append(prof.funktion)
+                if prof.last_contact:
+                    context.append(f"letzter Kontakt: {prof.last_contact}")
+                for op in prof.open_points:
+                    context.append(f"offen: {op}")
+                for ta in prof.tax_assessments:
+                    steuerart = ta.get("steuerart", "?")
+                    jahr = ta.get("steuerjahr", "?")
+                    betrag = ta.get("betrag_eur")
+                    faellig = ta.get("zahlungstermin") or ""
+                    if betrag is not None:
+                        try:
+                            b = float(betrag)
+                            richtung = "Erstattung" if b >= 0 else "Nachzahlung"
+                            betrag_str = f"{abs(b):,.2f}€".replace(",", "X").replace(".", ",").replace("X", ".")
+                            context.append(f"Bescheid {steuerart} {jahr}: {richtung} {betrag_str}" + (f", fällig {faellig}" if faellig and faellig != "null" else ""))
+                        except (ValueError, TypeError):
+                            context.append(f"Bescheid {steuerart} {jahr}")
+                for ap in prof.advance_payments:
+                    steuerart = ap.get("steuerart", "?")
+                    jahr = ap.get("vorauszahlungsjahr", "?")
+                    context.append(f"Vorauszahlung {steuerart} {jahr}")
+                if context:
+                    output.append(f"  → {prof.name}: " + " | ".join(context))
+                break  # nur erstes Profil pro Aufgabe
+
+        total = len(due_lines)
+        overdue = sum(1 for l in due_lines if "überfällig" in l)
+        header = f"Aufgaben heute ({total} fällig, {overdue} überfällig):"
+        return header + "\n" + "\n".join(output)
 
     elif t == "ADDTASK":
         if not S.TODOIST_TOKEN or S.TODOIST_TOKEN == "YOUR_TODOIST_API_TOKEN":
