@@ -198,10 +198,12 @@ async def _classify_relevance(
     Returns:
         True wenn RELEVANT, False wenn SKIP oder Fehler.
     """
+    def _esc(s: str) -> str:
+        return s.replace("{", "{{").replace("}", "}}")
     prompt = _RELEVANCE_PROMPT.format(
-        sender=sender,
-        subject=subject,
-        text_preview=text_preview[:500],
+        sender=_esc(sender),
+        subject=_esc(subject),
+        text_preview=_esc(text_preview[:500]),
     )
     try:
         resp = await S.ai.messages.create(
@@ -238,12 +240,14 @@ async def _extract_knowledge(
     Returns:
         Dict mit 'raw_summary' und 'items' Liste, oder None bei Fehler.
     """
+    def _esc(s: str) -> str:
+        return s.replace("{", "{{").replace("}", "}}")
     prompt = _EXTRACTION_PROMPT.format(
-        sender_name=sender_name,
-        sender=sender,
-        mail_date=mail_date,
-        subject=subject,
-        text=text[:3000],
+        sender_name=_esc(sender_name),
+        sender=_esc(sender),
+        mail_date=_esc(mail_date),
+        subject=_esc(subject),
+        text=_esc(text[:3000]),
     )
     try:
         resp = await S.ai.messages.create(
@@ -302,29 +306,28 @@ def _store_knowledge(
         items = [{"category": "fact", "content": raw_summary}]
     created_at = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
     try:
-        conn = _get_db()
-        for item in items:
-            conn.execute(
-                """
-                INSERT INTO mail_knowledge
-                    (account, mail_date, sender, sender_name, subject,
-                     category, content, raw_summary, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    account,
-                    mail_date,
-                    sender,
-                    sender_name,
-                    subject,
-                    item.get("category", "fact"),
-                    item.get("content", ""),
-                    raw_summary,
-                    created_at,
-                ),
-            )
-        conn.commit()
-        conn.close()
+        with sqlite3.connect(_DB_PATH) as conn:
+            conn.row_factory = sqlite3.Row
+            for item in items:
+                conn.execute(
+                    """
+                    INSERT INTO mail_knowledge
+                        (account, mail_date, sender, sender_name, subject,
+                         category, content, raw_summary, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        account,
+                        mail_date,
+                        sender,
+                        sender_name,
+                        subject,
+                        item.get("category", "fact"),
+                        item.get("content", ""),
+                        raw_summary,
+                        created_at,
+                    ),
+                )
         log.debug(
             "mail_intelligence[%s]: %d Einträge gespeichert (Betreff: %r)",
             account, len(items), subject,
@@ -354,22 +357,22 @@ def search_knowledge(query: str, limit: int = 10) -> list[dict]:
         Liste von Row-Dicts mit allen Spalten.
     """
     try:
-        conn = _get_db()
-        pattern = f"%{query}%"
-        rows = conn.execute(
-            """
-            SELECT * FROM mail_knowledge
-            WHERE content LIKE ?
-               OR subject LIKE ?
-               OR sender_name LIKE ?
-               OR sender LIKE ?
-               OR raw_summary LIKE ?
-            ORDER BY mail_date DESC
-            LIMIT ?
-            """,
-            (pattern, pattern, pattern, pattern, pattern, limit),
-        ).fetchall()
-        conn.close()
+        with sqlite3.connect(_DB_PATH) as conn:
+            conn.row_factory = sqlite3.Row
+            pattern = f"%{query}%"
+            rows = conn.execute(
+                """
+                SELECT * FROM mail_knowledge
+                WHERE content LIKE ?
+                   OR subject LIKE ?
+                   OR sender_name LIKE ?
+                   OR sender LIKE ?
+                   OR raw_summary LIKE ?
+                ORDER BY mail_date DESC
+                LIMIT ?
+                """,
+                (pattern, pattern, pattern, pattern, pattern, limit),
+            ).fetchall()
         return [dict(r) for r in rows]
     except Exception as e:
         log.warning(
@@ -390,20 +393,20 @@ def get_recent_knowledge(days: int = 7, limit: int = 20) -> list[dict]:
         Liste von Row-Dicts mit allen Spalten, nach mail_date absteigend.
     """
     try:
-        conn = _get_db()
-        cutoff = (datetime.utcnow() - timedelta(days=days)).strftime(
-            "%Y-%m-%dT%H:%M:%SZ"
-        )
-        rows = conn.execute(
-            """
-            SELECT * FROM mail_knowledge
-            WHERE created_at >= ?
-            ORDER BY mail_date DESC
-            LIMIT ?
-            """,
-            (cutoff, limit),
-        ).fetchall()
-        conn.close()
+        # Filter on mail_date so results reflect when the email was sent,
+        # not when JARVIS processed it (avoids backlog mismatch after restart).
+        cutoff = (datetime.utcnow() - timedelta(days=days)).strftime("%Y-%m-%d")
+        with sqlite3.connect(_DB_PATH) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                """
+                SELECT * FROM mail_knowledge
+                WHERE mail_date >= ?
+                ORDER BY mail_date DESC
+                LIMIT ?
+                """,
+                (cutoff, limit),
+            ).fetchall()
         return [dict(r) for r in rows]
     except Exception as e:
         log.warning(
