@@ -101,15 +101,24 @@ function markGreeted() {
     sessionStorage.setItem('jarvisLastGreet', Date.now().toString());
 }
 
-// Unlock audio via AudioContext (works without user gesture in Chrome with --autoplay-policy flag)
+// Unlock audio via AudioContext on first user gesture. On iOS, this must
+// happen inside a touchstart/click handler — afterwards all Web Audio API
+// calls work without further gestures for the lifetime of the page.
 function unlockAudio() {
-    if (!audioUnlocked) {
-        if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        audioCtx.resume().then(() => {
-            audioUnlocked = true;
-            console.log('[jarvis] Audio unlocked via AudioContext');
-        }).catch(() => {});
+    if (audioUnlocked) return;
+    if (!audioCtx || audioCtx.state === 'closed') {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     }
+    audioCtx.resume().then(() => {
+        // Play a silent 0-duration buffer to fully activate the context on iOS.
+        const buf = audioCtx.createBuffer(1, 1, 22050);
+        const src = audioCtx.createBufferSource();
+        src.buffer = buf;
+        src.connect(audioCtx.destination);
+        src.start(0);
+        audioUnlocked = true;
+        console.log('[jarvis] Audio context unlocked');
+    }).catch(() => {});
 }
 
 // Try to unlock immediately on load (works when Chrome started with --autoplay-policy=no-user-gesture-required)
@@ -232,36 +241,29 @@ function playNext() {
 
     const b64 = audioQueue.shift();
     const bytes = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
-    const blob = new Blob([bytes], { type: 'audio/mpeg' });
-    const url = URL.createObjectURL(blob);
-    const audio = new Audio(url);
-    audio.onended = () => { clearAudioWatchdog(); URL.revokeObjectURL(url); playNext(); };
-    audio.onerror = () => { clearAudioWatchdog(); URL.revokeObjectURL(url); playNext(); };
-    armAudioWatchdog();
-    audio.play().catch(err => {
-        console.warn('[jarvis] Autoplay blocked, waiting for tap...');
-        // Show a prominent tap-to-play overlay (especially needed on iOS)
-        let overlay = document.getElementById('tap-overlay');
-        if (!overlay) {
-            overlay = document.createElement('div');
-            overlay.id = 'tap-overlay';
-            overlay.style.cssText = (
-                'position:fixed;inset:0;display:flex;align-items:center;' +
-                'justify-content:center;background:rgba(0,0,0,0.6);z-index:999;' +
-                'font-size:22px;color:#fff;cursor:pointer;text-align:center;padding:20px;'
-            );
-            overlay.textContent = '▶  Tippen zum Abspielen';
-            document.body.appendChild(overlay);
-        }
-        overlay.style.display = 'flex';
-        const resume = () => {
-            overlay.style.display = 'none';
-            audio.play().then(() => {
-                setOrbState('speaking');
-            }).catch(() => playNext());
-        };
-        overlay.addEventListener('click', resume, { once: true });
-    });
+
+    // Web Audio API playback — once AudioContext is unlocked by the first
+    // user tap (see unlockAudio), all subsequent calls work without gestures.
+    if (!audioCtx || audioCtx.state === 'closed') {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    const ctxReady = audioCtx.state === 'suspended' ? audioCtx.resume() : Promise.resolve();
+    ctxReady
+        .then(() => audioCtx.decodeAudioData(bytes.buffer.slice(0)))
+        .then(buffer => {
+            const source = audioCtx.createBufferSource();
+            source.buffer = buffer;
+            source.connect(audioCtx.destination);
+            source.onended = () => { clearAudioWatchdog(); playNext(); };
+            armAudioWatchdog();
+            source.start(0);
+            audioUnlocked = true;
+        })
+        .catch(err => {
+            console.warn('[jarvis] Web Audio decode failed, skipping chunk:', err);
+            clearAudioWatchdog();
+            playNext();
+        });
 }
 
 // Speech Recognition
