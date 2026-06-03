@@ -1988,4 +1988,41 @@ async def execute_action(action: dict) -> str:
             log.warning("ANALYZE_PDF: Analyse fehlgeschlagen: %s: %s", path, exc)
             return f"PDF-Analyse fehlgeschlagen ({os.path.basename(path)}): {type(exc).__name__}"
 
+    elif t == "MAIL_KNOWLEDGE_SEARCH":
+        # Issue #161: Suche im passiven E-Mail-Wissenspeicher.
+        # payload = Suchbegriff
+        query = p.strip()
+        if not query:
+            return f"Bitte einen Suchbegriff angeben, {pick_address()}."
+        from mail_intelligence import search_knowledge
+        results = search_knowledge(query, limit=10)
+        if not results:
+            return f"Keine gespeicherten Informationen zu '{query}' gefunden."
+        lines = []
+        for r in results:
+            sender_label = r.get("sender_name") or r.get("sender") or "Unbekannt"
+            lines.append(
+                f"• {r['content']} "
+                f"(von {sender_label}, {r['mail_date']}, "
+                f"Betreff: {r['subject']})"
+            )
+        return "\n".join(lines)
+
+    elif t == "MAIL_KNOWLEDGE_RECENT":
+        # Issue #161: Neueste Einträge im E-Mail-Wissenspeicher.
+        # payload = Anzahl Tage (default 7)
+        days = int(p.strip()) if p.strip().isdigit() else 7
+        from mail_intelligence import get_recent_knowledge
+        results = get_recent_knowledge(days=days, limit=20)
+        if not results:
+            return f"Keine gespeicherten E-Mail-Informationen der letzten {days} Tage."
+        lines = []
+        for r in results:
+            sender_label = r.get("sender_name") or r.get("sender") or "Unbekannt"
+            lines.append(
+                f"• [{r['account']}] {r['raw_summary']} "
+                f"({sender_label}, {r['mail_date']})"
+            )
+        return "\n".join(lines)
+
     return ""
