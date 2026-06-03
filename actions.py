@@ -1975,7 +1975,7 @@ async def execute_action(action: dict) -> str:
     elif t == "ANALYZE_PDF":
         # Issue #109: Steuerbescheid-Analyse via PyMuPDF + Claude Haiku.
         # payload = absoluter Pfad zur PDF-Datei.
-        path = action_data.get("path", "") or p.strip()
+        path = p.strip()
         if not path:
             return f"Kein PDF-Pfad angegeben, {pick_address()}."
         if not os.path.exists(path):

@@ -205,7 +205,7 @@ async def analyze_steuerbescheid(filepath: str) -> dict:
         log.info("pdf_tools: PDF-Text auf %d Zeichen gekuerzt: %s", _MAX_TEXT_CHARS, filename)
 
     # Schritt 3: Haiku-Analyse
-    prompt = _ANALYSIS_PROMPT_TEMPLATE.format(text=truncated_text)
+    prompt = _ANALYSIS_PROMPT_TEMPLATE.replace("{text}", truncated_text)
     try:
         resp = await S.ai.messages.create(
             model=_HAIKU_MODEL,

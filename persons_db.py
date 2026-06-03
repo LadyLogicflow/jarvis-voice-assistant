@@ -274,9 +274,11 @@ def _find_or_create_mandant(mandant: str) -> PersonProfile:
     """
     _load()
     needle = mandant.strip().lower()
-    for p in _persons.values():
-        if p.name and needle in p.name.lower():
-            return p
+    matches = [p for p in _persons.values() if p.name and needle in p.name.lower()]
+    if len(matches) > 1:
+        log.warning("persons_db: Mehrdeutiger Mandantenname %r — %d Treffer, erster wird verwendet", mandant, len(matches))
+    if matches:
+        return matches[0]
     # Kein Treffer — neu anlegen
     cid = new_id()
     profile = PersonProfile(contact_id=cid, name=mandant.strip())
@@ -316,7 +318,7 @@ def save_tax_assessment(mandant: str, data: dict) -> None:
         if existing_key == key:
             log.info("persons_db: Steuerbescheid bereits gespeichert, uebersprungen: %s", key)
             return
-    profile.tax_assessments.append(data)
+    profile.tax_assessments.append({k: v for k, v in data.items() if k != "summary"})
     _save()
     log.info("persons_db: Steuerbescheid gespeichert fuer %s: %s", mandant, key)
 
@@ -346,7 +348,7 @@ def save_advance_payment(mandant: str, data: dict) -> None:
         if existing_key == key:
             log.info("persons_db: Vorauszahlungsbescheid bereits gespeichert, uebersprungen: %s", key)
             return
-    profile.advance_payments.append(data)
+    profile.advance_payments.append({k: v for k, v in data.items() if k != "summary"})
     _save()
     log.info("persons_db: Vorauszahlungsbescheid gespeichert fuer %s: %s", mandant, key)
 
