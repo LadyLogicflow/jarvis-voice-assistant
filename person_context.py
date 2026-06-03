@@ -245,6 +245,11 @@ async def _synthesize(context_data: dict) -> str:
     # Kontext-Block aufbauen
     parts: list[str] = []
 
+    # Absendername als Anker für Haiku — auch wenn kein Profil gefunden wurde
+    sender_name = context_data.get("sender_name", "")
+    if sender_name:
+        parts.append(f"Person: {sender_name}")
+
     if profile:
         name = profile.get("name", "")
         funktion = profile.get("funktion", "")
@@ -358,6 +363,7 @@ async def enrich_mail_with_person_context(
         "mail_rows": mail_rows,
         "calendar_entries": calendar_entries,
         "todoist_tasks": todoist_tasks,
+        "sender_name": sender_name,
     }
 
     return await _synthesize(context_data)

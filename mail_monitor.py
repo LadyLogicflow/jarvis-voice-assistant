@@ -1141,12 +1141,15 @@ async def _process_new_uids(account: dict, client, uids: list[int]) -> None:
                 if reply_needed:
                     try:
                         import person_context as _pc
-                        context_text = await _pc.enrich_mail_with_person_context(
-                            sender_email=sender_email,
-                            sender_name=sender,
+                        context_text = await asyncio.wait_for(
+                            _pc.enrich_mail_with_person_context(
+                                sender_email=sender_email,
+                                sender_name=sender,
+                            ),
+                            timeout=10.0,
                         )
                         if context_text:
-                            log.info(
+                            log.debug(
                                 f"mail_monitor[{name}] uid={uid}: "
                                 f"person context enrichment: {context_text[:80]!r}"
                             )
