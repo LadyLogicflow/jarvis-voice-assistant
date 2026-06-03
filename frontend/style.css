@@ -28,8 +28,8 @@ body {
 }
 
 #orb {
-    width: 320px;
-    height: 320px;
+    width: 400px;
+    height: 400px;
     transition: width 0.4s ease, height 0.4s ease;
 }
 
@@ -47,15 +47,17 @@ body {
 .hud-bracket     { stroke: var(--hud-color, #00d4ff); opacity: 0.8; }
 .hud-inner-ring  { stroke: var(--hud-color, #00d4ff); opacity: 0.9; filter: url(#glow); }
 .hud-core-border { }
-.hud-dot         { fill: var(--hud-color, #00d4ff); }
+.hud-dot          { fill: var(--hud-color, #00d4ff); }
+.hud-equator-line { stroke: var(--hud-color, #00d4ff); }
 
-/* J.A.R.V.I.S. label */
-.hud-title {
+/* Orbiting equatorial label */
+.hud-orbit-text {
     font-family: 'Courier New', Courier, monospace;
-    font-size: 14px;
+    font-size: 9px;
     font-weight: bold;
-    letter-spacing: 3px;
+    letter-spacing: 1.5px;
     fill: var(--hud-color, #00d4ff);
+    opacity: 0.85;
     filter: url(#glow);
 }
 
@@ -69,6 +71,12 @@ body {
 .ring-middle {
     transform-origin: 100px 100px;
     animation: hud-spin-ccw var(--hud-speed-mid, 45s) linear infinite;
+}
+
+/* Equatorial text orbit — always CW, fixed 20s regardless of state */
+.ring-equator {
+    transform-origin: 100px 100px;
+    animation: hud-spin-cw 20s linear infinite;
 }
 
 /* Whole orb breathe / glow */
@@ -95,18 +103,20 @@ body {
 #orb.thinking .hud-accent,
 #orb.thinking .hud-ring-mid,
 #orb.thinking .hud-bracket,
-#orb.thinking .hud-inner-ring { stroke: #ff4444; }
-#orb.thinking .hud-dot         { fill:   #ff4444; }
-#orb.thinking .hud-title       { fill:   #ff4444; }
+#orb.thinking .hud-inner-ring,
+#orb.thinking .hud-equator-line { stroke: #ff4444; }
+#orb.thinking .hud-dot          { fill:   #ff4444; }
+#orb.thinking .hud-orbit-text   { fill:   #ff4444; }
 
 #orb.speaking .hud-ring,
 #orb.speaking .hud-glow,
 #orb.speaking .hud-accent,
 #orb.speaking .hud-ring-mid,
 #orb.speaking .hud-bracket,
-#orb.speaking .hud-inner-ring { stroke: #00ff88; }
-#orb.speaking .hud-dot         { fill:   #00ff88; }
-#orb.speaking .hud-title       { fill:   #00ff88; }
+#orb.speaking .hud-inner-ring,
+#orb.speaking .hud-equator-line { stroke: #00ff88; }
+#orb.speaking .hud-dot          { fill:   #00ff88; }
+#orb.speaking .hud-orbit-text   { fill:   #00ff88; }
 
 /* Status dot blink (idle only) */
 #orb.idle .hud-dot {

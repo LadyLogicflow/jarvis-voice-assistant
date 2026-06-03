@@ -26,10 +26,31 @@
                 <feGaussianBlur stdDeviation="6" result="coloredBlur"/>
                 <feMerge><feMergeNode in="coloredBlur"/><feMergeNode in="SourceGraphic"/></feMerge>
               </filter>
-              <radialGradient id="core-grad" cx="45%" cy="40%" r="60%">
-                <stop offset="0%" stop-color="#1a3a5c"/>
-                <stop offset="100%" stop-color="#050d1a"/>
+
+              <!-- Sphere base gradient: light source upper-left -->
+              <radialGradient id="core-grad" cx="38%" cy="32%" r="70%">
+                <stop offset="0%"   stop-color="#4a82c8"/>
+                <stop offset="25%"  stop-color="#1c4278"/>
+                <stop offset="58%"  stop-color="#0b2050"/>
+                <stop offset="82%"  stop-color="#050e28"/>
+                <stop offset="100%" stop-color="#020710"/>
               </radialGradient>
+
+              <!-- Specular highlight overlay (semi-transparent) -->
+              <radialGradient id="sphere-spec" cx="34%" cy="28%" r="36%">
+                <stop offset="0%"   stop-color="#c8e4ff" stop-opacity="0.45"/>
+                <stop offset="65%"  stop-color="#4a90d0" stop-opacity="0.08"/>
+                <stop offset="100%" stop-color="#4a90d0" stop-opacity="0"/>
+              </radialGradient>
+
+              <!-- Atmospheric rim glow (semi-transparent) -->
+              <radialGradient id="sphere-atm" cx="50%" cy="50%" r="50%">
+                <stop offset="72%"  stop-color="#00d4ff" stop-opacity="0"/>
+                <stop offset="100%" stop-color="#00d4ff" stop-opacity="0.16"/>
+              </radialGradient>
+
+              <!-- Circular path for equatorial text orbit (r=62, CW from top) -->
+              <path id="equator-cw" d="M 100,38 A 62,62 0 1 1 100,162 A 62,62 0 1 1 100,38"/>
             </defs>
 
             <!-- Outer glow ring (background atmosphere) -->
@@ -57,12 +78,21 @@
               </g>
             </g>
 
-            <!-- Inner solid ring border -->
+            <!-- Sphere: base colour + specular highlight + atmospheric rim -->
             <circle cx="100" cy="100" r="56" fill="url(#core-grad)" class="hud-core-border"/>
+            <circle cx="100" cy="100" r="56" fill="url(#sphere-spec)"/>
+            <circle cx="100" cy="100" r="56" fill="url(#sphere-atm)"/>
+            <!-- Equatorial latitude hint -->
+            <ellipse cx="100" cy="100" rx="56" ry="9" fill="none" stroke-opacity="0.12" stroke-width="1.5" class="hud-equator-line"/>
+            <!-- Sphere border ring -->
             <circle cx="100" cy="100" r="56" fill="none" stroke-width="2" class="hud-inner-ring"/>
 
-            <!-- J.A.R.V.I.S. text — zentriert im inneren Kreis (r=56, Mittelpunkt 100/100) -->
-            <text x="100" y="100" text-anchor="middle" dominant-baseline="central" textLength="90" lengthAdjust="spacingAndGlyphs" class="hud-title">J.A.R.V.I.S.</text>
+            <!-- J.A.R.V.I.S. text orbiting the equator CW -->
+            <g class="ring-equator">
+              <text class="hud-orbit-text">
+                <textPath href="#equator-cw" startOffset="0%">J.A.R.V.I.S.  J.A.R.V.I.S.  J.A.R.V.I.S.  J.A.R.V.I.S.  </textPath>
+              </text>
+            </g>
           </svg>
         </div>
         <div id="status">Klicke den Orb um zu sprechen</div>
