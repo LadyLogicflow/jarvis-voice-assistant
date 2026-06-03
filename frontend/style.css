@@ -79,9 +79,11 @@ body {
     animation: hud-pulse-listen 1.5s ease-in-out infinite;
 }
 #orb.thinking {
-    animation: hud-flicker 0.8s ease-in-out infinite;
+    --hud-color: #ff4444;
+    animation: hud-flicker-red 0.8s ease-in-out infinite;
 }
 #orb.speaking {
+    --hud-color: #00ff88;
     animation: hud-pulse-speak 0.5s ease-in-out infinite;
 }
 
@@ -110,6 +112,11 @@ body {
     0%, 100% { opacity: 1; }
     40%       { opacity: 0.85; }
     70%       { opacity: 0.95; }
+}
+@keyframes hud-flicker-red {
+    0%, 100% { filter: drop-shadow(0 0 12px #ff4444) drop-shadow(0 0 4px #ff2222); opacity: 1; }
+    40%       { filter: drop-shadow(0 0 6px #ff4444); opacity: 0.8; }
+    70%       { filter: drop-shadow(0 0 20px #ff6666) drop-shadow(0 0 8px #ff4444); opacity: 0.95; }
 }
 @keyframes hud-pulse-speak {
     0%, 100% { filter: drop-shadow(0 0 12px var(--hud-color, #00ff88)); transform: scale(1); }

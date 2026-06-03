@@ -239,17 +239,28 @@ function playNext() {
     audio.onerror = () => { clearAudioWatchdog(); URL.revokeObjectURL(url); playNext(); };
     armAudioWatchdog();
     audio.play().catch(err => {
-        console.warn('[jarvis] Autoplay blocked, waiting for click...');
-        status.textContent = 'Klicke irgendwo damit Jarvis sprechen kann.';
-        setOrbState('idle');
-        // Wait for click then retry
-        document.addEventListener('click', function retry() {
-            document.removeEventListener('click', retry);
+        console.warn('[jarvis] Autoplay blocked, waiting for tap...');
+        // Show a prominent tap-to-play overlay (especially needed on iOS)
+        let overlay = document.getElementById('tap-overlay');
+        if (!overlay) {
+            overlay = document.createElement('div');
+            overlay.id = 'tap-overlay';
+            overlay.style.cssText = (
+                'position:fixed;inset:0;display:flex;align-items:center;' +
+                'justify-content:center;background:rgba(0,0,0,0.6);z-index:999;' +
+                'font-size:22px;color:#fff;cursor:pointer;text-align:center;padding:20px;'
+            );
+            overlay.textContent = '▶  Tippen zum Abspielen';
+            document.body.appendChild(overlay);
+        }
+        overlay.style.display = 'flex';
+        const resume = () => {
+            overlay.style.display = 'none';
             audio.play().then(() => {
                 setOrbState('speaking');
-                status.textContent = '';
             }).catch(() => playNext());
-        });
+        };
+        overlay.addEventListener('click', resume, { once: true });
     });
 }
 
