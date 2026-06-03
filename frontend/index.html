@@ -27,31 +27,38 @@
                 <feMerge><feMergeNode in="coloredBlur"/><feMergeNode in="SourceGraphic"/></feMerge>
               </filter>
 
-              <!-- Sphere base gradient: light source upper-left -->
-              <radialGradient id="core-grad" cx="38%" cy="32%" r="70%">
-                <stop offset="0%"   stop-color="#4a82c8"/>
-                <stop offset="25%"  stop-color="#1c4278"/>
-                <stop offset="58%"  stop-color="#0b2050"/>
-                <stop offset="82%"  stop-color="#050e28"/>
-                <stop offset="100%" stop-color="#020710"/>
+              <!-- Gläserne Kugel: sehr transparent, Lichtquelle oben-links -->
+              <radialGradient id="core-grad" cx="36%" cy="30%" r="72%">
+                <stop offset="0%"   stop-color="#e8f4ff" stop-opacity="0.55"/>
+                <stop offset="22%"  stop-color="#60a4d8" stop-opacity="0.22"/>
+                <stop offset="55%"  stop-color="#0820a0" stop-opacity="0.12"/>
+                <stop offset="82%"  stop-color="#001050" stop-opacity="0.30"/>
+                <stop offset="100%" stop-color="#000a28" stop-opacity="0.65"/>
               </radialGradient>
 
-              <!-- Specular highlight overlay (semi-transparent) -->
-              <radialGradient id="sphere-spec" cx="34%" cy="28%" r="36%">
-                <stop offset="0%"   stop-color="#c8e4ff" stop-opacity="0.45"/>
-                <stop offset="65%"  stop-color="#4a90d0" stop-opacity="0.08"/>
-                <stop offset="100%" stop-color="#4a90d0" stop-opacity="0"/>
+              <!-- Primärer Spiegelglanz oben-links (Glaslinse) -->
+              <radialGradient id="sphere-spec" cx="30%" cy="23%" r="26%">
+                <stop offset="0%"   stop-color="#ffffff" stop-opacity="0.92"/>
+                <stop offset="45%"  stop-color="#c8e8ff" stop-opacity="0.40"/>
+                <stop offset="100%" stop-color="#c8e8ff" stop-opacity="0"/>
               </radialGradient>
 
-              <!-- Atmospheric rim glow (semi-transparent) -->
+              <!-- Sekundäre Reflexion unten-rechts (Glaskugel-Effekt) -->
+              <radialGradient id="sphere-refl" cx="72%" cy="78%" r="28%">
+                <stop offset="0%"   stop-color="#40a8e0" stop-opacity="0.22"/>
+                <stop offset="100%" stop-color="#40a8e0" stop-opacity="0"/>
+              </radialGradient>
+
+              <!-- Atmosphärischer Randschimmer -->
               <radialGradient id="sphere-atm" cx="50%" cy="50%" r="50%">
                 <stop offset="72%"  stop-color="#00d4ff" stop-opacity="0"/>
                 <stop offset="100%" stop-color="#00d4ff" stop-opacity="0.16"/>
               </radialGradient>
 
-              <!-- Äquatorialer Textpfad: r=50, CCW (Buchstaben zeigen zur Kugelkugelmitte,
-                   Text erscheint auf der Kugeloberfläche; Gruppe dreht sich CW) -->
-              <path id="equator-cw" d="M 100,50 A 50,50 0 1 0 100,150 A 50,50 0 1 0 100,50"/>
+              <!-- Clip: Schriftzug wird auf die Kugeloberfläche beschnitten -->
+              <clipPath id="sphere-clip">
+                <circle cx="100" cy="100" r="54"/>
+              </clipPath>
             </defs>
 
             <!-- Outer glow ring (background atmosphere) -->
@@ -60,7 +67,6 @@
             <!-- Outer tick ring — rotates CW -->
             <g class="ring-outer">
               <circle cx="100" cy="100" r="88" fill="none" stroke-width="1.5" stroke-dasharray="2 2.67" class="hud-ring"/>
-              <!-- 4 longer accent marks at 0/90/180/270 degrees -->
               <line x1="100" y1="12"  x2="100" y2="22"  class="hud-accent"/>
               <line x1="188" y1="100" x2="178" y2="100" class="hud-accent"/>
               <line x1="100" y1="188" x2="100" y2="178" class="hud-accent"/>
@@ -70,7 +76,6 @@
             <!-- Middle decorative ring — rotates CCW -->
             <g class="ring-middle">
               <circle cx="100" cy="100" r="72" fill="none" stroke-width="1" stroke-dasharray="4 8" class="hud-ring-mid"/>
-              <!-- Corner bracket decorations at 4 positions, rotated 45° around center -->
               <g transform="rotate(45, 100, 100)">
                 <path d="M32,90  L32,32  L90,32"  fill="none" stroke-width="1.5" class="hud-bracket"/>
                 <path d="M168,90 L168,32 L110,32" fill="none" stroke-width="1.5" class="hud-bracket"/>
@@ -79,20 +84,30 @@
               </g>
             </g>
 
-            <!-- Sphere: base colour + specular highlight + atmospheric rim -->
+            <!-- Glaskugel: Basisfarbe + Spiegelglanz + Reflexion + Atmosphäre -->
             <circle cx="100" cy="100" r="56" fill="url(#core-grad)" class="hud-core-border"/>
             <circle cx="100" cy="100" r="56" fill="url(#sphere-spec)"/>
+            <circle cx="100" cy="100" r="56" fill="url(#sphere-refl)"/>
             <circle cx="100" cy="100" r="56" fill="url(#sphere-atm)"/>
-            <!-- Equatorial latitude hint -->
-            <ellipse cx="100" cy="100" rx="56" ry="9" fill="none" stroke-opacity="0.12" stroke-width="1.5" class="hud-equator-line"/>
-            <!-- Sphere border ring -->
+            <!-- Äquatorlinie als angedeutete Breitengradelipse -->
+            <ellipse cx="100" cy="100" rx="56" ry="9" fill="none" stroke-opacity="0.15" stroke-width="1.5" class="hud-equator-line"/>
+            <!-- Kugelrand -->
             <circle cx="100" cy="100" r="56" fill="none" stroke-width="2" class="hud-inner-ring"/>
 
-            <!-- J.A.R.V.I.S. text läuft CW um den Äquator der Kugel -->
-            <g class="ring-equator">
-              <text class="hud-orbit-text">
-                <textPath href="#equator-cw" startOffset="0%">J.A.R.V.I.S.   J.A.R.V.I.S.   J.A.R.V.I.S.   </textPath>
-              </text>
+            <!-- J.A.R.V.I.S. scrollt von links nach rechts am Äquator
+                 (Kugel rotiert im Uhrzeigersinn um Hochachse).
+                 font-size=6 SVG-Einheiten → ~54 Einheiten pro Wiederholung
+                 (15 Zeichen × 3.6 SVG-Einheiten, Courier New 0.6em).
+                 SMIL animateTransform: 54 SVG-Einheiten = eine Wiederholung,
+                 skalenunabhängig. -->
+            <g clip-path="url(#sphere-clip)">
+              <g>
+                <animateTransform attributeName="transform" type="translate"
+                  from="0 0" to="54 0" dur="6s" repeatCount="indefinite"/>
+                <text x="-350" y="105" class="hud-orbit-text"
+                      font-family="'Courier New', Courier, monospace"
+                      font-size="6" font-weight="bold">J.A.R.V.I.S.    J.A.R.V.I.S.    J.A.R.V.I.S.    J.A.R.V.I.S.    J.A.R.V.I.S.    J.A.R.V.I.S.    J.A.R.V.I.S.    J.A.R.V.I.S.    J.A.R.V.I.S.    J.A.R.V.I.S.    </text>
+              </g>
             </g>
           </svg>
         </div>

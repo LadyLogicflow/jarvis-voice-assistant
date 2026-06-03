@@ -50,12 +50,8 @@ body {
 .hud-dot          { fill: var(--hud-color, #00d4ff); }
 .hud-equator-line { stroke: var(--hud-color, #00d4ff); }
 
-/* Orbiting equatorial label */
+/* Orbiting equatorial label — font-size/letter-spacing set in SVG (user units) */
 .hud-orbit-text {
-    font-family: 'Courier New', Courier, monospace;
-    font-size: 9px;
-    font-weight: bold;
-    letter-spacing: 1.5px;
     fill: var(--hud-color, #00d4ff);
     opacity: 0.85;
     filter: url(#glow);
@@ -71,12 +67,6 @@ body {
 .ring-middle {
     transform-origin: 100px 100px;
     animation: hud-spin-ccw var(--hud-speed-mid, 45s) linear infinite;
-}
-
-/* Equatorial text orbit — always CW, fixed 20s regardless of state */
-.ring-equator {
-    transform-origin: 100px 100px;
-    animation: hud-spin-cw 20s linear infinite;
 }
 
 /* Whole orb breathe / glow */
