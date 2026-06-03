@@ -107,6 +107,11 @@ def _init_db() -> None:
         )
 
 
+# Auf Import-Zeit ausführen: macht search_knowledge/get_recent_knowledge
+# unabhängig davon ob mail_intelligence_scheduler() je gestartet wurde.
+_init_db()
+
+
 # ---------------------------------------------------------------------------
 # Hilfsfunktionen: Header-Dekodierung + Body-Extraktion
 # ---------------------------------------------------------------------------
@@ -660,8 +665,6 @@ async def mail_intelligence_scheduler() -> None:
     if not accounts:
         log.info("mail_intelligence: keine Konten konfiguriert, Scheduler inaktiv")
         return
-
-    _init_db()
 
     interval = S.MAIL_INTELLIGENCE_INTERVAL
     log.info(
