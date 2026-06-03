@@ -94,19 +94,18 @@
             <!-- Kugelrand -->
             <circle cx="100" cy="100" r="56" fill="none" stroke-width="2" class="hud-inner-ring"/>
 
-            <!-- J.A.R.V.I.S. scrollt von links nach rechts am Äquator
-                 (Kugel rotiert im Uhrzeigersinn um Hochachse).
-                 font-size=6 SVG-Einheiten → ~54 Einheiten pro Wiederholung
-                 (15 Zeichen × 3.6 SVG-Einheiten, Courier New 0.6em).
-                 SMIL animateTransform: 54 SVG-Einheiten = eine Wiederholung,
-                 skalenunabhängig. -->
+            <!-- Ein J.A.R.V.I.S.-Label scrollt über den Äquator (Kugel dreht sich CW).
+                 font-size=9 SVG-Einheiten (≈18px auf 400px-Canvas), kein CSS-Override.
+                 Label ~59 SVG-Einheiten breit, danach 22 Leerzeichen ≈119 Einheiten Pause.
+                 Eine Wiederholung = 178 SVG-Einheiten; 3 Reps ab x=-200.
+                 SMIL to="178 0" = nahtlose Schleife, skalenunabhängig. -->
             <g clip-path="url(#sphere-clip)">
               <g>
                 <animateTransform attributeName="transform" type="translate"
-                  from="0 0" to="54 0" dur="6s" repeatCount="indefinite"/>
-                <text x="-350" y="105" class="hud-orbit-text"
+                  from="0 0" to="178 0" dur="8s" repeatCount="indefinite"/>
+                <text x="-200" y="104" class="hud-orbit-text"
                       font-family="'Courier New', Courier, monospace"
-                      font-size="6" font-weight="bold">J.A.R.V.I.S.    J.A.R.V.I.S.    J.A.R.V.I.S.    J.A.R.V.I.S.    J.A.R.V.I.S.    J.A.R.V.I.S.    J.A.R.V.I.S.    J.A.R.V.I.S.    J.A.R.V.I.S.    J.A.R.V.I.S.    </text>
+                      font-size="9" font-weight="bold">J.A.R.V.I.S.                      J.A.R.V.I.S.                      J.A.R.V.I.S.                      </text>
               </g>
             </g>
           </svg>
