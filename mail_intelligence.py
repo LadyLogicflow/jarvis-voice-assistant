@@ -407,11 +407,19 @@ def get_mail_context_block(days: int = 1) -> str:
         Formatierter Deutsch-Text-Block mit Quellenangaben,
         oder kurzer Leer-Hinweis wenn nichts vorliegt.
     """
+    _EMPTY = "\nMail-Wissen (letzte 24h): Keine neuen Informationen aus den Postfächern."
+    try:
+        return _build_mail_context_block(days=days, empty=_EMPTY)
+    except Exception as e:
+        log.warning("mail_intelligence: get_mail_context_block failed: %s: %s", type(e).__name__, e)
+        return _EMPTY
+
+
+def _build_mail_context_block(days: int, empty: str) -> str:
     rows = get_recent_knowledge(days=days, limit=20)
 
-    _EMPTY = "\nMail-Wissen (letzte 24h): Keine neuen Informationen aus den Postfächern."
     if not rows:
-        return _EMPTY
+        return empty
 
     _CAT_ORDER = ["deadline", "decision", "action", "person", "fact"]
     _CAT_LABEL = {
@@ -452,7 +460,7 @@ def get_mail_context_block(days: int = 1) -> str:
             lines.append(entry)
 
     if not lines:
-        return _EMPTY
+        return empty
 
     block = "\nMail-Wissen (letzte 24h):\n" + "\n".join(lines[:10])
     if len(block) > 1500:

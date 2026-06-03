@@ -223,9 +223,12 @@ def build_system_prompt() -> str:
     # Mail-Decision-Tree-Anker + Stress-Level (Issue #118):
     # Beide aus dem "default"-Slot lesen (Single-User-App, konsistent mit
     # broadcast_active_mail-Fallback).
+    # Issue #162: Mail-Wissen (letzte 24h) in Systemprompt injizieren.
+    # Lazy import verhindert circular import (mail_intelligence importiert llm_text aus prompt).
     import mail_intelligence as _mi
     mail_knowledge_block = _mi.get_mail_context_block(days=1)
 
+    # Issue #118: Mail-Decision-Tree-Anker + Stress-Level.
     import session_state as _ss
     _state = _ss.get("default")
     _active = _state.active_mail
