@@ -1134,6 +1134,42 @@ async def _process_new_uids(account: dict, client, uids: list[int]) -> None:
                     except Exception as e:
                         log.warning(f"mail_monitor[{name}] mac alert failed: "
                                     f"{type(e).__name__}: {e}")
+                # Issue #163: Personen-Kontext nur bei Antwort-erwartenden Mails.
+                # Alle Quellen werden parallel abgefragt; Fehler einzelner
+                # Quellen werden still uebersprungen. Kein Output wenn Person
+                # unbekannt (keine Treffer in keiner Quelle).
+                if reply_needed:
+                    try:
+                        import person_context as _pc
+                        context_text = await asyncio.wait_for(
+                            _pc.enrich_mail_with_person_context(
+                                sender_email=sender_email,
+                                sender_name=sender,
+                            ),
+                            timeout=10.0,
+                        )
+                        if context_text:
+                            log.debug(
+                                f"mail_monitor[{name}] uid={uid}: "
+                                f"person context enrichment: {context_text[:80]!r}"
+                            )
+                            if not tg_quiet:
+                                await telegram_bot.send_user_text(
+                                    f"📋 Kontext zu {sender}:\n{context_text}",
+                                )
+                            if not mac_quiet and _mail_alert_handler is not None:
+                                try:
+                                    await _mail_alert_handler(context_text)
+                                except Exception as e:
+                                    log.debug(
+                                        f"mail_monitor[{name}] person context mac alert failed: "
+                                        f"{type(e).__name__}: {e}"
+                                    )
+                    except Exception as e:
+                        log.debug(
+                            f"mail_monitor[{name}] uid={uid}: person context failed: "
+                            f"{type(e).__name__}: {e}"
+                        )
         except asyncio.CancelledError:
             # Server shutdown mid-processing: the finally block below
             # persists the current UID before we re-raise so asyncio can
