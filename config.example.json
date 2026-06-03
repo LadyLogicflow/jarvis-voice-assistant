@@ -64,7 +64,9 @@
   "mail_monitor_forward": ["handlungsbedarf"],
   "mail_monitor_folder": "INBOX",
   "mail_monitor_accounts": [
-    {"name": "Apple", "host": "imap.mail.me.com", "user": "you@me.com", "port": 993, "ssl": true, "folder": "INBOX"},
+    {"name": "Apple", "host": "imap.mail.me.com", "user": "you@me.com", "port": 993, "ssl": true, "folder": "INBOX",
+     "_smtp_note": "smtp_host/smtp_port optional — defaults: replace 'imap.' with 'smtp.' in host, port 587",
+     "smtp_host": "smtp.mail.me.com", "smtp_port": 587},
     {"name": "HILO",  "host": "imap.example.de",   "user": "you@hilo.de", "port": 993, "ssl": true, "folder": "INBOX"}
   ],
 

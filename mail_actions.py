@@ -632,9 +632,9 @@ async def forward_mail(account_name: str, uid: int, to_addr: str) -> bool:
     from email.mime.message import MIMEMessage
     fwd.attach(MIMEMessage(original))
 
-    # Send via SMTP. Server is the same hostname as IMAP for most providers.
-    smtp_host = acc.get("smtp_host", acc["host"])
-    smtp_port = int(acc.get("smtp_port", 587))
+    smtp_host = acc.get("smtp_host") or acc["host"]
+    smtp_port = int(acc.get("smtp_port") or 587)
+    log.info(f"forward_mail[{account_name}] SMTP {smtp_host}:{smtp_port} uid={uid} -> {to_addr}")
     try:
         loop = asyncio.get_running_loop()
         def _send():
@@ -644,10 +644,10 @@ async def forward_mail(account_name: str, uid: int, to_addr: str) -> bool:
                 s.login(acc["user"], acc["password"])
                 s.send_message(fwd)
         await loop.run_in_executor(None, _send)
-        log.info(f"forward_mail[{account_name}] uid={uid} -> {to_addr}")
+        log.info(f"forward_mail[{account_name}] uid={uid} -> {to_addr} OK")
         return True
     except Exception as e:
-        log.warning(f"forward_mail[{account_name}] SMTP failed: "
+        log.warning(f"forward_mail[{account_name}] SMTP {smtp_host}:{smtp_port} failed: "
                     f"{type(e).__name__}: {e}")
         return False
 

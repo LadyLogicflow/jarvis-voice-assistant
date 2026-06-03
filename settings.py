@@ -168,9 +168,17 @@ def _normalize_account(raw: dict) -> dict:
         c.upper() if c.isalnum() else "_" for c in name
     )
     pw = os.environ.get(env_key, "").strip()
+    imap_host = raw.get("host", "")
+    # Derive SMTP host: use explicit smtp_host if set, otherwise replace
+    # leading "imap." prefix (covers iCloud, many others), else same host.
+    _default_smtp = (
+        imap_host.replace("imap.", "smtp.", 1)
+        if imap_host.startswith("imap.")
+        else imap_host
+    )
     return {
         "name": name,
-        "host": raw.get("host", ""),
+        "host": imap_host,
         "user": raw.get("user", ""),
         "password": pw,
         "port": int(raw.get("port", 993)),
@@ -179,6 +187,8 @@ def _normalize_account(raw: dict) -> dict:
         "sent_folder": raw.get("sent_folder", "Sent"),
         "drafts_folder": raw.get("drafts_folder", config.get("drafts_folder", "Drafts")),
         "env_key": env_key,
+        "smtp_host": raw.get("smtp_host", _default_smtp),
+        "smtp_port": int(raw.get("smtp_port", 587)),
     }
 
 
