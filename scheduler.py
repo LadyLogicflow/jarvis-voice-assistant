@@ -1092,6 +1092,202 @@ async def evening_brief_scheduler() -> None:
         await asyncio.sleep(60)
 
 
+# ---------------------------------------------------------------------------
+# Abend-Zusammenfassung (Issue #164): taeglich 20:30 — was hat JARVIS heute
+# gelernt? Quellen: Mail-Intelligence, Google Calendar, Todoist.
+# ---------------------------------------------------------------------------
+
+_EVENING_SUMMARY_PROMPT = (
+    "Du bist Jarvis. Erstelle eine knappe Abendzusammenfassung fuer {addr}. "
+    "Ton: trocken-butlerhaft, sachlich, leicht ironisch wenn passend. "
+    "Format: fliessendes Deutsch, keine Listen, keine Markdown-Formatierung, "
+    "keine eckigen Klammern. Text wird vorgelesen (TTS), also natiuerliche Saetze. "
+    "Maximal 5-7 Saetze insgesamt. "
+    "Inhalt (nur was vorhanden ist): "
+    "Was war heute wichtig laut E-Mail-Postfach (Kerninhalte kurz nennen); "
+    "welche Termine haben stattgefunden; "
+    "wie viele Aufgaben waren erledigt oder offen. "
+    "Falls alle Quellen leer sind: einen kurzen natuerlichen Satz wie "
+    "'Heute war es ruhig — die Postfaecher haben nichts Neues gebracht, "
+    "der Kalender war frei.' "
+    "KEINE Begruessung wie 'Guten Abend'. Starte direkt mit dem Inhalt. "
+    "Beende JEDEN Satz mit einem Punkt."
+)
+
+
+async def generate_evening_summary(detailed: bool = False) -> str:
+    """Erstelle eine Zusammenfassung des heutigen Tages aus drei Quellen.
+
+    Quellen: Mail-Intelligence (letzte 24h), Google Calendar (heute),
+    Todoist (erledigte + offene Aufgaben). Alle Quellen werden mit
+    graceful degradation behandelt — schlaegt eine Quelle fehl, werden
+    die anderen trotzdem verarbeitet.
+
+    Args:
+        detailed: Falls True, werden mehr Details aufgenommen (v1:
+            Standard-Zusammenfassung, detailed-Flag ist vorbereitet
+            aber noch nicht anders implementiert).
+
+    Returns:
+        Formulierter Text fuer TTS oder leerer String bei Fehler.
+    """
+    import mail_intelligence
+
+    parts: list[str] = []
+
+    # 1. Mail-Intelligence: Wissen aus den letzten 24h
+    try:
+        loop = asyncio.get_running_loop()
+        rows = await loop.run_in_executor(
+            None,
+            lambda: mail_intelligence.get_recent_knowledge(days=1, limit=20),
+        )
+        if rows:
+            # Kerninformationen extrahieren: Absender + Betreff + Hauptaussage
+            mail_lines: list[str] = []
+            limit = 20 if detailed else 5
+            for r in rows[:limit]:
+                sender = r.get("sender_name") or r.get("sender_email", "")
+                subject = r.get("subject", "")
+                main_info = r.get("main_info", "")
+                if subject or main_info:
+                    entry = f"{sender}: {subject}" if sender else subject
+                    if main_info and detailed:
+                        entry += f" — {main_info[:120]}"
+                    mail_lines.append(entry)
+            if mail_lines:
+                parts.append("MAILS (letzte 24h):\n" + "\n".join(mail_lines))
+    except Exception as e:
+        log.warning(f"generate_evening_summary: mail_intelligence failed: {type(e).__name__}: {e}")
+
+    # 2. Google Calendar: Termine die heute stattgefunden haben
+    try:
+        today = datetime.date.today()
+        today_short = today.strftime("%d.%m.")
+        cal_text = await google_calendar_tools.get_events(days=1, max_results=30)
+        if cal_text and cal_text != "KEINE_TERMINE":
+            today_events = [
+                line.strip() for line in cal_text.splitlines()
+                if line.startswith("•") and today_short in line
+            ]
+            if today_events:
+                parts.append("TERMINE HEUTE:\n" + "\n".join(today_events))
+    except Exception as e:
+        log.warning(f"generate_evening_summary: calendar failed: {type(e).__name__}: {e}")
+
+    # 3. Todoist: erledigte + offene Aufgaben heute
+    try:
+        tasks_done = S.TASKS_COMPLETED_TODAY
+        open_tasks_text = S.TODAY_TASKS  # cache aus letztem Refresh
+
+        task_parts: list[str] = []
+        if tasks_done > 0:
+            task_parts.append(f"Erledigt: {tasks_done}")
+        if open_tasks_text:
+            open_lines = [
+                line.strip() for line in open_tasks_text.splitlines()
+                if line.strip()
+            ]
+            if open_lines:
+                task_parts.append("Noch offen: " + "; ".join(open_lines[:5]))
+        if task_parts:
+            parts.append("AUFGABEN:\n" + "\n".join(task_parts))
+    except Exception as e:
+        log.warning(f"generate_evening_summary: todoist failed: {type(e).__name__}: {e}")
+
+    addr = pick_address()
+    system_prompt = _EVENING_SUMMARY_PROMPT.format(addr=addr)
+    user_content = (
+        "Tagesdaten:\n\n" + "\n\n".join(parts)
+        if parts
+        else "Keine Tagesdaten verfuegbar."
+    )
+    max_tokens = 700 if detailed else 500
+
+    try:
+        resp = await S.ai.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=max_tokens,
+            system=system_prompt,
+            messages=[{"role": "user", "content": user_content}],
+        )
+        return trim_to_complete_sentences(llm_text(resp).strip())
+    except Exception as e:
+        log.warning(
+            f"generate_evening_summary: LLM call failed: {type(e).__name__}: {e}"
+        )
+        return ""
+
+
+async def evening_summary_scheduler() -> None:
+    """Long-running task: taeglich um 20:30 Uhr Abendzusammenfassung senden.
+
+    Kanal-Logik:
+    - Orb verbunden (aktive WebSocket-Sitzung): PENDING_PROACTIVE setzen
+      und per Sprachausgabe fragen ("Haben Sie einen Moment?"). Die
+      bestehende PROACTIVE_DELIVER-Action liefert die Zusammenfassung dann
+      aus. Catrin kann ablehnen -> Telegram-Fallback (bereits in
+      _broadcast_proactive implementiert).
+    - Orb nicht verbunden: direkt per Telegram senden.
+
+    Verwendet das '>=' Muster aus morning_brief_scheduler: wenn der
+    Server um genau 20:30 schlaeft und um 20:35 aufwacht, wird die
+    Zusammenfassung trotzdem gesendet.
+    """
+    _TRIGGER_HHMM = "20:30"
+    _now_init = datetime.datetime.now()
+    triggered_today = (
+        datetime.date.today().isoformat()
+        if _now_init.strftime("%H:%M") >= _TRIGGER_HHMM
+        else ""
+    )
+    while True:
+        try:
+            now = datetime.datetime.now()
+            today = datetime.date.today().isoformat()
+            current_hhmm = now.strftime("%H:%M")
+
+            if current_hhmm >= _TRIGGER_HHMM and triggered_today != today:
+                triggered_today = today
+                log.info("evening_summary_scheduler: 20:30 Trigger — Abendzusammenfassung")
+                try:
+                    # Aufgaben-Cache aktualisieren bevor Zusammenfassung generiert wird
+                    await refresh_today_tasks()
+                    summary = await generate_evening_summary()
+                    if not summary:
+                        log.info("evening_summary_scheduler: leere Zusammenfassung, kein Push")
+                    elif _proactive_handler is not None:
+                        log.info(
+                            f"evening_summary_scheduler: sende via proactive handler: "
+                            f"{summary[:80]!r}"
+                        )
+                        await _proactive_handler(summary)
+                    else:
+                        # Kein Orb-Handler registriert — direkt per Telegram
+                        log.info(
+                            "evening_summary_scheduler: kein proactive_handler, "
+                            "sende direkt per Telegram"
+                        )
+                        try:
+                            import telegram_bot
+                            await telegram_bot.send_user_text(summary)
+                        except Exception as e:
+                            log.warning(
+                                f"evening_summary_scheduler: Telegram failed: "
+                                f"{type(e).__name__}: {e}"
+                            )
+                except Exception as e:
+                    log.warning(
+                        f"evening_summary_scheduler: failed: "
+                        f"{type(e).__name__}: {e}"
+                    )
+        except Exception as e:
+            log.warning(
+                f"evening_summary_scheduler loop error: {type(e).__name__}: {e}"
+            )
+        await asyncio.sleep(60)
+
+
 _PROMISE_FOLLOWUP_SLOT = "16:00"
 
 
