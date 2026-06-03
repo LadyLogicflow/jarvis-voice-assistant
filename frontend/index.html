@@ -49,8 +49,9 @@
                 <stop offset="100%" stop-color="#00d4ff" stop-opacity="0.16"/>
               </radialGradient>
 
-              <!-- Circular path for equatorial text orbit (r=62, CW from top) -->
-              <path id="equator-cw" d="M 100,38 A 62,62 0 1 1 100,162 A 62,62 0 1 1 100,38"/>
+              <!-- Äquatorialer Textpfad: r=50, CCW (Buchstaben zeigen zur Kugelkugelmitte,
+                   Text erscheint auf der Kugeloberfläche; Gruppe dreht sich CW) -->
+              <path id="equator-cw" d="M 100,50 A 50,50 0 1 0 100,150 A 50,50 0 1 0 100,50"/>
             </defs>
 
             <!-- Outer glow ring (background atmosphere) -->
@@ -87,10 +88,10 @@
             <!-- Sphere border ring -->
             <circle cx="100" cy="100" r="56" fill="none" stroke-width="2" class="hud-inner-ring"/>
 
-            <!-- J.A.R.V.I.S. text orbiting the equator CW -->
+            <!-- J.A.R.V.I.S. text läuft CW um den Äquator der Kugel -->
             <g class="ring-equator">
               <text class="hud-orbit-text">
-                <textPath href="#equator-cw" startOffset="0%">J.A.R.V.I.S.  J.A.R.V.I.S.  J.A.R.V.I.S.  J.A.R.V.I.S.  </textPath>
+                <textPath href="#equator-cw" startOffset="0%">J.A.R.V.I.S.   J.A.R.V.I.S.   J.A.R.V.I.S.   </textPath>
               </text>
             </g>
           </svg>
