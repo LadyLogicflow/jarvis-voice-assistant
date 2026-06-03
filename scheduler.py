@@ -632,6 +632,7 @@ _MORNING_BRIEF_PROMPT = (
     "Inhalt (nach Prioritaet, alles in diese 3 Saetze packen): "
     "Wochentag + exaktes Datum + Wetter (Maximaltemperatur + Regen ja/nein); "
     "wichtigster Termin / wichtigste Aufgabe heute falls vorhanden; "
+    "falls 'Abendessen heute' in den Tagesdaten steht, erwaehne den Gerichtsnamen kurz (ein Halbsatz); "
     "Geburtstag-Hinweis falls vorhanden (runde Geburtstage bevorzugt). "
     "Steuerrecht-Schlagzeile nur wenn Platz bleibt. "
     "Keine Nachrichten / Politik. "
@@ -725,6 +726,12 @@ async def morning_brief_scheduler() -> None:
                             today_block += f"\nSteuerrecht aktuell (3 Tage): {S.STEUER_RECENT[:400]}"
                         elif S.STEUER_BRIEF:
                             today_block += f"\nSteuerrecht: {S.STEUER_BRIEF}"
+                    # Abendessen heute (aus Speiseplan)
+                    if not is_free:
+                        _today_str = datetime.date.today().isoformat()
+                        _meal = S.MEAL_PLAN_WEEK.get(_today_str, {}).get("dish", "")
+                        if _meal:
+                            today_block += f"\nAbendessen heute: {_meal}"
                     # Geburtstage + Gesundheit immer
                     if S.BIRTHDAY_REMINDERS:
                         today_block += f"\n{S.BIRTHDAY_REMINDERS}"
