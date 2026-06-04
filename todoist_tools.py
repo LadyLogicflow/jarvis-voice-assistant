@@ -169,8 +169,9 @@ async def add_task(
     due: str = "",
     project_id: Optional[str] = None,
     section_id: Optional[str] = None,
+    assignee_id: Optional[str] = None,
 ) -> str:
-    """Add a new task. Optionally pin it to a project / section."""
+    """Add a new task. Optionally pin it to a project / section / assignee."""
     payload: dict = {"content": content}
     if due:
         payload["due_string"] = due
@@ -179,6 +180,8 @@ async def add_task(
         payload["project_id"] = project_id
     if section_id:
         payload["section_id"] = section_id
+    if assignee_id:
+        payload["assignee_id"] = assignee_id
     async with httpx.AsyncClient(timeout=10) as c:
         try:
             r = await c.post(f"{BASE}/tasks", headers=_h(token), json=payload)

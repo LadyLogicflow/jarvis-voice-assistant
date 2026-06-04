@@ -31,13 +31,14 @@
   "imap_ssl": true,
   "imap_folder": "INBOX",
 
-  "_comment_todoist": "Project IDs that the [ACTION:TASKS] reads from + [ACTION:ADDTASK] can write to. hilo_section restricts the HILO project to one section.",
+  "_comment_todoist": "Project IDs that the [ACTION:TASKS] reads from + [ACTION:ADDTASK] can write to. hilo_section restricts the HILO project to one section. todoist_default_section: section_id aus der Todoist-URL (https://app.todoist.com/app/section/NAME-ID → ID-Teil) — jede neue Aufgabe landet dort.",
   "todoist_projects": {
     "hilo": "",
     "hilo_section": "",
     "dihag": "",
     "privat": ""
   },
+  "todoist_default_section": "",
 
   "_comment_briefing": "Morning briefing only fires before this hour; after it, just a short greeting. Politik news source is separate from the general news feed.",
   "morning_brief_until_hour": 11,

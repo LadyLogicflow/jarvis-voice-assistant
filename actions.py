@@ -565,13 +565,22 @@ async def execute_action(action: dict) -> str:
         content = parts[0] if parts else ""
         due = parts[1] if len(parts) > 1 else ""
         bereich = parts[2].lower() if len(parts) > 2 else ""
+        # Default: morgen — wenn kein Datum genannt wird
+        if not due:
+            due = "morgen"
         project_id = S.TODOIST_PROJECTS.get(bereich) if bereich else None
+        # Immer in die konfigurierte Default-Section (Fr. Essberger),
+        # es sei denn ein anderer Bereich hat eine eigene Section.
         section_id = (
-            S.TODOIST_PROJECTS.get("hilo_section") if bereich == "hilo" else None
+            S.TODOIST_PROJECTS.get("hilo_section") if bereich == "hilo"
+            else S.TODOIST_DEFAULT_SECTION or None
         )
+        # Aufgabe immer Catrin zuweisen
+        my_id = await todoist_tools._my_id(S.TODOIST_TOKEN)
         return await todoist_tools.add_task(
             S.TODOIST_TOKEN, content, due,
             project_id=project_id, section_id=section_id,
+            assignee_id=my_id,
         )
 
     elif t == "DONETASK":

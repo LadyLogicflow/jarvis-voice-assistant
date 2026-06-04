@@ -252,6 +252,8 @@ HISTORY_PATH = os.path.join(os.path.dirname(__file__), ".jarvis_history.json")
 # Each entry is a Todoist project_id; HILO additionally restricts to a
 # section_id so only the personal-tasks-for-Catrin section comes through.
 TODOIST_PROJECTS = config.get("todoist_projects", {})
+# Default section for every new ADDTASK (section_id from Todoist URL).
+TODOIST_DEFAULT_SECTION: str = config.get("todoist_default_section", "")
 TODOIST_PROJECT_IDS = [
     pid for key in ("hilo", "dihag", "privat")
     if (pid := TODOIST_PROJECTS.get(key))
