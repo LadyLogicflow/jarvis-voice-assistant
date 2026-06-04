@@ -186,7 +186,7 @@ function connect() {
             return;
         }
         if (data.type === 'response') {
-            addTranscript('jarvis', data.text, data.card_html || '');
+            if (data.text) addTranscript('jarvis', data.text, data.card_html || '');
             if (data.audio && data.audio.length > 0) {
                 queueAudio(data.audio);
             } else {

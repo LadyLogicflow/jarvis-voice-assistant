@@ -1951,15 +1951,29 @@ async def execute_action(action: dict) -> str:
         return _mp.format_meal_plan_tts()
 
     elif t == "SPEISEPLAN":
-        # On-demand: heute bis Freitag. Payload p enthaelt optionale Wuensche.
-        # Cache nur nutzen wenn KEINE Wuensche angegeben — mit Wuenschen immer neu generieren.
+        # On-demand: heute bis Freitag, oder benutzerdefinierter Zeitraum via daterange:.
+        # Payload-Format: [daterange:YYYY-MM-DD:YYYY-MM-DD|]wuensche
         import meal_plan as _mp
+        import re as _re
+        payload = p.strip() if p else ""
+        explicit_dates = None
+        _dr_m = _re.match(r'daterange:(\d{4}-\d{2}-\d{2}):(\d{4}-\d{2}-\d{2})\|?', payload)
+        if _dr_m:
+            _start = datetime.date.fromisoformat(_dr_m.group(1))
+            _end = datetime.date.fromisoformat(_dr_m.group(2))
+            explicit_dates = []
+            _d = _start
+            while _d <= _end:
+                explicit_dates.append(_d)
+                _d += datetime.timedelta(days=1)
+            payload = payload[_dr_m.end():].strip()
+        wishes = payload
         today_str = datetime.date.today().isoformat()
-        wishes = p.strip() if p else ""
-        if not wishes and S.MEAL_PLAN_WEEK and today_str in S.MEAL_PLAN_WEEK:
+        if not wishes and not explicit_dates and S.MEAL_PLAN_WEEK and today_str in S.MEAL_PLAN_WEEK:
             return _mp.format_meal_plan_tts()
-        log.info(f"SPEISEPLAN: generiere neu (wishes={wishes[:60]!r})")
-        plan = await _mp.generate_meal_plan(start_today=True, wishes=wishes)
+        log.info(f"SPEISEPLAN: generiere neu (dates={explicit_dates}, wishes={wishes[:60]!r})")
+        plan = await _mp.generate_meal_plan(start_today=not explicit_dates, wishes=wishes,
+                                            explicit_dates=explicit_dates)
         if not plan:
             return (
                 f"Ich konnte den Speisenplan leider nicht erstellen, "
