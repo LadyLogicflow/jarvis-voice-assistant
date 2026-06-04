@@ -37,6 +37,7 @@ jarvis.log
 
 # Mandanten-Lookup (sensible Steuerdaten, lokal auf dem Pi)
 mandanten.csv
+Mitglieder.csv
 
 # OS
 .DS_Store
