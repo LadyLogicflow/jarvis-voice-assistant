@@ -31,6 +31,20 @@ def _norm(s: str) -> str:
     return unicodedata.normalize("NFD", s).encode("ascii", "ignore").decode("ascii")
 
 
+def _name_tokens(s: str) -> set[str]:
+    """Splits a name into normalized tokens, stripping punctuation.
+    "Dr. Martin Türk" → {"martin", "turk"}  (min 2 chars, no titles).
+    """
+    import re
+    _titles = {"dr", "prof", "mr", "mrs", "ms", "herr", "frau", "ing"}
+    tokens = set()
+    for tok in re.split(r"[\s,.\-/]+", s):
+        n = _norm(tok)
+        if len(n) >= 2 and n not in _titles:
+            tokens.add(n)
+    return tokens
+
+
 @dataclass
 class PersonProfile:
     """Catrins zusaetzliches Wissen ueber eine Person — was nicht in
@@ -178,9 +192,23 @@ def search_by_name(name: str) -> list[PersonProfile]:
     """
     if not name:
         return []
-    needle = _norm(name.strip())
     _load()
-    return [p for p in _persons.values() if p.name and needle in _norm(p.name)]
+    clean = name.strip()
+    needle = _norm(clean)
+
+    # Stufe 1: normalisierter Substring
+    hits = [p for p in _persons.values() if p.name and needle in _norm(p.name)]
+    if hits:
+        return hits
+
+    # Stufe 2: Token-Set
+    tokens = _name_tokens(clean)
+    if tokens:
+        hits = [p for p in _persons.values() if p.name and tokens.issubset(_name_tokens(p.name))]
+        if hits:
+            return hits
+
+    return []
 
 
 def find_by_phone_normalized(normalized: str) -> PersonProfile | None:
@@ -280,18 +308,47 @@ def _find_or_create_mandant(mandant: str) -> PersonProfile:
         PersonProfile des gefundenen oder neu angelegten Mandanten.
     """
     _load()
-    needle = _norm(mandant.strip())
+    clean = mandant.strip()
+
+    # Stufe 1: normalisierter Substring-Match (Umlaute ausgeglichen)
+    needle = _norm(clean)
     matches = [p for p in _persons.values() if p.name and needle in _norm(p.name)]
-    if len(matches) > 1:
-        log.warning("persons_db: Mehrdeutiger Mandantenname %r — %d Treffer, erster wird verwendet", mandant, len(matches))
     if matches:
+        if len(matches) > 1:
+            log.warning("persons_db: Mehrdeutiger Substring-Match %r — erster verwendet", mandant)
+        log.info("persons_db: Mandant per Substring gefunden: %r → %s", mandant, matches[0].name)
         return matches[0]
+
+    # Stufe 2: Token-Set-Match — alle signifikanten Namens-Tokens muessen
+    # im Profil vorkommen (behandelt Wortfolge, Titel, OCR-Varianten)
+    needle_tokens = _name_tokens(clean)
+    if needle_tokens:
+        token_matches = [
+            p for p in _persons.values()
+            if p.name and needle_tokens.issubset(_name_tokens(p.name))
+        ]
+        if token_matches:
+            if len(token_matches) > 1:
+                log.warning("persons_db: Mehrdeutiger Token-Match %r — erster verwendet", mandant)
+            log.info("persons_db: Mandant per Token-Match gefunden: %r → %s", mandant, token_matches[0].name)
+            return token_matches[0]
+
+    # Stufe 3: Fuzzy-Match via difflib (Schwelle 0.75) — fuer OCR-Fehler
+    import difflib
+    candidates = [p for p in _persons.values() if p.name]
+    if candidates:
+        best = max(candidates, key=lambda p: difflib.SequenceMatcher(None, needle, _norm(p.name)).ratio())
+        ratio = difflib.SequenceMatcher(None, needle, _norm(best.name)).ratio()
+        if ratio >= 0.75:
+            log.info("persons_db: Mandant per Fuzzy-Match (%.0f%%): %r → %s", ratio * 100, mandant, best.name)
+            return best
+
     # Kein Treffer — neu anlegen
     cid = new_id()
-    profile = PersonProfile(contact_id=cid, name=mandant.strip())
+    profile = PersonProfile(contact_id=cid, name=clean)
     _persons[cid] = profile
     _save()
-    log.info("persons_db: Mandant neu angelegt: %s (%s)", mandant, cid)
+    log.info("persons_db: Mandant neu angelegt: %s (%s)", clean, cid)
     return profile
 
 
