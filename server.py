@@ -378,7 +378,11 @@ async def process_message(session_id: str, user_text: str, ws: WebSocket) -> Non
             await refresh_morning_brief_data()
 
     await append_message(session_id, "user", user_text)
-    history = conversations[session_id][-40:]
+    # Strip internal fields (ts, ...) — Anthropic API akzeptiert nur role+content.
+    history = [
+        {"role": m["role"], "content": m["content"]}
+        for m in conversations[session_id][-40:]
+    ]
 
     # Emotionale Kalibrierung (Issue #118): Stress-Level nach jeder Nachricht aktualisieren.
     session_state.update_stress_level(session_id, len(user_text), time.time())

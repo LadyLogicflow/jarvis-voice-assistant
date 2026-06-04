@@ -150,7 +150,10 @@ async def _ask_claude(session_id: str, user_text: str) -> str:
         )
 
     await conversation.append_message(session_id, "user", user_text)
-    history = conversation.conversations[session_id][-16:]
+    history = [
+        {"role": m["role"], "content": m["content"]}
+        for m in conversation.conversations[session_id][-16:]
+    ]
 
     response = await S.ai.messages.create(
         model="claude-haiku-4-5-20251001",
