@@ -345,16 +345,10 @@ async def analyze_steuerbescheid(filepath: str) -> dict:
     log.info("pdf_tools: Lokale Extraktion fuer %s: typ=%s mandant=%r",
              filename, data.get("typ"), data.get("mandant"))
 
-    # Schritt 3: Fallback auf Haiku nur wenn lokal nichts erkannt UND
-    # keine mandanten.csv vorhanden (d.h. kein Mandanten-Lookup moeglich)
+    # Schritt 3: Haiku-Fallback wenn lokal nicht erkannt
     if data.get("typ") == "unbekannt":
-        import mandanten as _mdb
-        has_mandanten = bool(_mdb.load())
-        if not has_mandanten:
-            log.info("pdf_tools: Lokale Extraktion unzureichend, Haiku-Fallback fuer %s", filename)
-            data = await _analyze_with_haiku(text, filename)
-        else:
-            log.warning("pdf_tools: PDF nicht erkannt, mandanten.csv vorhanden — kein Haiku: %s", filename)
+        log.info("pdf_tools: Lokale Extraktion unzureichend, Haiku-Fallback fuer %s", filename)
+        data = await _analyze_with_haiku(text, filename)
 
     # Schritt 4: In persons_db speichern
     import persons_db as _pdb

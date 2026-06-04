@@ -284,44 +284,41 @@ async def _handle_jarvis_trigger(
         log.warning("mail_monitor[%s] uid=%s: jarvis-trigger full-fetch failed: %s: %s",
                     name, uid, type(e).__name__, e)
 
-    confirmation_parts: list[str] = []
+    pdf_paths: list[str] = []
 
     if msg_full is not None:
         attachments = _extract_attachments(msg_full)
-        if attachments:
-            for att in attachments:
-                ctype = att["content_type"]
-                fname = att["filename"]
-                if ctype == "application/pdf" or fname.lower().endswith(".pdf"):
-                    try:
-                        dest = pdf_tools.save_pdf(att["data"], fname)
-                        pdf_tools.analyze_pdf_stub(dest)
-                        confirmation_parts.append(
-                            f"PDF '{fname}' empfangen und zur Analyse vorgemerkt."
-                        )
-                    except Exception as e:
-                        log.warning(
-                            "mail_monitor[%s] uid=%s: PDF-Speicherung fehlgeschlagen: "
-                            "%s: %s", name, uid, type(e).__name__, e
-                        )
-                        confirmation_parts.append(
-                            f"PDF '{fname}' empfangen (Speicherung fehlgeschlagen: {e})."
-                        )
-                else:
-                    log.info(
-                        "mail_monitor[%s] uid=%s: Anhang übersprungen (kein PDF): %s (%s)",
-                        name, uid, fname, ctype,
+        for att in attachments:
+            ctype = att["content_type"]
+            fname = att["filename"]
+            if ctype == "application/pdf" or fname.lower().endswith(".pdf"):
+                try:
+                    dest = pdf_tools.save_pdf(att["data"], fname)
+                    pdf_paths.append(dest)
+                except Exception as e:
+                    log.warning(
+                        "mail_monitor[%s] uid=%s: PDF-Speicherung fehlgeschlagen: "
+                        "%s: %s", name, uid, type(e).__name__, e
                     )
-        else:
-            log.info("mail_monitor[%s] uid=%s: jarvis-trigger ohne Anhang", name, uid)
+            else:
+                log.info(
+                    "mail_monitor[%s] uid=%s: Anhang übersprungen (kein PDF): %s (%s)",
+                    name, uid, fname, ctype,
+                )
 
-    if not confirmation_parts:
-        confirmation_parts.append("Jarvis-Befehl empfangen.")
+    if pdf_paths:
+        async def _analyze_silent(paths: list[str]) -> None:
+            for p in paths:
+                try:
+                    result = await pdf_tools.analyze_steuerbescheid(p)
+                    log.info("mail_monitor: PDF analysiert: %s", result.get("summary", ""))
+                except Exception as exc:
+                    log.warning("mail_monitor: PDF-Analyse fehlgeschlagen (%s): %s",
+                                os.path.basename(p), exc)
+        asyncio.create_task(_analyze_silent(pdf_paths))
 
-    log.info(
-        "mail_monitor[%s] uid=%s: jarvis-trigger verarbeitet: %s",
-        name, uid, "; ".join(confirmation_parts),
-    )
+    log.info("mail_monitor[%s] uid=%s: jarvis-trigger verarbeitet, %d PDF(s)",
+             name, uid, len(pdf_paths))
 
     # Queue for deletion after 24 h.
     _pending_jarvis_delete[(name, uid)] = _time.time()
