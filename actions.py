@@ -329,6 +329,81 @@ def _build_person_card_html(
     return '<div class="p-card">' + "".join(parts) + "</div>"
 
 
+def _build_person_card_telegram(
+    name: str,
+    mnr: str = "",
+    steuernr: str = "",
+    idnr: str = "",
+    funktion: str = "",
+    anrede: str = "",
+    last_contact: str = "",
+    open_points: list | None = None,
+    notes: list | None = None,
+    tax_assessments: list | None = None,
+    advance_payments: list | None = None,
+) -> str:
+    """Formatierter Telegram-Text (kein HTML-Rendering noetig)."""
+    header = name
+    meta = []
+    if mnr:
+        meta.append(f"Nr. {mnr}")
+    if steuernr:
+        meta.append(f"StNr {steuernr}")
+    if meta:
+        header += "  ·  " + "  ·  ".join(meta)
+    lines = [header]
+    if idnr:
+        lines.append(f"IdNr: {idnr}")
+
+    info = []
+    if funktion:
+        info.append(f"Funktion: {funktion}")
+    if anrede:
+        info.append(f"Anrede: {anrede}")
+    if last_contact:
+        info.append(f"Letzter Kontakt: {last_contact}")
+    if info:
+        lines.append("")
+        lines.extend(info)
+
+    if open_points:
+        lines.append("\n── Offene Punkte ──")
+        lines.extend(f"• {pt}" for pt in open_points)
+
+    if notes:
+        lines.append("\n── Notizen ──")
+        lines.extend(f"• {n}" for n in notes[:3])
+
+    def _ta_line(ta: dict) -> str:
+        steuerart = ta.get("steuerart", "?")
+        jahr = ta.get("steuerjahr", "?")
+        betrag = ta.get("betrag_eur")
+        faellig = ta.get("zahlungstermin") or ""
+        if betrag is not None:
+            try:
+                b = float(betrag)
+                richtung = "Erstattung" if b >= 0 else "Nachzahlung"
+                s = f"{abs(b):,.2f} €".replace(",", "X").replace(".", ",").replace("X", ".")
+                b_info = f" · {richtung} {s}"
+            except (ValueError, TypeError):
+                b_info = f" · {betrag} €"
+        else:
+            b_info = ""
+        f_info = f" · fällig {faellig}" if faellig and faellig != "null" else ""
+        return f"• {steuerart} {jahr}{b_info}{f_info}"
+
+    if tax_assessments:
+        lines.append("\n── Steuerbescheide ──")
+        lines.extend(_ta_line(ta) for ta in tax_assessments)
+
+    if advance_payments:
+        lines.append("\n── Vorauszahlungen ──")
+        for ap in advance_payments:
+            lines.append(f"• {ap.get('steuerart','?')} {ap.get('vorauszahlungsjahr','?')}")
+
+    return "\n".join(lines)
+
+
 async def execute_action(action: dict) -> str:
     """Dispatch one [ACTION:TYPE] payload to the appropriate tool.
     Returns the tool's text result (or one of the KEINE_* sentinels)."""
@@ -1391,7 +1466,7 @@ async def execute_action(action: dict) -> str:
         except Exception:
             _mand_hit = None
 
-        S.PENDING_CARD_HTML = _build_person_card_html(
+        _card_kwargs = dict(
             name=r["name"],
             mnr=(_mand_hit or {}).get("mitgliedsnr", ""),
             steuernr=(_mand_hit or {}).get("steuernummer", ""),
@@ -1404,8 +1479,26 @@ async def execute_action(action: dict) -> str:
             tax_assessments=r.get("tax_assessments", []),
             advance_payments=r.get("advance_payments", []),
         )
+        S.PENDING_CARD_HTML = _build_person_card_html(**_card_kwargs)
+        S.PENDING_TELEGRAM_TEXT = _build_person_card_telegram(**_card_kwargs)
 
-        return " ".join(out_parts)
+        # Kurzer gesprochener Text fuer den Orb + optionaler Hinweis
+        spoken = f"Hier sind die Informationen zu {r['name']}."
+        # Hinweis wenn offene Punkte vorhanden
+        if r.get("open_points"):
+            n = len(r["open_points"])
+            spoken += f" Es gibt {n} offene{'n Punkt' if n == 1 else ' Punkte'}."
+        elif r.get("tax_assessments"):
+            # Naechste Faelligkeit als Hinweis
+            for ta in r["tax_assessments"]:
+                faellig = ta.get("zahlungstermin") or ""
+                if faellig and faellig != "null":
+                    spoken += (
+                        f" Hinweis: {ta.get('steuerart','?')} {ta.get('steuerjahr','?')} "
+                        f"fällig am {faellig}."
+                    )
+                    break
+        return spoken
 
     elif t == "CONTACTS_INFO":
         # Aggregierte Statistik ueber Apple Kontakte + persons_db.
@@ -1971,6 +2064,63 @@ async def execute_action(action: dict) -> str:
         return (
             f"{weekday_raw} getauscht: '{old_dish}' -> '{new_dish}', "
             f"{pick_address()}."
+        )
+
+    elif t == "SPEISEPLAN_PREF":
+        # Dauerhafte Speiseplan-Vorlieben speichern + Plan neu generieren.
+        # Payload-Format (Pipe-getrennt, mehrere moeglich):
+        #   avoid:Erbsen          → Zutat dauerhaft ausschliessen
+        #   fish:Lachs,Forellen   → Erlaubte Fischarten setzen (leer = kein Fisch)
+        #   fish_weekly:true/false → Fisch woechentlich erlaubt?
+        import meal_prefs as _mprefs
+        import meal_plan as _mp
+        changes: list[str] = []
+        for segment in p.split("|"):
+            seg = segment.strip()
+            if not seg:
+                continue
+            if seg.lower().startswith("avoid:"):
+                item = seg[6:].strip()
+                if item and _mprefs.add_avoid(item):
+                    changes.append(f'"{item}" dauerhaft ausgeschlossen')
+            elif seg.lower().startswith("fish:"):
+                raw = seg[5:].strip()
+                fish_list = [f.strip() for f in raw.split(",") if f.strip()]
+                _mprefs.set_fish_allowed(fish_list)
+                if fish_list:
+                    changes.append(f"Fisch nur noch als: {', '.join(fish_list)}")
+                else:
+                    changes.append("Kein Fisch mehr im Plan")
+            elif seg.lower().startswith("fish_weekly:"):
+                val = seg[12:].strip().lower() in ("true", "ja", "yes", "1")
+                _mprefs.set_fish_weekly(val)
+                changes.append("Fisch " + ("wöchentlich erlaubt" if val else "nicht mehr wöchentlich"))
+
+        if not changes:
+            return (
+                f"Ich konnte die Vorliebe nicht verstehen, {pick_address()}. "
+                'Bitte nochmal konkreter - z.B. "keine Erbsen" oder "Fisch nur als Lachs".'
+            )
+
+        # Plan neu generieren
+        plan = await _mp.generate_meal_plan(start_today=True)
+        pdf_path = _mp.generate_meal_plan_pdf()
+        if pdf_path:
+            try:
+                import telegram_bot as _tb
+                await _tb.send_user_document(pdf_path, caption="Speiseplan (aktualisiert)")
+            except Exception as _pe:
+                log.warning("SPEISEPLAN_PREF: PDF-Versand fehlgeschlagen: %s", _pe)
+
+        changes_text = " und ".join(changes)
+        if not plan:
+            return (
+                f"Gespeichert: {changes_text}. Der neue Plan konnte leider nicht "
+                f"erstellt werden, {pick_address()}."
+            )
+        return (
+            f"Verstanden — {changes_text}. "
+            f"Ich habe einen neuen Plan erstellt: {_mp.format_meal_plan_tts()}"
         )
 
     elif t == "EINKAUF_FREIGEBEN":

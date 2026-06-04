@@ -39,6 +39,9 @@ jarvis.log
 mandanten.csv
 Mitglieder.csv
 
+# Speiseplan-Vorlieben (lokal, nie committen)
+.jarvis_meal_prefs.json
+
 # OS
 .DS_Store
 Thumbs.db

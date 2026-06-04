@@ -211,16 +211,20 @@ async def generate_meal_plan(start_today: bool = False, wishes: str = "") -> dic
         else ""
     )
 
+    import meal_prefs as _mprefs
     season = _season_produce()
     weather = _weather_hint()
     offers = _offers_hint()
+    avoid_h = _mprefs.avoid_hint()
+    fish_h = _mprefs.fish_hint()
     wishes_hint = (
         f"BESONDERE WUENSCHE DIESE WOCHE (bitte unbedingt beruecksichtigen):\n{wishes}"
         if wishes.strip() else ""
     )
 
     context_blocks = "\n\n".join(
-        block for block in [diabetes_hint, weather, offers, wishes_hint] if block
+        block for block in [diabetes_hint, avoid_h, fish_h, weather, offers, wishes_hint]
+        if block
     )
 
     days_block = "\n".join(

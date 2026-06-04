@@ -347,3 +347,7 @@ PENDING_PROACTIVE: dict = {}
 # Personen-Kachel (LOOKUP_CONTACT): HTML-Card fuer die Web-UI.
 # Wird in actions.py gesetzt, in server.py ausgelesen + geleert.
 PENDING_CARD_HTML: str = ""
+
+# Wenn gesetzt, schickt telegram_bot diesen Text statt der action_result-Sprache.
+# Wird in actions.py befuellt (z.B. LOOKUP_CONTACT), in telegram_bot.py geleert.
+PENDING_TELEGRAM_TEXT: str = ""

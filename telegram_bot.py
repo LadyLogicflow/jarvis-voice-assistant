@@ -197,6 +197,14 @@ async def _ask_claude(session_id: str, user_text: str) -> str:
         log.warning(f"Telegram action failed: {type(e).__name__}: {e}")
         return f"{spoken_text} Die Aktion ist fehlgeschlagen, {pick_address()}."
 
+    # Wenn die Aktion einen separaten Telegram-Text hinterlegt hat (z.B.
+    # LOOKUP_CONTACT formatierte Kachel), diesen direkt senden statt der
+    # gesprochenen Kurzfassung.
+    _tg_text = S.PENDING_TELEGRAM_TEXT
+    S.PENDING_TELEGRAM_TEXT = ""
+    if _tg_text:
+        return _tg_text
+
     # Empty-result sentinels.
     if isinstance(action_result, str) and action_result in EMPTY_REPLIES:
         return EMPTY_REPLIES[action_result]
@@ -211,9 +219,9 @@ async def _ask_claude(session_id: str, user_text: str) -> str:
         "MEMORIZE",
         "ACCEPT_CALENDAR_INVITE", "DECLINE_CALENDAR_INVITE",
         "ACCEPT_PERSON_ACTION", "DECLINE_PERSON_ACTION",
-        "WEEKLY_OUTLOOK", "CONTACTS_INFO", "LOOKUP_CONTACT",
+        "WEEKLY_OUTLOOK", "CONTACTS_INFO",
         "PLAN_NOW", "WEATHER", "IMPORT_MAIL_HISTORY",
-        "SPEISEPLAN", "SPEISEPLAN_SHOW",
+        "SPEISEPLAN", "SPEISEPLAN_SHOW", "SPEISEPLAN_PREF",
     ):
         return action_result
 
