@@ -35,6 +35,9 @@ jarvis.log
 # Mail monitor seen-UID tracker (issue #48) — multi-account wildcard
 .jarvis_mail_seen*.json
 
+# Mandanten-Lookup (sensible Steuerdaten, lokal auf dem Pi)
+mandanten.csv
+
 # OS
 .DS_Store
 Thumbs.db

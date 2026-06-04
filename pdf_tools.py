@@ -36,47 +36,183 @@ def pop_daily_pdf_results() -> list[str]:
 _HAIKU_MODEL = "claude-haiku-4-5-20251001"
 
 # ---------------------------------------------------------------------------
-# Interner Analyse-Prompt
+# Lokale Extraktion via Regex (kein API-Aufruf)
 # ---------------------------------------------------------------------------
-_ANALYSIS_PROMPT_TEMPLATE = """\
-Du analysierst einen deutschen Steuerbescheid als PDF-Text.
-Bestimme den Typ und extrahiere die relevanten Felder.
 
-Antworte NUR mit einem JSON-Objekt, kein weiterer Text.
+# Steuerart-Schlüsselwörter → Kürzel
+_STEUERART_MAP = [
+    (re.compile(r"einkommensteuer", re.I),       "ESt"),
+    (re.compile(r"k[oö]rperschaftsteuer", re.I), "KSt"),
+    (re.compile(r"umsatzsteuer", re.I),           "USt"),
+    (re.compile(r"gewerbesteuer", re.I),          "GewSt"),
+    (re.compile(r"erbschaftsteuer", re.I),        "ErbSt"),
+    (re.compile(r"schenkungsteuer", re.I),        "SchenkSt"),
+    (re.compile(r"solidarit[aä]tszuschlag", re.I), "SolZ"),
+    (re.compile(r"kirchensteuer", re.I),          "KiSt"),
+    (re.compile(r"vorauszahlung", re.I),          "_VZ"),  # Sondermarker
+]
 
-Typ "Steuerbescheid":
-{{
-  "typ": "Steuerbescheid",
-  "mandant": "<Name des Steuerpflichtigen>",
-  "steuerart": "<ESt|KSt|USt|GewSt|...>",
-  "steuerjahr": <YYYY>,
-  "ausstellungsdatum": "<DD.MM.YYYY>",
-  "betrag_eur": <float, positiv=Erstattung, negativ=Nachzahlung>,
-  "zahlungstermin": "<DD.MM.YYYY oder null>"
-}}
+_RE_IDNR = re.compile(
+    r"(?:Identifikationsnummer|Id\.?\s*Nr\.?|IdNr\.?)\s*[:.]?\s*([\d][\d\s]{8,13}[\d])",
+    re.I,
+)
+_RE_STEUERNR = re.compile(
+    r"(?:Steuernummer|St\.?\s*(?:-\s*)?Nr\.?)\s*[:.]?\s*([\d]{2,3}[\s/\-][\d]{3}[\s/\-][\d]{4,5})",
+    re.I,
+)
+_RE_JAHR = re.compile(
+    r"(?:für\s+das\s+(?:Kalender)?[Jj]ahr|Veranlagungszeitraum|Steuerjahr)\s+(\d{4})",
+    re.I,
+)
+_RE_DATUM = re.compile(r"\b(\d{1,2}\.\d{1,2}\.\d{4})\b")
+_RE_BETRAG = re.compile(
+    r"(?:festgesetzt(?:e(?:r|n|s)?)?\s+(?:Steuer|Einkommensteuer|K[oö]rperschaftsteuer|"
+    r"Umsatzsteuer|Gewerbesteuer)|Nachzahlung|Erstattung|verbleibende(?:r|n)?\s+Betrag)\b"
+    r"[^\d\-]{0,60}([\-]?\s*\d[\d\s]*[.,]\d{2})\s*(?:EUR|€)?",
+    re.I | re.S,
+)
+_RE_FAELLIG = re.compile(
+    r"(?:Zahlungstermin|fällig\s+am|zu\s+zahlen\s+bis)\s*[:.]?\s*(\d{1,2}\.\d{1,2}\.\d{4})",
+    re.I,
+)
+_RE_VZ_QUARTALE = re.compile(
+    r"(?:1\.?\s*Viertelj|Q1)\D{0,20}([\-]?\s*\d[\d\s]*[.,]\d{2})\s*(?:EUR|€)?.*?"
+    r"(?:2\.?\s*Viertelj|Q2)\D{0,20}([\-]?\s*\d[\d\s]*[.,]\d{2})\s*(?:EUR|€)?.*?"
+    r"(?:3\.?\s*Viertelj|Q3)\D{0,20}([\-]?\s*\d[\d\s]*[.,]\d{2})\s*(?:EUR|€)?.*?"
+    r"(?:4\.?\s*Viertelj|Q4)\D{0,20}([\-]?\s*\d[\d\s]*[.,]\d{2})\s*(?:EUR|€)?",
+    re.I | re.S,
+)
 
-Typ "Vorauszahlungsbescheid":
-{{
-  "typ": "Vorauszahlungsbescheid",
-  "mandant": "<Name>",
-  "steuerart": "<ESt|KSt|GewSt|...>",
-  "vorauszahlungsjahr": <YYYY>,
-  "ausstellungsdatum": "<DD.MM.YYYY>",
-  "q1": <float oder null>,
-  "q2": <float oder null>,
-  "q3": <float oder null>,
-  "q4": <float oder null>
-}}
 
-Falls kein Steuerbescheid:
-{{"typ": "unbekannt", "rohdaten": "<kurze Beschreibung>"}}
+def _parse_german_amount(s: str) -> float | None:
+    """Konvertiert deutschen Betragstring in float.
+    '1.234,56' → 1234.56  |  '-1 234,56' → -1234.56
+    """
+    s = re.sub(r"\s", "", s)
+    negative = s.startswith("-")
+    s = s.lstrip("-")
+    # Punkt als Tausendertrennzeichen, Komma als Dezimaltrennzeichen
+    if "," in s:
+        s = s.replace(".", "").replace(",", ".")
+    try:
+        val = float(s)
+        return -val if negative else val
+    except ValueError:
+        return None
 
-PDF-Text:
-{text}
-"""
 
-# Maximale Zeichenanzahl die an Haiku uebergeben wird (Token-Budget).
-_MAX_TEXT_CHARS = 12_000
+def _extract_local(text: str) -> dict:
+    """Extrahiert Steuerbescheid-Felder per Regex aus OCR-/Maschinentext.
+
+    Gibt ein dict zurueck das mit dem Haiku-Schema kompatibel ist.
+    Bei unzureichendem Ergebnis (kein Jahr, kein Betrag) → {"typ": "unbekannt"}.
+    """
+    import mandanten as _mdb
+
+    # --- Identifikatoren ---
+    idnr_raw = ""
+    m = _RE_IDNR.search(text)
+    if m:
+        idnr_raw = re.sub(r"\s", "", m.group(1))
+
+    steuernr_raw = ""
+    m = _RE_STEUERNR.search(text)
+    if m:
+        steuernr_raw = re.sub(r"\s", "", m.group(1))
+
+    # --- Mandant per ID-Nr / Steuernummer aus Lookup-Tabelle ---
+    mandant_row: dict | None = None
+    if idnr_raw and len(re.sub(r"\D", "", idnr_raw)) == 11:
+        mandant_row = _mdb.find_by_idnr(idnr_raw)
+    if not mandant_row and steuernr_raw:
+        mandant_row = _mdb.find_by_steuernummer(steuernr_raw)
+    mandant_name = mandant_row["name"] if mandant_row else ""
+
+    # --- Steuerart ---
+    steuerart = ""
+    is_vz = False
+    for pattern, kuerzel in _STEUERART_MAP:
+        if pattern.search(text):
+            if kuerzel == "_VZ":
+                is_vz = True
+            else:
+                steuerart = kuerzel
+                break
+
+    # --- Steuerjahr ---
+    jahr: int | None = None
+    m = _RE_JAHR.search(text)
+    if m:
+        try:
+            jahr = int(m.group(1))
+        except ValueError:
+            pass
+    if not jahr:
+        # Fallback: letztes vierstelliges Jahr das wie ein Steuerjahr aussieht
+        jahre = [int(y) for y in re.findall(r"\b(20\d{2}|19\d{2})\b", text)]
+        if jahre:
+            jahr = sorted(jahre)[0]  # ältestes Jahr = Veranlagungsjahr
+
+    # --- Ausstellungsdatum: erstes Datum im Dokument ---
+    ausstellungsdatum = ""
+    m = _RE_DATUM.search(text)
+    if m:
+        ausstellungsdatum = m.group(1)
+
+    # --- Vorauszahlungsbescheid ---
+    if is_vz and steuerart:
+        vz: dict = {
+            "typ": "Vorauszahlungsbescheid",
+            "mandant": mandant_name,
+            "steuerart": steuerart,
+            "vorauszahlungsjahr": jahr,
+            "ausstellungsdatum": ausstellungsdatum,
+            "q1": None, "q2": None, "q3": None, "q4": None,
+        }
+        m = _RE_VZ_QUARTALE.search(text)
+        if m:
+            for i, key in enumerate(["q1", "q2", "q3", "q4"], 1):
+                vz[key] = _parse_german_amount(m.group(i)) if m.group(i) else None
+        if idnr_raw:
+            vz["id_nr"] = idnr_raw
+        if steuernr_raw:
+            vz["steuernummer"] = steuernr_raw
+        return vz
+
+    # --- Normaler Steuerbescheid ---
+    betrag: float | None = None
+    m = _RE_BETRAG.search(text)
+    if m:
+        betrag = _parse_german_amount(m.group(1))
+        # Wenn "Erstattung" im Kontext → positiv, "Nachzahlung" → negativ
+        ctx = text[max(0, m.start() - 30):m.start()].lower()
+        if "erstattung" in ctx and betrag is not None and betrag < 0:
+            betrag = -betrag
+        elif "nachzahlung" in ctx and betrag is not None and betrag > 0:
+            betrag = -betrag
+
+    zahlungstermin = ""
+    m = _RE_FAELLIG.search(text)
+    if m:
+        zahlungstermin = m.group(1)
+
+    if not jahr and not steuerart:
+        return {"typ": "unbekannt", "rohdaten": "Keine Steuerbescheid-Merkmale gefunden."}
+
+    result: dict = {
+        "typ": "Steuerbescheid",
+        "mandant": mandant_name,
+        "steuerart": steuerart or "?",
+        "steuerjahr": jahr,
+        "ausstellungsdatum": ausstellungsdatum,
+        "betrag_eur": betrag,
+        "zahlungstermin": zahlungstermin or None,
+    }
+    if idnr_raw:
+        result["id_nr"] = idnr_raw
+    if steuernr_raw:
+        result["steuernummer"] = steuernr_raw
+    return result
 
 
 def extract_text(filepath: str) -> str:
@@ -155,21 +291,19 @@ def _format_summary(data: dict) -> str:
 
 
 async def analyze_steuerbescheid(filepath: str) -> dict:
-    """Analysiert eine PDF-Datei als Steuerbescheid via Claude Haiku.
+    """Analysiert eine PDF-Datei als Steuerbescheid.
 
-    Liest den PDF-Text (PyMuPDF), sendet ihn an Claude Haiku zur
-    Klassifizierung und Feldextraktion, speichert das Ergebnis in persons_db
-    und gibt das strukturierte Dict zurueck.
-
-    Das zurueckgegebene Dict enthaelt stets den Schluessel "summary" mit
-    einem menschenlesbaren Zusammenfassungsstring.
+    Strategie (kein API-Aufruf wenn moeglich):
+    1. Text extrahieren (PyMuPDF, lokal)
+    2. Lokale Regex-Extraktion (_extract_local) — kein Datentransfer
+    3. Nur wenn lokale Extraktion "unbekannt" liefert UND keine mandanten.csv
+       vorliegt: Fallback auf Claude Haiku
 
     Args:
         filepath: Absoluter Pfad zur PDF-Datei.
 
     Returns:
-        Strukturiertes Dict (Haiku-Ausgabe + "summary"-Schluessel).
-        Bei Fehler: {"typ": "fehler", "fehler": "...", "summary": "..."}.
+        Strukturiertes Dict + "summary"-Schluessel.
     """
     filename = os.path.basename(filepath)
 
@@ -177,80 +311,55 @@ async def analyze_steuerbescheid(filepath: str) -> dict:
     try:
         text = extract_text(filepath)
     except ImportError:
-        log.error("pdf_tools: PyMuPDF (fitz) nicht installiert — bitte 'pymupdf' installieren.")
-        result = {
+        log.error("pdf_tools: PyMuPDF (fitz) nicht installiert.")
+        return {
             "typ": "fehler",
             "fehler": "PyMuPDF nicht installiert",
             "summary": f"PDF-Analyse fehlgeschlagen ({filename}): PyMuPDF nicht installiert.",
         }
-        return result
     except FileNotFoundError:
         log.error("pdf_tools: Datei nicht gefunden: %s", filepath)
-        result = {
+        return {
             "typ": "fehler",
             "fehler": f"Datei nicht gefunden: {filepath}",
             "summary": f"PDF nicht gefunden: {filename}",
         }
-        return result
     except Exception as exc:
         log.error("pdf_tools: extract_text fehlgeschlagen fuer %s: %s", filepath, exc)
-        result = {
+        return {
             "typ": "fehler",
             "fehler": str(exc),
             "summary": f"PDF-Textextraktion fehlgeschlagen ({filename}): {exc}",
         }
-        return result
 
     if not text.strip():
         log.warning("pdf_tools: Kein Text in PDF extrahiert: %s", filepath)
-        result = {
+        return {
             "typ": "unbekannt",
-            "rohdaten": "Kein lesbarer Text im PDF gefunden (moeglicherweise gescannt).",
+            "rohdaten": "Kein lesbarer Text im PDF (moeglicherweise Bild-Scan ohne OCR).",
             "summary": f"PDF empfangen (Typ unbekannt): Kein lesbarer Text in {filename}.",
         }
-        return result
 
-    # Schritt 2: Text kuerzen (Token-Budget)
-    truncated_text = text[:_MAX_TEXT_CHARS]
-    if len(text) > _MAX_TEXT_CHARS:
-        log.info("pdf_tools: PDF-Text auf %d Zeichen gekuerzt: %s", _MAX_TEXT_CHARS, filename)
+    # Schritt 2: Lokale Extraktion (kein API-Aufruf)
+    data = _extract_local(text)
+    log.info("pdf_tools: Lokale Extraktion fuer %s: typ=%s mandant=%r",
+             filename, data.get("typ"), data.get("mandant"))
 
-    # Schritt 3: Haiku-Analyse
-    prompt = _ANALYSIS_PROMPT_TEMPLATE.replace("{text}", truncated_text)
-    try:
-        resp = await S.ai.messages.create(
-            model=_HAIKU_MODEL,
-            max_tokens=512,
-            messages=[{"role": "user", "content": prompt}],
-        )
-        raw_text = resp.content[0].text.strip() if resp.content else ""
-    except Exception as exc:
-        log.error("pdf_tools: Haiku-Aufruf fehlgeschlagen: %s", exc)
-        result = {
-            "typ": "fehler",
-            "fehler": str(exc),
-            "summary": f"PDF-Analyse fehlgeschlagen ({filename}): LLM-Fehler.",
-        }
-        return result
+    # Schritt 3: Fallback auf Haiku nur wenn lokal nichts erkannt UND
+    # keine mandanten.csv vorhanden (d.h. kein Mandanten-Lookup moeglich)
+    if data.get("typ") == "unbekannt":
+        import mandanten as _mdb
+        has_mandanten = bool(_mdb.load())
+        if not has_mandanten:
+            log.info("pdf_tools: Lokale Extraktion unzureichend, Haiku-Fallback fuer %s", filename)
+            data = await _analyze_with_haiku(text, filename)
+        else:
+            log.warning("pdf_tools: PDF nicht erkannt, mandanten.csv vorhanden — kein Haiku: %s", filename)
 
-    # Schritt 4: JSON parsen — Haiku gibt manchmal Markdown-Code-Blocks zurueck
-    try:
-        # Markdown-Fence-Bereinigung: ```json ... ``` oder ``` ... ```
-        clean = re.sub(r"^```(?:json)?\s*", "", raw_text, flags=re.IGNORECASE)
-        clean = re.sub(r"\s*```$", "", clean)
-        data: dict = json.loads(clean.strip())
-    except json.JSONDecodeError:
-        log.warning("pdf_tools: Haiku lieferte kein gueltiges JSON: %s", raw_text[:200])
-        data = {
-            "typ": "unbekannt",
-            "rohdaten": raw_text[:500],
-        }
-
-    # Schritt 5: In persons_db speichern
+    # Schritt 4: In persons_db speichern
     import persons_db as _pdb
     typ = data.get("typ", "unbekannt")
     mandant = data.get("mandant", "").strip()
-
     try:
         if typ == "Steuerbescheid" and mandant:
             _pdb.save_tax_assessment(mandant, data)
@@ -259,10 +368,49 @@ async def analyze_steuerbescheid(filepath: str) -> dict:
     except Exception as exc:
         log.warning("pdf_tools: persons_db-Speicherung fehlgeschlagen: %s", exc)
 
-    # Schritt 6: Summary anhaengen und zurueckgeben
     data["summary"] = _format_summary(data)
     log.info("pdf_tools: Analyse abgeschlossen fuer %s: %s", filename, data["summary"])
     return data
+
+
+async def _analyze_with_haiku(text: str, filename: str) -> dict:
+    """Haiku-Fallback — nur wenn lokale Extraktion versagt und keine Mandantenliste."""
+    _MAX_CHARS = 12_000
+    _HAIKU_MODEL = "claude-haiku-4-5-20251001"
+    _PROMPT = """\
+Du analysierst einen deutschen Steuerbescheid als PDF-Text.
+Bestimme den Typ und extrahiere die relevanten Felder.
+Antworte NUR mit einem JSON-Objekt, kein weiterer Text.
+
+Typ "Steuerbescheid":
+{{"typ":"Steuerbescheid","mandant":"<Name>","steuerart":"<ESt|KSt|USt|GewSt|...>",\
+"steuerjahr":<YYYY>,"ausstellungsdatum":"<DD.MM.YYYY>","betrag_eur":<float>,\
+"zahlungstermin":"<DD.MM.YYYY oder null>"}}
+
+Typ "Vorauszahlungsbescheid":
+{{"typ":"Vorauszahlungsbescheid","mandant":"<Name>","steuerart":"<ESt|KSt|GewSt|...>",\
+"vorauszahlungsjahr":<YYYY>,"ausstellungsdatum":"<DD.MM.YYYY>",\
+"q1":<float|null>,"q2":<float|null>,"q3":<float|null>,"q4":<float|null>}}
+
+Falls kein Steuerbescheid: {{"typ":"unbekannt","rohdaten":"<kurze Beschreibung>"}}
+
+PDF-Text:
+""" + text[:_MAX_CHARS]
+    try:
+        resp = await S.ai.messages.create(
+            model=_HAIKU_MODEL, max_tokens=512,
+            messages=[{"role": "user", "content": _PROMPT}],
+        )
+        raw = resp.content[0].text.strip() if resp.content else ""
+        clean = re.sub(r"^```(?:json)?\s*", "", raw, flags=re.I)
+        clean = re.sub(r"\s*```$", "", clean)
+        return json.loads(clean.strip())
+    except json.JSONDecodeError:
+        return {"typ": "unbekannt", "rohdaten": raw[:500]}
+    except Exception as exc:
+        log.error("pdf_tools: Haiku-Fallback fehlgeschlagen fuer %s: %s", filename, exc)
+        return {"typ": "fehler", "fehler": str(exc),
+                "summary": f"PDF-Analyse fehlgeschlagen ({filename}): LLM-Fehler."}
 
 
 def analyze_pdf_stub(filepath: str) -> str:
