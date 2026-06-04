@@ -49,38 +49,68 @@ _STEUERART_MAP = [
     (re.compile(r"schenkungsteuer", re.I),        "SchenkSt"),
     (re.compile(r"solidarit[aä]tszuschlag", re.I), "SolZ"),
     (re.compile(r"kirchensteuer", re.I),          "KiSt"),
-    (re.compile(r"vorauszahlung", re.I),          "_VZ"),  # Sondermarker
 ]
+
+# VZ-Titel erscheint als eigene Zeile oben — nicht irgendwo im Body
+_RE_VZ_TITLE = re.compile(r"^\s*Vorauszahlungsbescheid\s*$", re.MULTILINE)
 
 _RE_IDNR = re.compile(
     r"(?:Identifikationsnummer|Id\.?\s*Nr\.?|IdNr\.?)\s*[:.]?\s*([\d][\d\s]{8,13}[\d])",
     re.I,
 )
 _RE_STEUERNR = re.compile(
-    r"(?:Steuernummer|St\.?\s*(?:-\s*)?Nr\.?)\s*[:.]?\s*([\d]{2,3}[\s/\-][\d]{3}[\s/\-][\d]{4,5})",
+    # Matches 2-3/3-4/4-5 digits with any separator (132/2648/0171, 12/345/67890 etc.)
+    r"(?:Steuernummer|St\.?\s*(?:-\s*)?Nr\.?)\s*[:.]?\s*([\d]{2,3}[\s/\-][\d]{3,4}[\s/\-][\d]{4,5})",
     re.I,
 )
 _RE_JAHR = re.compile(
-    r"(?:für\s+das\s+(?:Kalender)?[Jj]ahr|Veranlagungszeitraum|Steuerjahr)\s+(\d{4})",
+    r"(?:für\s+das\s+(?:Kalender)?[Jj]ahr"
+    r"|Veranlagungszeitraum"
+    r"|Steuerjahr"
+    r"|Bescheid\s+für"       # "Bescheid für  2025  über"
+    r"|für)\s+(\d{4})\b",   # "für 2026 zum" / "für 2025 über"
     re.I,
 )
 _RE_DATUM = re.compile(r"\b(\d{1,2}\.\d{1,2}\.\d{4})\b")
 _RE_BETRAG = re.compile(
     r"(?:festgesetzt(?:e(?:r|n|s)?)?\s+(?:Steuer|Einkommensteuer|K[oö]rperschaftsteuer|"
-    r"Umsatzsteuer|Gewerbesteuer)|Nachzahlung|Erstattung|verbleibende(?:r|n)?\s+Betrag)\b"
+    r"Umsatzsteuer|Gewerbesteuer)"
+    r"|Nachzahlung"
+    r"|Erstattung"
+    r")\b"
     r"[^\d\-]{0,60}([\-]?\s*\d[\d\s]*[.,]\d{2})\s*(?:EUR|€)?",
     re.I | re.S,
 )
-_RE_FAELLIG = re.compile(
-    r"(?:Zahlungstermin|fällig\s+am|zu\s+zahlen\s+bis)\s*[:.]?\s*(\d{1,2}\.\d{1,2}\.\d{4})",
+# Pipe-Tabellen-Format: "verbleibende Beträge | ESt | SolZ | Insgesamt |" — letzter Wert
+_RE_BETRAG_TABELLE = re.compile(
+    r"verbleibende\s+Betr[äa]ge[^|]*\|[^|]+\|[^|]+\|\s*(" + r"[\-]?\d{1,3}(?:[.\s]\d{3})*[,]\d{2}" + r")",
     re.I,
 )
+# Fälligkeit: "spätestens bis zum 08.06.26" (2-digit year) OR "08.06.2026" (4-digit)
+_RE_FAELLIG = re.compile(
+    r"(?:Zahlungstermin|fällig\s+am|zu\s+zahlen\s+bis|spätestens\s+bis\s+zum)\s*[:.]?\s*"
+    r"(\d{1,2}\.\d{1,2}\.(?:\d{4}|\d{2}))\b",
+    re.I,
+)
+# VZ-Quartale: Finanzamt-Bescheide benutzen Monatsnamen (März=Q1, Juni=Q2, Sep=Q3, Dez=Q4)
+# Format: "| 10.März ... | ESt | SolZ | Insgesamt |" — letzter Wert = Insgesamt
+_NUM_DE = r"[\-]?\d{1,3}(?:[.\s]\d{3})*[,]\d{2}"  # deutsches Zahlenformat: 1.715,00
+_RE_VZ_MAERZ = re.compile(r"10\.März[^|]*\|[^|]+\|[^|]+\|\s*(" + _NUM_DE + r")", re.I)
+_RE_VZ_JUNI  = re.compile(r"10\.Juni[^|]*\|[^|]+\|[^|]+\|\s*(" + _NUM_DE + r")", re.I)
+_RE_VZ_SEP   = re.compile(r"10\.September[^|]*\|[^|]+\|[^|]+\|\s*(" + _NUM_DE + r")", re.I)
+_RE_VZ_DEZ   = re.compile(r"10\.Dezember[^|]*\|[^|]+\|[^|]+\|\s*(" + _NUM_DE + r")", re.I)
+# Fallback: klassische Vierteljahresmuster
 _RE_VZ_QUARTALE = re.compile(
     r"(?:1\.?\s*Viertelj|Q1)\D{0,20}([\-]?\s*\d[\d\s]*[.,]\d{2})\s*(?:EUR|€)?.*?"
     r"(?:2\.?\s*Viertelj|Q2)\D{0,20}([\-]?\s*\d[\d\s]*[.,]\d{2})\s*(?:EUR|€)?.*?"
     r"(?:3\.?\s*Viertelj|Q3)\D{0,20}([\-]?\s*\d[\d\s]*[.,]\d{2})\s*(?:EUR|€)?.*?"
     r"(?:4\.?\s*Viertelj|Q4)\D{0,20}([\-]?\s*\d[\d\s]*[.,]\d{2})\s*(?:EUR|€)?",
     re.I | re.S,
+)
+# Mandant-Fallback: "Dieser Bescheid ergeht an Sie für\n Herrn/Frau NAME"
+_RE_MANDANT = re.compile(
+    r"Dieser\s+Bescheid\s+ergeht\s+an\s+Sie\s+für\s+(?:Herrn|Frau)\s+([\w\s\-]+?)(?:\n|,|\d)",
+    re.I,
 )
 
 
@@ -126,18 +156,23 @@ def _extract_local(text: str) -> dict:
         mandant_row = _mdb.find_by_idnr(idnr_raw)
     if not mandant_row and steuernr_raw:
         mandant_row = _mdb.find_by_steuernummer(steuernr_raw)
-    mandant_name = mandant_row["name"] if mandant_row else ""
+    if mandant_row:
+        mandant_name = mandant_row["name"]
+    else:
+        # Fallback: Name direkt aus Bescheid-Adresszeile
+        m = _RE_MANDANT.search(text)
+        mandant_name = m.group(1).strip() if m else ""
 
     # --- Steuerart ---
     steuerart = ""
-    is_vz = False
     for pattern, kuerzel in _STEUERART_MAP:
         if pattern.search(text):
-            if kuerzel == "_VZ":
-                is_vz = True
-            else:
-                steuerart = kuerzel
-                break
+            steuerart = kuerzel
+            break
+
+    # VZ-Erkennung: Titel muss als eigene Zeile oben stehen.
+    # "Vorauszahlung" taucht auch in normalen Steuerbescheiden (Rechtsbehelfsbelehrung) auf.
+    is_vz = bool(_RE_VZ_TITLE.search(text))
 
     # --- Steuerjahr ---
     jahr: int | None = None
@@ -169,10 +204,18 @@ def _extract_local(text: str) -> dict:
             "ausstellungsdatum": ausstellungsdatum,
             "q1": None, "q2": None, "q3": None, "q4": None,
         }
-        m = _RE_VZ_QUARTALE.search(text)
-        if m:
-            for i, key in enumerate(["q1", "q2", "q3", "q4"], 1):
-                vz[key] = _parse_german_amount(m.group(i)) if m.group(i) else None
+        # Zuerst: Monatsnamen-Muster (DE Finanzamt-Format: 10.März/Juni/Sep/Dez)
+        for regex, key in [(_RE_VZ_MAERZ, "q1"), (_RE_VZ_JUNI, "q2"),
+                           (_RE_VZ_SEP, "q3"), (_RE_VZ_DEZ, "q4")]:
+            m = regex.search(text)
+            if m:
+                vz[key] = _parse_german_amount(m.group(1))
+        # Fallback: Vierteljahres-Muster (Q1/Q2/Q3/Q4)
+        if all(vz[k] is None for k in ["q1", "q2", "q3", "q4"]):
+            m = _RE_VZ_QUARTALE.search(text)
+            if m:
+                for i, key in enumerate(["q1", "q2", "q3", "q4"], 1):
+                    vz[key] = _parse_german_amount(m.group(i)) if m.group(i) else None
         if idnr_raw:
             vz["id_nr"] = idnr_raw
         if steuernr_raw:
@@ -184,17 +227,31 @@ def _extract_local(text: str) -> dict:
     m = _RE_BETRAG.search(text)
     if m:
         betrag = _parse_german_amount(m.group(1))
-        # Wenn "Erstattung" im Kontext → positiv, "Nachzahlung" → negativ
         ctx = text[max(0, m.start() - 30):m.start()].lower()
         if "erstattung" in ctx and betrag is not None and betrag < 0:
             betrag = -betrag
         elif "nachzahlung" in ctx and betrag is not None and betrag > 0:
             betrag = -betrag
+    # Fallback: Pipe-Tabelle "verbleibende Beträge | ESt | SolZ | Insgesamt"
+    # Positiver Wert = Nachzahlung (Steuerpflichtiger schuldet dem Finanzamt)
+    if betrag is None:
+        m = _RE_BETRAG_TABELLE.search(text)
+        if m:
+            val = _parse_german_amount(m.group(1))
+            if val is not None:
+                betrag = -val if val > 0 else val  # positiv → Nachzahlung → negativ
 
     zahlungstermin = ""
     m = _RE_FAELLIG.search(text)
     if m:
-        zahlungstermin = m.group(1)
+        raw_date = m.group(1)
+        # Normalisiere 2-stelliges Jahr: "08.06.26" → "08.06.2026"
+        parts = raw_date.split(".")
+        if len(parts) == 3 and len(parts[2]) == 2:
+            year = int(parts[2])
+            parts[2] = str(2000 + year if year < 50 else 1900 + year)
+            raw_date = ".".join(parts)
+        zahlungstermin = raw_date
 
     if not jahr and not steuerart:
         return {"typ": "unbekannt", "rohdaten": "Keine Steuerbescheid-Merkmale gefunden."}
