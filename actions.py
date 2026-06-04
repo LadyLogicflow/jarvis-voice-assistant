@@ -249,6 +249,16 @@ class _EmptyRepliesProxy:
 EMPTY_REPLIES = _EmptyRepliesProxy()
 
 
+def _fmt_date(s: str) -> str:
+    """Konvertiert YYYY-MM-DD → DD.MM.YYYY; andere Formate unverändert."""
+    if s and len(s) == 10 and s[4] == "-" and s[7] == "-":
+        try:
+            return f"{s[8:10]}.{s[5:7]}.{s[0:4]}"
+        except Exception:
+            pass
+    return s
+
+
 def _build_person_card_html(
     name: str,
     mnr: str = "",
@@ -284,7 +294,7 @@ def _build_person_card_html(
     if anrede:
         rows.append(f'<div class="p-row"><span class="p-lbl">Anrede</span><span>{esc(anrede)}</span></div>')
     if last_contact:
-        rows.append(f'<div class="p-row"><span class="p-lbl">Letzter Kontakt</span><span>{esc(last_contact)}</span></div>')
+        rows.append(f'<div class="p-row"><span class="p-lbl">Letzter Kontakt</span><span>{esc(_fmt_date(last_contact))}</span></div>')
     if rows:
         parts.append('<div class="p-card-rows">' + "".join(rows) + "</div>")
 
@@ -314,7 +324,7 @@ def _build_person_card_html(
             steuerart = esc(ta.get("steuerart", "?"))
             jahr = esc(str(ta.get("steuerjahr", "?")))
             b_str = esc(_betrag_str(ta))
-            faellig = ta.get("zahlungstermin") or ""
+            faellig = _fmt_date(ta.get("zahlungstermin") or "")
             f_str = esc(f" · fällig {faellig}") if faellig and faellig != "null" else ""
             items.append(f'<div class="p-bullet">{steuerart} {jahr}{b_str}{f_str}</div>')
         parts.append(f'<div class="p-card-section"><div class="p-section-title">Steuerbescheide</div>{"".join(items)}</div>')
@@ -361,7 +371,7 @@ def _build_person_card_telegram(
     if anrede:
         info.append(f"Anrede: {anrede}")
     if last_contact:
-        info.append(f"Letzter Kontakt: {last_contact}")
+        info.append(f"Letzter Kontakt: {_fmt_date(last_contact)}")
     if info:
         lines.append("")
         lines.extend(info)
@@ -389,7 +399,7 @@ def _build_person_card_telegram(
                 b_info = f" · {betrag} €"
         else:
             b_info = ""
-        f_info = f" · fällig {faellig}" if faellig and faellig != "null" else ""
+        f_info = f" · fällig {_fmt_date(faellig)}" if faellig and faellig != "null" else ""
         return f"• {steuerart} {jahr}{b_info}{f_info}"
 
     if tax_assessments:
@@ -1445,8 +1455,8 @@ async def execute_action(action: dict) -> str:
                     betrag_info = f"Betrag {betrag}€"
             else:
                 betrag_info = ""
-            faellig_info = f", fällig {faellig}" if faellig and faellig != "null" else ""
-            datum_info = f" vom {datum}" if datum else ""
+            faellig_info = f", fällig {_fmt_date(faellig)}" if faellig and faellig != "null" else ""
+            datum_info = f" vom {_fmt_date(datum)}" if datum else ""
             out_parts.append(
                 f"Steuerbescheid {steuerart} {jahr}{datum_info}: {betrag_info}{faellig_info}."
             )
@@ -1455,7 +1465,7 @@ async def execute_action(action: dict) -> str:
             steuerart = ap.get("steuerart", "?")
             jahr = ap.get("vorauszahlungsjahr", "?")
             datum = ap.get("ausstellungsdatum", "")
-            datum_info = f" vom {datum}" if datum else ""
+            datum_info = f" vom {_fmt_date(datum)}" if datum else ""
             out_parts.append(f"Vorauszahlungsbescheid {steuerart} {jahr}{datum_info}.")
 
         # Mandanten-CSV: Mitgliedsnr + Steuernr fuer die Kachel
@@ -1495,7 +1505,7 @@ async def execute_action(action: dict) -> str:
                 if faellig and faellig != "null":
                     spoken += (
                         f" Hinweis: {ta.get('steuerart','?')} {ta.get('steuerjahr','?')} "
-                        f"fällig am {faellig}."
+                        f"fällig am {_fmt_date(faellig)}."
                     )
                     break
         return spoken

@@ -326,6 +326,30 @@ async def _text_handler(update, context) -> None:
     await _handle_message(update, context, source_text=update.message.text or "")
 
 
+async def _document_handler(update, context) -> None:
+    """Empfängt PDF-Dokumente und analysiert sie als Steuerbescheid."""
+    doc = update.message.document
+    if not doc or not doc.file_name:
+        return
+    if not doc.file_name.lower().endswith(".pdf"):
+        await update.message.reply_text("Nur PDF-Dateien werden analysiert.")
+        return
+    await update.message.reply_text(f"Analysiere {doc.file_name} …")
+    try:
+        import os
+        pdf_dir = "/tmp/jarvis_pdfs"
+        os.makedirs(pdf_dir, exist_ok=True)
+        dest = os.path.join(pdf_dir, doc.file_name)
+        tg_file = await doc.get_file()
+        await tg_file.download_to_drive(dest)
+        from actions import execute_action
+        result = await execute_action({"type": "ANALYZE_PDF", "payload": dest})
+        await update.message.reply_text(result or "Analyse abgeschlossen.")
+    except Exception as e:
+        log.warning(f"_document_handler: {type(e).__name__}: {e}")
+        await update.message.reply_text(f"Fehler bei der Analyse: {e}")
+
+
 # Reference to the running Application; set by telegram_bot_main once
 # the bot is up. Other modules (mail_monitor) use it via send_user_text.
 _app = None
@@ -433,6 +457,7 @@ async def telegram_bot_main() -> None:
     )
     _app = ApplicationBuilder().token(S.TELEGRAM_BOT_TOKEN).build()
     _app.add_handler(MessageHandler(filters.VOICE | filters.AUDIO, _voice_handler))
+    _app.add_handler(MessageHandler(filters.Document.PDF, _document_handler))
     _app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, _text_handler))
 
     await _app.initialize()
