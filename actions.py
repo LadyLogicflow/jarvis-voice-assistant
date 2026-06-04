@@ -2102,8 +2102,18 @@ async def execute_action(action: dict) -> str:
                 'Bitte nochmal konkreter - z.B. "keine Erbsen" oder "Fisch nur als Lachs".'
             )
 
-        # Plan neu generieren
-        plan = await _mp.generate_meal_plan(start_today=True)
+        # Plan neu generieren — gesamten bestehenden Plan-Zeitraum verwenden,
+        # damit nicht nur die Resttage neu erstellt werden.
+        _regen_dates = None
+        if S.MEAL_PLAN_WEEK:
+            try:
+                _regen_dates = [
+                    datetime.date.fromisoformat(d)
+                    for d in sorted(S.MEAL_PLAN_WEEK.keys())
+                ]
+            except Exception:
+                _regen_dates = None
+        plan = await _mp.generate_meal_plan(start_today=True, explicit_dates=_regen_dates)
         pdf_path = _mp.generate_meal_plan_pdf()
         if pdf_path:
             try:

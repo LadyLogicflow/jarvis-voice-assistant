@@ -177,7 +177,8 @@ def _preferred_market() -> str:
     return ""
 
 
-async def generate_meal_plan(start_today: bool = False, wishes: str = "") -> dict:
+async def generate_meal_plan(start_today: bool = False, wishes: str = "",
+                             explicit_dates: list | None = None) -> dict:
     """Generiert einen Speisenplan via Claude und persistiert ihn.
 
     start_today=True: von heute bis diesen Freitag (on-demand).
@@ -187,7 +188,7 @@ async def generate_meal_plan(start_today: bool = False, wishes: str = "") -> dic
     Returns:
         dict mit Datums-String als Schluessel und Tages-Dict als Wert.
     """
-    dates = _week_dates(start_today=start_today)
+    dates = explicit_dates if explicit_dates is not None else _week_dates(start_today=start_today)
 
     # Personenzahl pro Tag parallel abfragen
     servings_list = await asyncio.gather(
