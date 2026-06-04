@@ -16,12 +16,19 @@ from __future__ import annotations
 
 import json
 import os
+import unicodedata
 import uuid
 from dataclasses import asdict, dataclass, field
 
 import settings as S
 
 log = S.log
+
+
+def _norm(s: str) -> str:
+    """Lowercase + strip diacritics for fuzzy name matching (ü→u, ä→a, ö→o, ß→ss)."""
+    s = s.lower().replace("ß", "ss")
+    return unicodedata.normalize("NFD", s).encode("ascii", "ignore").decode("ascii")
 
 
 @dataclass
@@ -171,9 +178,9 @@ def search_by_name(name: str) -> list[PersonProfile]:
     """
     if not name:
         return []
-    needle = name.lower().strip()
+    needle = _norm(name.strip())
     _load()
-    return [p for p in _persons.values() if p.name and needle in p.name.lower()]
+    return [p for p in _persons.values() if p.name and needle in _norm(p.name)]
 
 
 def find_by_phone_normalized(normalized: str) -> PersonProfile | None:
@@ -273,8 +280,8 @@ def _find_or_create_mandant(mandant: str) -> PersonProfile:
         PersonProfile des gefundenen oder neu angelegten Mandanten.
     """
     _load()
-    needle = mandant.strip().lower()
-    matches = [p for p in _persons.values() if p.name and needle in p.name.lower()]
+    needle = _norm(mandant.strip())
+    matches = [p for p in _persons.values() if p.name and needle in _norm(p.name)]
     if len(matches) > 1:
         log.warning("persons_db: Mehrdeutiger Mandantenname %r — %d Treffer, erster wird verwendet", mandant, len(matches))
     if matches:

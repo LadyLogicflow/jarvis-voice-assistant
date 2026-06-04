@@ -1218,8 +1218,9 @@ async def execute_action(action: dict) -> str:
         # Merge mit persons_db (Profile haben evtl. Anrede/Funktion + extra Phones)
         results: list[dict] = []
         seen_ids: set[str] = set()
+        _query_norm = persons_db._norm(query)
         for prof in persons_db.all_profiles():
-            if query.lower() not in prof.name.lower():
+            if _query_norm not in persons_db._norm(prof.name):
                 continue
             seen_ids.add(prof.contact_id)
             results.append({
