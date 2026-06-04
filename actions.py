@@ -1959,6 +1959,32 @@ async def execute_action(action: dict) -> str:
             log.warning(f"BRING_LIST: {type(e).__name__}: {e}")
             return f"Bring!-Fehler: {type(e).__name__}"
 
+    elif t == "PICNICORDER":
+        # Issue #126: Bring!-Liste lesen und Artikel bei Picnic bestellen.
+        if not S.PICNIC_EMAIL or not S.PICNIC_PASSWORD:
+            return (
+                f"Picnic ist nicht konfiguriert, {pick_address()}. "
+                f"Bitte PICNIC_EMAIL und PICNIC_PASSWORD in der .env setzen."
+            )
+        try:
+            import bring_tools
+            import picnic_tools
+            items = await bring_tools.bring_get_items()
+            if not items:
+                return f"Die Bring!-Einkaufsliste ist leer, {pick_address()}."
+            added, not_found = await picnic_tools.picnic_add_items(items)
+            parts: list[str] = []
+            if added:
+                parts.append(f"{len(added)} Artikel in den Picnic-Warenkorb gelegt: {', '.join(added)}")
+            if not_found:
+                parts.append(f"nicht gefunden: {', '.join(not_found)}")
+            if not parts:
+                return f"Kein Artikel konnte in den Picnic-Warenkorb gelegt werden, {pick_address()}."
+            return ". ".join(parts) + f". Bitte die Bestellung direkt in der Picnic-App abschliessen, {pick_address()}."
+        except Exception as e:
+            log.warning(f"PICNICORDER: {type(e).__name__}: {e}")
+            return f"Picnic-Fehler: {type(e).__name__}"
+
     elif t == "SPEISEPLAN_SHOW":
         # Bestehenden Plan anzeigen — kein Neuerstellen, keine Wunsch-Abfrage.
         import meal_plan as _mp

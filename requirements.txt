@@ -46,3 +46,6 @@ sentence-transformers>=3.0.0
 
 # PDF-Analyse (issue #109) — Textextraktion aus Steuerbescheiden
 pymupdf>=1.24.0
+
+# Picnic Lieferservice (issue #126) — synchrone REST-API-Library
+python-picnic-api>=1.1.0
