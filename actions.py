@@ -249,6 +249,86 @@ class _EmptyRepliesProxy:
 EMPTY_REPLIES = _EmptyRepliesProxy()
 
 
+def _build_person_card_html(
+    name: str,
+    mnr: str = "",
+    steuernr: str = "",
+    idnr: str = "",
+    funktion: str = "",
+    anrede: str = "",
+    last_contact: str = "",
+    open_points: list | None = None,
+    notes: list | None = None,
+    tax_assessments: list | None = None,
+    advance_payments: list | None = None,
+) -> str:
+    """HTML-Kachel fuer die JARVIS-Web-UI (LOOKUP_CONTACT)."""
+    def esc(s: str) -> str:
+        return str(s).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+    parts = [f'<div class="p-card-name">{esc(name)}</div>']
+
+    badges = []
+    if mnr:
+        badges.append(f'<span class="p-badge">Nr.&nbsp;{esc(mnr)}</span>')
+    if steuernr:
+        badges.append(f'<span class="p-badge">StNr&nbsp;{esc(steuernr)}</span>')
+    if idnr:
+        badges.append(f'<span class="p-badge">IdNr&nbsp;{esc(idnr)}</span>')
+    if badges:
+        parts.append('<div class="p-card-meta">' + "".join(badges) + "</div>")
+
+    rows = []
+    if funktion:
+        rows.append(f'<div class="p-row"><span class="p-lbl">Funktion</span><span>{esc(funktion)}</span></div>')
+    if anrede:
+        rows.append(f'<div class="p-row"><span class="p-lbl">Anrede</span><span>{esc(anrede)}</span></div>')
+    if last_contact:
+        rows.append(f'<div class="p-row"><span class="p-lbl">Letzter Kontakt</span><span>{esc(last_contact)}</span></div>')
+    if rows:
+        parts.append('<div class="p-card-rows">' + "".join(rows) + "</div>")
+
+    if open_points:
+        bullets = "".join(f'<div class="p-bullet">{esc(pt)}</div>' for pt in open_points)
+        parts.append(f'<div class="p-card-section"><div class="p-section-title">Offene Punkte</div>{bullets}</div>')
+
+    if notes:
+        bullets = "".join(f'<div class="p-bullet">{esc(n)}</div>' for n in notes[:3])
+        parts.append(f'<div class="p-card-section"><div class="p-section-title">Notizen</div>{bullets}</div>')
+
+    def _betrag_str(ta: dict) -> str:
+        betrag = ta.get("betrag_eur")
+        if betrag is None:
+            return ""
+        try:
+            b = float(betrag)
+            richtung = "Erstattung" if b >= 0 else "Nachzahlung"
+            s = f"{abs(b):,.2f} €".replace(",", "X").replace(".", ",").replace("X", ".")
+            return f" · {richtung} {s}"
+        except (ValueError, TypeError):
+            return f" · {betrag} €"
+
+    if tax_assessments:
+        items = []
+        for ta in tax_assessments:
+            steuerart = esc(ta.get("steuerart", "?"))
+            jahr = esc(str(ta.get("steuerjahr", "?")))
+            b_str = esc(_betrag_str(ta))
+            faellig = ta.get("zahlungstermin") or ""
+            f_str = esc(f" · fällig {faellig}") if faellig and faellig != "null" else ""
+            items.append(f'<div class="p-bullet">{steuerart} {jahr}{b_str}{f_str}</div>')
+        parts.append(f'<div class="p-card-section"><div class="p-section-title">Steuerbescheide</div>{"".join(items)}</div>')
+
+    if advance_payments:
+        items = [
+            f'<div class="p-bullet">{esc(ap.get("steuerart","?"))} {esc(str(ap.get("vorauszahlungsjahr","?")))}</div>'
+            for ap in advance_payments
+        ]
+        parts.append(f'<div class="p-card-section"><div class="p-section-title">Vorauszahlungen</div>{"".join(items)}</div>')
+
+    return '<div class="p-card">' + "".join(parts) + "</div>"
+
+
 async def execute_action(action: dict) -> str:
     """Dispatch one [ACTION:TYPE] payload to the appropriate tool.
     Returns the tool's text result (or one of the KEINE_* sentinels)."""
@@ -1302,6 +1382,28 @@ async def execute_action(action: dict) -> str:
             datum = ap.get("ausstellungsdatum", "")
             datum_info = f" vom {datum}" if datum else ""
             out_parts.append(f"Vorauszahlungsbescheid {steuerart} {jahr}{datum_info}.")
+
+        # Mandanten-CSV: Mitgliedsnr + Steuernr fuer die Kachel
+        try:
+            import mandanten as _mand
+            _mand_hit = _mand.find_by_name(r["name"])
+            _mand_hit = _mand_hit[0] if _mand_hit else None
+        except Exception:
+            _mand_hit = None
+
+        S.PENDING_CARD_HTML = _build_person_card_html(
+            name=r["name"],
+            mnr=(_mand_hit or {}).get("mitgliedsnr", ""),
+            steuernr=(_mand_hit or {}).get("steuernummer", ""),
+            idnr=(_mand_hit or {}).get("id_nr", ""),
+            funktion=r.get("funktion", ""),
+            anrede=r.get("anrede", ""),
+            last_contact=r.get("last_contact", ""),
+            open_points=r.get("open_points", []),
+            notes=r.get("notes", []),
+            tax_assessments=r.get("tax_assessments", []),
+            advance_payments=r.get("advance_payments", []),
+        )
 
         return " ".join(out_parts)
 

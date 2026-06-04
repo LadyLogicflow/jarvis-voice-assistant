@@ -343,3 +343,7 @@ PENDING_FOLLOWUPS: str = ""
 # Jarvis eine Nachricht hat und zuerst fragt ob Catrin zuhören kann.
 # {"text": str, "category": str}. Geleert durch PROACTIVE_DELIVER/DECLINE.
 PENDING_PROACTIVE: dict = {}
+
+# Personen-Kachel (LOOKUP_CONTACT): HTML-Card fuer die Web-UI.
+# Wird in actions.py gesetzt, in server.py ausgelesen + geleert.
+PENDING_CARD_HTML: str = ""

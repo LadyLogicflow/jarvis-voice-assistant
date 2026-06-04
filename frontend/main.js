@@ -186,7 +186,7 @@ function connect() {
             return;
         }
         if (data.type === 'response') {
-            addTranscript('jarvis', data.text);
+            addTranscript('jarvis', data.text, data.card_html || '');
             if (data.audio && data.audio.length > 0) {
                 queueAudio(data.audio);
             } else {
@@ -389,10 +389,16 @@ orb.addEventListener('click', () => {
 
 function setOrbState(state) { orb.setAttribute('class', state); }
 
-function addTranscript(role, text) {
+function addTranscript(role, text, cardHtml = '') {
     const div = document.createElement('div');
     div.className = role;
-    div.textContent = role === 'user' ? `Du: ${text}` : `Jarvis: ${text}`;
+    const label = role === 'user' ? `Du: ${text}` : `Jarvis: ${text}`;
+    if (cardHtml && role === 'jarvis') {
+        const escaped = label.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        div.innerHTML = `<span>${escaped}</span>${cardHtml}`;
+    } else {
+        div.textContent = label;
+    }
     transcript.appendChild(div);
     transcript.scrollTop = transcript.scrollHeight;
 }

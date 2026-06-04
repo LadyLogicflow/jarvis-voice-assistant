@@ -205,7 +205,8 @@ async def tts_chunks(text: str) -> list[bytes]:
     return [audio for chunk in _split_text(text) if (audio := await _tts_one(chunk))]
 
 
-async def speak(text: str, ws: WebSocket, display: str = "") -> bool:
+async def speak(text: str, ws: WebSocket, display: str = "",
+               card_html: str = "") -> bool:
     """Generate TTS and send each chunk immediately. Returns False if connection lost."""
     if not text.strip():
         return True
@@ -218,6 +219,7 @@ async def speak(text: str, ws: WebSocket, display: str = "") -> bool:
                 await ws.send_json({
                     "type": "response",
                     "text": display if first else "",
+                    "card_html": card_html if first else "",
                     "audio": base64.b64encode(audio).decode("utf-8"),
                 })
                 first = False

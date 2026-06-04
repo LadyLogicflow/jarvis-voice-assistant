@@ -438,6 +438,8 @@ async def process_message(session_id: str, user_text: str, ws: WebSocket) -> Non
     except Exception as e:
         log.warning(f"Action error: {e}")
         action_result = f"Fehler: {e}"
+    _card_html = S.PENDING_CARD_HTML
+    S.PENDING_CARD_HTML = ""
 
     if action["type"] == "OPEN":
         # OPEN normally stays silent; speak only when the URL was rejected.
@@ -524,7 +526,7 @@ async def process_message(session_id: str, user_text: str, ws: WebSocket) -> Non
         "PROACTIVE_DELIVER", "PROACTIVE_DECLINE",
     ):
         await append_message(session_id, "assistant", action_result)
-        await speak(action_result, ws, display=action_result)
+        await speak(action_result, ws, display=action_result, card_html=_card_html)
         return
 
     # Otherwise: ask Claude to summarize the raw tool output.
