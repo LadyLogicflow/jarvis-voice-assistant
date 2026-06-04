@@ -446,6 +446,46 @@ def format_meal_plan_tts() -> str:
     return ", ".join(parts) + "."
 
 
+def build_meal_plan_card_html() -> str:
+    """Erstellt eine HTML-Kachel mit dem aktuellen Speiseplan für das Web-Frontend."""
+    if not S.MEAL_PLAN_WEEK:
+        return ""
+    dates = sorted(S.MEAL_PLAN_WEEK.keys())
+    first = datetime.date.fromisoformat(dates[0])
+    last = datetime.date.fromisoformat(dates[-1])
+    kw = first.isocalendar()[1]
+    today_str = datetime.date.today().isoformat()
+
+    header = f"Speiseplan KW {kw} &nbsp;·&nbsp; {first.strftime('%d.%m.')}–{last.strftime('%d.%m.%Y')}"
+    rows_html = ""
+    for date_str in dates:
+        e = S.MEAL_PLAN_WEEK[date_str]
+        try:
+            d = datetime.date.fromisoformat(date_str)
+            day_label = f"{_weekday_de(d.weekday())}, {d.strftime('%d.%m.')}"
+        except ValueError:
+            day_label = date_str
+        dish = e.get("dish", "")
+        servings = e.get("servings", S.MEAL_PLAN_SERVINGS_DEFAULT)
+        cook_time = e.get("cook_time_minutes", 45)
+        is_today = date_str == today_str
+        row_style = " mp-today" if is_today else ""
+        rows_html += (
+            f'<div class="mp-row{row_style}">'
+            f'<span class="mp-day">{day_label}</span>'
+            f'<span class="mp-dish">{dish}</span>'
+            f'<span class="mp-meta">{servings}&nbsp;Pers.&nbsp;·&nbsp;{cook_time}&nbsp;Min.</span>'
+            f'</div>'
+        )
+
+    return (
+        f'<div class="mp-card">'
+        f'<div class="mp-header">{header}</div>'
+        f'{rows_html}'
+        f'</div>'
+    )
+
+
 def generate_meal_plan_pdf() -> str | None:
     """Erstellt eine PDF-Datei mit dem aktuellen Speisenplan.
 

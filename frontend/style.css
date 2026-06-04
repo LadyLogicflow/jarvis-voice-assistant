@@ -262,3 +262,51 @@ body.compact #transcript     { display: none; }
     margin-bottom: 3px;
     color: rgba(255,255,255,0.8);
 }
+
+/* --- Meal Plan Card --- */
+.mp-card {
+    background: rgba(0, 212, 255, 0.04);
+    border: 1px solid rgba(0, 212, 255, 0.25);
+    border-radius: 10px;
+    padding: 12px 14px;
+    margin-top: 8px;
+    max-width: 520px;
+}
+.mp-header {
+    color: rgba(0, 212, 255, 0.9);
+    font-size: 0.82em;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    border-bottom: 1px solid rgba(0, 212, 255, 0.2);
+    padding-bottom: 7px;
+    margin-bottom: 8px;
+}
+.mp-row {
+    display: grid;
+    grid-template-columns: 130px 1fr auto;
+    gap: 8px;
+    align-items: baseline;
+    padding: 4px 0;
+    border-bottom: 1px solid rgba(255,255,255,0.04);
+    font-size: 0.88em;
+}
+.mp-row:last-child { border-bottom: none; }
+.mp-row.mp-today {
+    background: rgba(0, 212, 255, 0.07);
+    border-radius: 5px;
+    padding: 4px 6px;
+    margin: 0 -6px;
+}
+.mp-day {
+    color: rgba(0, 212, 255, 0.7);
+    font-size: 0.85em;
+    white-space: nowrap;
+}
+.mp-row.mp-today .mp-day { color: rgba(0, 212, 255, 1); font-weight: 600; }
+.mp-dish { color: rgba(255,255,255,0.9); }
+.mp-meta {
+    color: rgba(255,255,255,0.35);
+    font-size: 0.78em;
+    white-space: nowrap;
+}

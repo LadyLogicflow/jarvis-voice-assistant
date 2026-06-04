@@ -1948,7 +1948,10 @@ async def execute_action(action: dict) -> str:
                 f"Es gibt noch keinen Speisenplan, {pick_address()}. "
                 f"Sag 'Erstell einen Speiseplan' und ich frage dich nach deinen Wuenschen."
             )
-        return _mp.format_meal_plan_tts()
+        S.PENDING_CARD_HTML = _mp.build_meal_plan_card_html()
+        dates = sorted(S.MEAL_PLAN_WEEK.keys())
+        n = len(dates)
+        return f"Hier ist der aktuelle Plan, {pick_address()} — {n} Tage."
 
     elif t == "SPEISEPLAN":
         # On-demand: heute bis Freitag, oder benutzerdefinierter Zeitraum via daterange:.
@@ -1979,6 +1982,8 @@ async def execute_action(action: dict) -> str:
                 f"Ich konnte den Speisenplan leider nicht erstellen, "
                 f"{pick_address()}. Bitte spaeter erneut versuchen."
             )
+        # Card-HTML fuer Web-Frontend
+        S.PENDING_CARD_HTML = _mp.build_meal_plan_card_html()
         # PDF generieren und per Telegram senden
         pdf_path = _mp.generate_meal_plan_pdf()
         if pdf_path:
@@ -1987,7 +1992,10 @@ async def execute_action(action: dict) -> str:
                 await _tb.send_user_document(pdf_path, caption="Speiseplan der Woche")
             except Exception as _pdf_exc:
                 log.warning("SPEISEPLAN: PDF-Versand fehlgeschlagen: %s", _pdf_exc)
-        return _mp.format_meal_plan_tts()
+        # Kurzer TTS-Text (kein vollständiges Vorlesen)
+        dates = sorted(S.MEAL_PLAN_WEEK.keys())
+        n = len(dates)
+        return f"Plan ist fertig, {pick_address()} — {n} Tage, die Übersicht siehst du gleich."
 
     elif t == "SPEISEPLAN_SWAP":
         # Issue #125: Ein einzelnes Gericht tauschen.
@@ -2142,10 +2150,8 @@ async def execute_action(action: dict) -> str:
                 f"Gespeichert: {changes_text}. Der neue Plan konnte leider nicht "
                 f"erstellt werden, {pick_address()}."
             )
-        return (
-            f"Verstanden — {changes_text}. "
-            f"Ich habe einen neuen Plan erstellt: {_mp.format_meal_plan_tts()}"
-        )
+        S.PENDING_CARD_HTML = _mp.build_meal_plan_card_html()
+        return f"Verstanden — {changes_text}. Neuer Plan ist fertig, {pick_address()}."
 
     elif t == "EINKAUF_FREIGEBEN":
         # Issue #125: Einkaufsliste aus dem Wochenplan an Bring! uebergeben.

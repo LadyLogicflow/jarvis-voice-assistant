@@ -524,6 +524,7 @@ async def process_message(session_id: str, user_text: str, ws: WebSocket) -> Non
         "WEEKLY_OUTLOOK", "CONTACTS_INFO", "LOOKUP_CONTACT",
         "PLAN_NOW", "IMPORT_MAIL_HISTORY",
         "PROACTIVE_DELIVER", "PROACTIVE_DECLINE",
+        "SPEISEPLAN", "SPEISEPLAN_SHOW", "SPEISEPLAN_PREF",
     ):
         await append_message(session_id, "assistant", action_result)
         await speak(action_result, ws, display=action_result, card_html=_card_html)
