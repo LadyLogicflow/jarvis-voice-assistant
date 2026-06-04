@@ -1753,7 +1753,7 @@ async def execute_action(action: dict) -> str:
                 f"Es gibt noch keinen Speisenplan, {pick_address()}. "
                 f"Sag 'Erstell einen Speiseplan' und ich frage dich nach deinen Wuenschen."
             )
-        return _mp.format_meal_plan_telegram()
+        return _mp.format_meal_plan_tts()
 
     elif t == "SPEISEPLAN":
         # On-demand: heute bis Freitag. Payload p enthaelt optionale Wuensche.
@@ -1762,7 +1762,7 @@ async def execute_action(action: dict) -> str:
         today_str = datetime.date.today().isoformat()
         wishes = p.strip() if p else ""
         if not wishes and S.MEAL_PLAN_WEEK and today_str in S.MEAL_PLAN_WEEK:
-            return _mp.format_meal_plan_telegram()
+            return _mp.format_meal_plan_tts()
         log.info(f"SPEISEPLAN: generiere neu (wishes={wishes[:60]!r})")
         plan = await _mp.generate_meal_plan(start_today=True, wishes=wishes)
         if not plan:
@@ -1770,7 +1770,15 @@ async def execute_action(action: dict) -> str:
                 f"Ich konnte den Speisenplan leider nicht erstellen, "
                 f"{pick_address()}. Bitte spaeter erneut versuchen."
             )
-        return _mp.format_meal_plan_telegram()
+        # PDF generieren und per Telegram senden
+        pdf_path = _mp.generate_meal_plan_pdf()
+        if pdf_path:
+            try:
+                import telegram_bot as _tb
+                await _tb.send_user_document(pdf_path, caption="Speiseplan der Woche")
+            except Exception as _pdf_exc:
+                log.warning("SPEISEPLAN: PDF-Versand fehlgeschlagen: %s", _pdf_exc)
+        return _mp.format_meal_plan_tts()
 
     elif t == "SPEISEPLAN_SWAP":
         # Issue #125: Ein einzelnes Gericht tauschen.

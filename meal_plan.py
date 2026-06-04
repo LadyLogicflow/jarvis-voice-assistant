@@ -425,6 +425,104 @@ def _normalize_ingredient(ingredient: str) -> str:
     return normalized.strip().lower()
 
 
+def format_meal_plan_tts() -> str:
+    """Kurze TTS-freundliche Übersicht: 'Montag: Gericht, Dienstag: Gericht, ...'"""
+    if not S.MEAL_PLAN_WEEK:
+        return "Es gibt noch keinen Speisenplan."
+    parts = []
+    for date_str in sorted(S.MEAL_PLAN_WEEK.keys()):
+        entry = S.MEAL_PLAN_WEEK[date_str]
+        try:
+            d = datetime.date.fromisoformat(date_str)
+            day = _weekday_de(d.weekday())
+        except ValueError:
+            day = date_str
+        parts.append(f"{day}: {entry.get('dish', '')}")
+    return ", ".join(parts) + "."
+
+
+def generate_meal_plan_pdf() -> str | None:
+    """Erstellt eine PDF-Datei mit dem aktuellen Speisenplan.
+
+    Returns:
+        Absoluter Pfad zur PDF-Datei, oder None bei Fehler.
+    """
+    if not S.MEAL_PLAN_WEEK:
+        return None
+    try:
+        import fitz  # PyMuPDF
+    except ImportError:
+        log.warning("generate_meal_plan_pdf: PyMuPDF nicht installiert")
+        return None
+    try:
+        pdf_dir = "/tmp/jarvis_pdfs"
+        os.makedirs(pdf_dir, exist_ok=True)
+        dates = sorted(S.MEAL_PLAN_WEEK.keys())
+        first = datetime.date.fromisoformat(dates[0]) if dates else datetime.date.today()
+        kw = first.isocalendar()[1]
+        year = first.year
+        pdf_path = os.path.join(pdf_dir, f"speiseplan_kw{kw:02d}_{year}.pdf")
+        PAGE_W, PAGE_H, MARGIN = 595, 842, 50
+        doc = fitz.open()
+        page = doc.new_page(width=PAGE_W, height=PAGE_H)
+        y = float(MARGIN)
+
+        def _ensure_space(needed: float) -> None:
+            nonlocal page, y
+            if y + needed > PAGE_H - MARGIN:
+                page = doc.new_page(width=PAGE_W, height=PAGE_H)
+                y = float(MARGIN)
+
+        _ensure_space(40)
+        page.insert_textbox(fitz.Rect(MARGIN, y, PAGE_W - MARGIN, y + 28),
+                            f"Speiseplan KW {kw} / {year}",
+                            fontsize=18, fontname="helvB", color=(0.05, 0.4, 0.75))
+        y += 36
+
+        for date_str in dates:
+            e = S.MEAL_PLAN_WEEK[date_str]
+            try:
+                d = datetime.date.fromisoformat(date_str)
+                label = f"{_weekday_de(d.weekday())}, {d.strftime('%d.%m.%Y')}"
+            except ValueError:
+                label = date_str
+            dish = e.get("dish", "")
+            servings = e.get("servings", S.MEAL_PLAN_SERVINGS_DEFAULT)
+            cook_time = e.get("cook_time_minutes", 45)
+            ingredients = e.get("ingredients", [])
+            recipe = e.get("recipe", "")
+
+            _ensure_space(170)
+            page.insert_textbox(fitz.Rect(MARGIN, y, PAGE_W - MARGIN, y + 20),
+                                f"{label} — {dish}",
+                                fontsize=12, fontname="helvB", color=(0, 0, 0))
+            y += 22
+            page.insert_textbox(fitz.Rect(MARGIN, y, PAGE_W - MARGIN, y + 14),
+                                f"{servings} Personen · ca. {cook_time} Min.",
+                                fontsize=9, fontname="helv", color=(0.5, 0.5, 0.5))
+            y += 16
+            if ingredients:
+                page.insert_textbox(fitz.Rect(MARGIN, y, PAGE_W - MARGIN, y + 36),
+                                    "Zutaten: " + ", ".join(ingredients),
+                                    fontsize=8.5, fontname="helv", color=(0.2, 0.2, 0.2))
+                y += 38
+            if recipe:
+                snippet = recipe[:400] + ("…" if len(recipe) > 400 else "")
+                page.insert_textbox(fitz.Rect(MARGIN, y, PAGE_W - MARGIN, y + 80),
+                                    snippet,
+                                    fontsize=8, fontname="helv", color=(0.3, 0.3, 0.3))
+                y += 84
+            y += 14
+
+        doc.save(pdf_path)
+        doc.close()
+        log.info("generate_meal_plan_pdf: %s", pdf_path)
+        return pdf_path
+    except Exception as exc:
+        log.warning("generate_meal_plan_pdf: %s: %s", type(exc).__name__, exc)
+        return None
+
+
 def format_meal_plan_telegram(include_today_recipe: bool = True) -> str:
     """Formatiert den aktuellen Plan fuer Telegram.
 

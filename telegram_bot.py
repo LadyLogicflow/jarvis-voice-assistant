@@ -213,6 +213,7 @@ async def _ask_claude(session_id: str, user_text: str) -> str:
         "ACCEPT_PERSON_ACTION", "DECLINE_PERSON_ACTION",
         "WEEKLY_OUTLOOK", "CONTACTS_INFO", "LOOKUP_CONTACT",
         "PLAN_NOW", "WEATHER", "IMPORT_MAIL_HISTORY",
+        "SPEISEPLAN", "SPEISEPLAN_SHOW",
     ):
         return action_result
 
@@ -373,6 +374,29 @@ async def send_user_voice(
         return True
     except Exception as e:
         log.warning(f"send_user_voice failed: {type(e).__name__}: {e}")
+        return False
+
+
+async def send_user_document(filepath: str, caption: str = "") -> bool:
+    """Sendet eine Datei (z.B. PDF) an Catrins Telegram-Chat.
+
+    Returns True on success, False if not configured or send failed.
+    """
+    if not S.TELEGRAM_BOT_TOKEN or not S.TELEGRAM_CHAT_ID:
+        return False
+    if _app is None:
+        log.warning("send_user_document: bot not yet running")
+        return False
+    try:
+        with open(filepath, "rb") as f:
+            await _app.bot.send_document(
+                chat_id=S.TELEGRAM_CHAT_ID,
+                document=f,
+                caption=caption or None,
+            )
+        return True
+    except Exception as e:
+        log.warning(f"send_user_document failed: {type(e).__name__}: {e}")
         return False
 
 
