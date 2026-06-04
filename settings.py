@@ -191,6 +191,7 @@ def _normalize_account(raw: dict) -> dict:
         "ssl": bool(raw.get("ssl", True)),
         "folder": raw.get("folder", "INBOX"),
         "sent_folder": raw.get("sent_folder", "Sent"),
+        "trash_folder": raw.get("trash_folder", config.get("trash_folder", "Trash")),
         "drafts_folder": raw.get("drafts_folder", config.get("drafts_folder", "Drafts")),
         "env_key": env_key,
         "smtp_host": raw.get("smtp_host", _default_smtp),
@@ -289,6 +290,7 @@ OPEN_PROMISES: str = ""       # Offene Vorhaben (Issue #117), cache
 
 UPCOMING_DEADLINES: str = ""  # Anstehende Fristen (Issue #119), cache
 BIRTHDAY_REMINDERS: str = ""  # Geburtstage dieser Woche (Issue #120), cache
+RECENT_CONTEXT: str = ""       # 3-Tage-Gesprächskontext (M6.4), für System-Prompt
 BIRTHDAY_ROUND: str = ""      # Runde Geburtstage diese Woche (Issue #144), freitags
 
 # Abschluss-Ritual (Issue #121): Anzahl heute per DONETASK abgeschlossener Tasks.

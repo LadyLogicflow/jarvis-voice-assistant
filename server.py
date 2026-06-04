@@ -40,6 +40,7 @@ from actions import EMPTY_REPLIES, execute_action
 from conversation import (
     append_message,
     conversations,
+    get_recent_context_summary,
     load_persistent_history,
 )
 from prompt import extract_action, get_system_prompt, llm_text, pick_address
@@ -345,8 +346,10 @@ async def process_message(session_id: str, user_text: str, ws: WebSocket) -> Non
     global _last_greeting_time
 
     if session_id not in conversations:
-        # Seed a brand-new session with the persisted history (M6.2).
+        # Seed a brand-new session with the persisted history (M6.2/M6.4).
         conversations[session_id] = load_persistent_history()
+        # Build 3-day context digest and inject into system prompt (M6.4).
+        S.RECENT_CONTEXT = get_recent_context_summary(days=3)
 
     # Speiseplan-Wunsch-Abfrage: Antwort abfangen bevor Claude sie verarbeitet.
     if S.MEAL_PLAN_AWAITING_WISHES:
@@ -375,7 +378,7 @@ async def process_message(session_id: str, user_text: str, ws: WebSocket) -> Non
             await refresh_morning_brief_data()
 
     await append_message(session_id, "user", user_text)
-    history = conversations[session_id][-16:]
+    history = conversations[session_id][-40:]
 
     # Emotionale Kalibrierung (Issue #118): Stress-Level nach jeder Nachricht aktualisieren.
     session_state.update_stress_level(session_id, len(user_text), time.time())

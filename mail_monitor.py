@@ -47,13 +47,9 @@ _max_seen_sent: dict[str, int] = {}
 _SENT_POLL_INTERVAL = 15 * 60
 
 # ---------------------------------------------------------------------------
-# Jarvis-Trigger: pending-delete queue (Issue #159)
-# Mails with 'jarvis' in subject are queued for deletion 24h after arrival.
-# Format: {(account_name, uid): received_timestamp_float}
+# Jarvis-Trigger (Issue #159)
+# Mails with 'jarvis' in subject are processed immediately and moved to trash.
 # ---------------------------------------------------------------------------
-
-_JARVIS_DELETE_AFTER = 24 * 60 * 60  # 24 hours in seconds
-_pending_jarvis_delete: dict[tuple[str, int], float] = {}
 
 
 def _sent_state_path(account_name: str) -> str:
@@ -273,13 +269,28 @@ async def _handle_jarvis_trigger(
              name, uid, subject)
 
     # Fetch the full message so we can inspect attachments.
+    # aioimaplib returns literal data (email body) as 2-tuples (header_line, body_bytes)
+    # inside the response list, NOT as flat bytes — so we must unpack both forms.
     msg_full = None
     try:
         typ, data = await client.uid("fetch", str(uid), "BODY.PEEK[]")
+        log.info("mail_monitor[%s] uid=%s: full-fetch typ=%s data_items=%d",
+                 name, uid, typ, len(data) if data else 0)
         if typ == "OK" and data:
-            byte_items = [b for b in data if isinstance(b, (bytes, bytearray))]
+            byte_items: list[bytes] = []
+            for item in data:
+                if isinstance(item, (bytes, bytearray)):
+                    byte_items.append(bytes(item))
+                elif isinstance(item, (list, tuple)) and len(item) >= 2 and isinstance(item[1], (bytes, bytearray)):
+                    # aioimaplib literal: (b'N FETCH (BODY[] {size}', b'<email_bytes>')
+                    byte_items.append(bytes(item[1]))
             if byte_items:
                 msg_full = email.message_from_bytes(max(byte_items, key=len))
+                log.info("mail_monitor[%s] uid=%s: message parsed, multipart=%s",
+                         name, uid, msg_full.is_multipart())
+            else:
+                log.warning("mail_monitor[%s] uid=%s: full-fetch lieferte keine Bytes; "
+                            "raw=%r", name, uid, data[:3])
     except Exception as e:
         log.warning("mail_monitor[%s] uid=%s: jarvis-trigger full-fetch failed: %s: %s",
                     name, uid, type(e).__name__, e)
@@ -312,90 +323,66 @@ async def _handle_jarvis_trigger(
                 try:
                     result = await pdf_tools.analyze_steuerbescheid(p)
                     log.info("mail_monitor: PDF analysiert: %s", result.get("summary", ""))
+                    log.info("mail_monitor: PDF mandant=%r typ=%r",
+                             result.get("mandant"), result.get("typ"))
                 except Exception as exc:
                     log.warning("mail_monitor: PDF-Analyse fehlgeschlagen (%s): %s",
                                 os.path.basename(p), exc)
         asyncio.create_task(_analyze_silent(pdf_paths))
+    else:
+        log.warning("mail_monitor[%s] uid=%s: keine PDFs gefunden (msg_full=%s, is_multipart=%s)",
+                    name, uid, msg_full is not None,
+                    msg_full.is_multipart() if msg_full else "n/a")
 
     log.info("mail_monitor[%s] uid=%s: jarvis-trigger verarbeitet, %d PDF(s)",
              name, uid, len(pdf_paths))
 
-    # Queue for deletion after 24 h.
-    _pending_jarvis_delete[(name, uid)] = _time.time()
-    log.info("mail_monitor[%s] uid=%s: zur Löschung vorgemerkt (in 24h)", name, uid)
+    # Sofort in den Papierkorb verschieben.
+    await _move_to_trash(account, client, uid)
 
 
-async def _flush_jarvis_deletes(accounts: list[dict]) -> None:
-    """Delete queued jarvis-trigger mails whose 24 h window has expired.
+async def _move_to_trash(account: dict, client, uid: int) -> None:
+    """Verschiebt eine Mail sofort in den Papierkorb.
 
-    Called once per poll cycle from the main IDLE loop. Uses a fresh IMAP
-    connection so it doesn't interfere with the persistent polling session.
+    Versucht zuerst IMAP MOVE (RFC 6851), faellt auf COPY + DELETE + EXPUNGE
+    zurueck. Fehler werden geloggt aber nie nach oben propagiert.
 
     Args:
-        accounts: List of normalised account dicts (from settings).
+        account: Normalisiertes Account-Dict aus settings.
+        client:  Verbundener aioimaplib-Client (INBOX selektiert).
+        uid:     IMAP-UID der zu verschiebenden Mail.
     """
-    if not _pending_jarvis_delete:
-        return
-    now = _time.time()
-    due = [
-        (acc_name, uid)
-        for (acc_name, uid), ts in list(_pending_jarvis_delete.items())
-        if now - ts >= _JARVIS_DELETE_AFTER
-    ]
-    if not due:
-        return
+    name = account["name"]
+    trash = account.get("trash_folder", "Trash")
 
-    # Group by account for efficiency.
-    by_account: dict[str, list[int]] = {}
-    for acc_name, uid in due:
-        by_account.setdefault(acc_name, []).append(uid)
+    # Try RFC 6851 MOVE first (atomic, preferred).
+    try:
+        move_resp = await client.uid("move", str(uid), trash)
+        if getattr(move_resp, "result", None) == "OK":
+            log.info("mail_monitor[%s] uid=%s: per MOVE in %r verschoben",
+                     name, uid, trash)
+            return
+        log.info("mail_monitor[%s] uid=%s: MOVE nicht unterstützt (%s), "
+                 "Fallback COPY+DELETE", name, uid,
+                 getattr(move_resp, "result", "?"))
+    except Exception as e:
+        log.info("mail_monitor[%s] uid=%s: MOVE fehlgeschlagen (%s: %s), "
+                 "Fallback COPY+DELETE", name, uid, type(e).__name__, e)
 
-    acc_map = {a["name"]: a for a in accounts}
-
-    for acc_name, uids in by_account.items():
-        acc = acc_map.get(acc_name)
-        if not acc:
-            log.warning("mail_monitor: jarvis-delete: Konto %r nicht gefunden", acc_name)
-            continue
-        try:
-            import aioimaplib
-            cls = aioimaplib.IMAP4_SSL if acc["ssl"] else aioimaplib.IMAP4
-            client = cls(host=acc["host"], port=acc["port"], timeout=30)
-            await asyncio.wait_for(client.wait_hello_from_server(), timeout=30)
-            resp = await asyncio.wait_for(
-                client.login(acc["user"], acc["password"]), timeout=30
-            )
-            if getattr(resp, "result", None) != "OK":
-                log.warning("mail_monitor[%s] jarvis-delete: login failed", acc_name)
-                continue
-            select_resp = await client.select(acc["folder"])
-            if getattr(select_resp, "result", None) != "OK":
-                log.warning("mail_monitor[%s] jarvis-delete: SELECT %r failed", acc_name, acc["folder"])
-                continue
-            successfully_flagged: list[int] = []
-            for uid in uids:
-                try:
-                    await client.uid("store", str(uid), "+FLAGS", "(\\Deleted)")
-                    log.info("mail_monitor[%s] uid=%s: jarvis-trigger mail als gelöscht markiert",
-                             acc_name, uid)
-                    successfully_flagged.append(uid)
-                except Exception as e:
-                    log.warning(
-                        "mail_monitor[%s] uid=%s: STORE \\Deleted fehlgeschlagen: %s: %s",
-                        acc_name, uid, type(e).__name__, e,
-                    )
-            try:
-                await client.expunge()
-            except Exception as e:
-                log.warning("mail_monitor[%s] EXPUNGE fehlgeschlagen: %s: %s",
-                            acc_name, type(e).__name__, e)
-            await client.logout()
-        except Exception as e:
-            log.warning("mail_monitor[%s] jarvis-delete connection failed: %s: %s",
-                        acc_name, type(e).__name__, e)
-        else:
-            for uid in successfully_flagged:
-                _pending_jarvis_delete.pop((acc_name, uid), None)
+    # Fallback: COPY to trash, then flag + expunge original.
+    try:
+        copy_resp = await client.uid("copy", str(uid), trash)
+        if getattr(copy_resp, "result", None) != "OK":
+            log.warning("mail_monitor[%s] uid=%s: COPY nach %r fehlgeschlagen: %s",
+                        name, uid, trash, _resp_summary(copy_resp))
+            return
+        await client.uid("store", str(uid), "+FLAGS", "(\\Deleted)")
+        await client.expunge()
+        log.info("mail_monitor[%s] uid=%s: per COPY+DELETE in %r verschoben",
+                 name, uid, trash)
+    except Exception as e:
+        log.warning("mail_monitor[%s] uid=%s: Papierkorb-Verschiebung fehlgeschlagen: "
+                    "%s: %s", name, uid, type(e).__name__, e)
 
 
 def _state_path(account_name: str) -> str:
@@ -1319,6 +1306,30 @@ async def _idle_session(account: dict, aioimaplib_module) -> None:
             log.info(f"mail_monitor[{name}] catching up on {len(new_uids)} mail(s)")
             await _process_new_uids(account, client, new_uids)
 
+    # Startup-Scan: Suche nach allen noch vorhandenen Jarvis-Mails im Posteingang.
+    # Verarbeitet ALLE Treffer (nicht nur neue UIDs) — persons_db.save_tax_assessment
+    # dedupliziert intern. So werden Mails die vor dem ersten Start ankamen oder
+    # durch den ehemaligen Parsing-Bug nicht verarbeitet wurden, noch aufgeholt.
+    try:
+        typ_s, data_s = await client.uid("search", "ALL", "SUBJECT", "jarvis")
+        if typ_s == "OK" and data_s:
+            raw_s = b" ".join(d for d in data_s if isinstance(d, (bytes, bytearray)))
+            jarvis_uids = [int(u) for u in raw_s.split() if u.isdigit()]
+            if jarvis_uids:
+                log.info("mail_monitor[%s] startup-scan: %d Jarvis-Mail(s) im "
+                         "Posteingang, verarbeite alle", name, len(jarvis_uids))
+                for _j_uid in sorted(jarvis_uids):
+                    try:
+                        await _handle_jarvis_trigger(
+                            account, client, _j_uid, "jarvis (startup-scan)", ""
+                        )
+                    except Exception as _je:
+                        log.warning("mail_monitor[%s] startup-scan uid=%s: %s: %s",
+                                    name, _j_uid, type(_je).__name__, _je)
+    except Exception as e:
+        log.info("mail_monitor[%s] startup-scan (SEARCH SUBJECT) nicht verfügbar "
+                 "oder fehlgeschlagen: %s: %s", name, type(e).__name__, e)
+
     # Some servers (Apple iCloud especially) reject IDLE if it follows
     # SELECT too tightly. A NOOP between gives the server a beat to
     # settle the SELECT state.
@@ -1337,14 +1348,6 @@ async def _idle_session(account: dict, aioimaplib_module) -> None:
     while True:
         await asyncio.sleep(poll_interval)
         poll_count += 1
-
-        # Jarvis-Trigger (Issue #159): prüfe ob vorgemerkte Mails
-        # gelöscht werden sollen (24h-Frist abgelaufen).
-        try:
-            await _flush_jarvis_deletes([account])
-        except Exception as _e:
-            log.debug("mail_monitor[%s] flush_jarvis_deletes: %s: %s",
-                      name, type(_e).__name__, _e)
 
         # STATUS UIDNEXT is the authoritative "highest UID assigned".
         # Cheaper than UID FETCH and tells us if there's anything new.

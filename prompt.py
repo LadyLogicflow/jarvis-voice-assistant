@@ -162,6 +162,10 @@ def build_system_prompt() -> str:
     if S.BIRTHDAY_REMINDERS:
         birthday_block = f"\n{S.BIRTHDAY_REMINDERS}"
 
+    recent_context_block = ""
+    if S.RECENT_CONTEXT:
+        recent_context_block = f"\n{S.RECENT_CONTEXT}\nNutze diesen Kontext proaktiv — beziehe dich auf frueheres wenn es zur aktuellen Frage passt."
+
     health_block = ""
     if S.HEALTH_INFO:
         import health_tools as _ht
@@ -563,7 +567,7 @@ WENN {S.USER_NAME} "Jarvis activate" sagt AB {S.MORNING_BRIEF_UNTIL_HOUR}:00 Uhr
 - Wenn ein Termin / eine Aufgabe in der naechsten Stunde wartet, darfst du das mit einem Halbsatz erwaehnen — sonst nichts.
 - Wenn heute Wochenende/Feiertag ist (siehe Erholungstag-Modus), entsprechend kommentieren.
 
-=== AKTUELLE DATEN ==={date_block}{greeting_block}{weather_block}{today_events_block}{today_tasks_block}{task_block}{steuer_block}{steuer_recent_block}{open_promises_block}{upcoming_deadlines_block}{birthday_block}{health_block}{mail_knowledge_block}{address_pool_block}{active_mail_block}{pending_proactive_block}
+=== AKTUELLE DATEN ==={date_block}{greeting_block}{weather_block}{today_events_block}{today_tasks_block}{task_block}{steuer_block}{steuer_recent_block}{open_promises_block}{upcoming_deadlines_block}{birthday_block}{health_block}{recent_context_block}{mail_knowledge_block}{address_pool_block}{active_mail_block}{pending_proactive_block}
 ==="""
 
 
