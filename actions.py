@@ -1308,20 +1308,15 @@ async def execute_action(action: dict) -> str:
                 seen_texts.add(key)
                 results.append(text)
 
-        # 1. Personen-bezogene Notizen + offene Punkte (Volltext)
+        # 1. Personen-Notizen + offene Punkte — nur Keyword-Treffer im Notiztext,
+        # NICHT auf Personennamen-Match (das ist LOOKUP_CONTACT's Aufgabe).
         for prof in persons_db.all_profiles():
-            if q in prof.name.lower():
-                for note in prof.notes[-5:]:
+            for note in prof.notes:
+                if q in note.lower():
                     _add_result(f"Notiz zu {prof.name}: {note}")
-                for pt in prof.open_points:
+            for pt in prof.open_points:
+                if q in pt.lower():
                     _add_result(f"Offen mit {prof.name}: {pt}")
-            else:
-                for note in prof.notes:
-                    if q in note.lower():
-                        _add_result(f"Notiz zu {prof.name}: {note}")
-                for pt in prof.open_points:
-                    if q in pt.lower():
-                        _add_result(f"Offen mit {prof.name}: {pt}")
         # 2. Allgemeine Notizen (Volltext)
         for n in notes_db.find(query):
             _add_result(f"{n.kind.capitalize()}: {n.text}")
@@ -2386,6 +2381,31 @@ async def execute_action(action: dict) -> str:
         if ok:
             return f"Mail weitergeleitet an {to_name} ({to_addr})."
         return f"Weiterleitung an {to_name} fehlgeschlagen — bitte SMTP-Konfiguration pruefen."
+
+    elif t == "DEBUG_PDF":
+        # Diagnose: zeigt gespeicherte PDFs + was persons_db für einen Mandanten hat.
+        import glob
+        lines: list[str] = []
+        pdf_files = sorted(glob.glob("/tmp/jarvis_pdfs/*.pdf"), key=os.path.getmtime, reverse=True)
+        lines.append(f"Gespeicherte PDFs in /tmp/jarvis_pdfs: {len(pdf_files)}")
+        for pf in pdf_files[:5]:
+            lines.append(f"  • {os.path.basename(pf)}")
+        query = p.strip()
+        if query:
+            import persons_db as _pdb2
+            tax_list = _pdb2.get_tax_assessments(query)
+            adv_list = _pdb2.get_advance_payments(query) if hasattr(_pdb2, "get_advance_payments") else []
+            lines.append(f"\npersons_db für '{query}': {len(tax_list)} Steuerbescheide, {len(adv_list)} Vorauszahlungen")
+            for ta in tax_list:
+                lines.append(f"  • {ta.get('steuerart','?')} {ta.get('steuerjahr','?')} Betrag={ta.get('betrag_eur','?')}")
+            if pdf_files:
+                try:
+                    from pdf_tools import analyze_steuerbescheid
+                    result2 = await analyze_steuerbescheid(pdf_files[0])
+                    lines.append(f"\nLetztes PDF analysiert: typ={result2.get('typ')}, mandant={result2.get('mandant')!r}, betrag={result2.get('betrag_eur')}")
+                except Exception as exc2:
+                    lines.append(f"\nPDF-Analyse Fehler: {exc2}")
+        return "\n".join(lines)
 
     elif t == "ANALYZE_PDF":
         # Issue #109: Steuerbescheid-Analyse via PyMuPDF + Claude Haiku.
