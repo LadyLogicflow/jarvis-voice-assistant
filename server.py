@@ -683,8 +683,10 @@ async def websocket_endpoint(ws: WebSocket) -> None:
     await ws.accept()
     session_id = str(id(ws))
     # Drop stale connections (prevents multi-wake).
-    active_clients.clear()
-    active_clients.append(ws)
+    # Issue #171: atomic slice-assignment avoids the race window between
+    # clear() and append() where a concurrent speak() could iterate over
+    # an empty list or reference a just-removed client.
+    active_clients[:] = [ws]
     # Issue #89: Nur aktive WebSocket-Sessions in broadcast_active_mail
     # beschreiben. Register hier, deregister beim Disconnect.
     session_state.register_session(session_id)
