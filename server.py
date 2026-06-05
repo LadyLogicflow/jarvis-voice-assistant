@@ -468,10 +468,10 @@ async def process_message(session_id: str, user_text: str, ws: WebSocket) -> Non
     log.info(f"LLM raw: {reply[:200]}")
     spoken_text, action = extract_action(reply)
 
-    # RECALL: hold spoken_text until we know if there are results.
-    # The LLM often generates a negative pre-text ("I don't know...") before
-    # triggering RECALL, which would then contradict the actual results.
-    _hold_spoken = action is not None and action["type"] == "RECALL"
+    # RECALL / LOOKUP_CONTACT: hold spoken_text — the LLM often pre-announces
+    # a summary before the action tag, which would be read aloud and then
+    # contradicted (RECALL) or redundant (LOOKUP_CONTACT, card is the answer).
+    _hold_spoken = action is not None and action["type"] in ("RECALL", "LOOKUP_CONTACT")
 
     if spoken_text and not _hold_spoken:
         log.info(f"Jarvis: {spoken_text[:80]}")

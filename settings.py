@@ -377,3 +377,7 @@ PENDING_CARD_HTML: str = ""
 # Wenn gesetzt, schickt telegram_bot diesen Text statt der action_result-Sprache.
 # Wird in actions.py befuellt (z.B. LOOKUP_CONTACT), in telegram_bot.py geleert.
 PENDING_TELEGRAM_TEXT: str = ""
+
+# Optionaler parse_mode fuer PENDING_TELEGRAM_TEXT ("HTML", "MarkdownV2" oder "").
+# Wird zusammen mit PENDING_TELEGRAM_TEXT gesetzt und geleert.
+PENDING_TELEGRAM_PARSE_MODE: str = ""

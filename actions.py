@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import datetime
+import html as _html_module
 import os
 
 import settings as S
@@ -366,8 +367,78 @@ def _build_person_card_telegram(
     notes: list | None = None,
     tax_assessments: list | None = None,
     advance_payments: list | None = None,
+    html: bool = False,
 ) -> str:
-    """Formatierter Telegram-Text (kein HTML-Rendering noetig)."""
+    """Formatierter Telegram-Text.
+
+    Wenn ``html=True``, wird Telegram HTML-Formatierung verwendet:
+    fetter Name, fette Abschnittskoepfe, Monospace fuer Steuernummern.
+    Alle Nutzerdaten werden mit ``html.escape()`` gesichert.
+    """
+    if html:
+        esc = _html_module.escape
+
+        header_name = f"<b>{esc(name)}</b>"
+        meta = []
+        if mnr:
+            meta.append(f"Nr. {esc(mnr)}")
+        if steuernr:
+            meta.append(f"StNr <code>{esc(steuernr)}</code>")
+        if meta:
+            header_name += "  ·  " + "  ·  ".join(meta)
+        lines = [header_name]
+        if idnr:
+            lines.append(f"IdNr: <code>{esc(idnr)}</code>")
+
+        info = []
+        if funktion:
+            info.append(f"Funktion: {esc(funktion)}")
+        if anrede:
+            info.append(f"Anrede: {esc(anrede)}")
+        if last_contact:
+            info.append(f"Letzter Kontakt: {esc(_fmt_date(last_contact))}")
+        if info:
+            lines.append("")
+            lines.extend(info)
+
+        if open_points:
+            lines.append("\n<b>Offene Punkte</b>")
+            lines.extend(f"• {esc(pt)}" for pt in open_points)
+
+        if notes:
+            lines.append("\n<b>Notizen</b>")
+            lines.extend(f"• {esc(n)}" for n in notes[:3])
+
+        def _ta_line_html(ta: dict) -> str:
+            steuerart = esc(str(ta.get("steuerart", "?")))
+            jahr = esc(str(ta.get("steuerjahr", "?")))
+            betrag = ta.get("betrag_eur")
+            faellig = ta.get("zahlungstermin") or ""
+            if betrag is not None:
+                try:
+                    b = float(betrag)
+                    richtung = "Erstattung" if b >= 0 else "Nachzahlung"
+                    s = f"{abs(b):,.2f} €".replace(",", "X").replace(".", ",").replace("X", ".")
+                    b_info = f" · {esc(richtung)} {s}"
+                except (ValueError, TypeError):
+                    b_info = f" · {esc(str(betrag))} €"
+            else:
+                b_info = ""
+            f_info = f" · fällig {esc(_fmt_date(faellig))}" if faellig and faellig != "null" else ""
+            return f"• {steuerart} {jahr}{b_info}{f_info}"
+
+        if tax_assessments:
+            lines.append("\n<b>Steuerbescheide</b>")
+            lines.extend(_ta_line_html(ta) for ta in tax_assessments)
+
+        if advance_payments:
+            lines.append("\n<b>Vorauszahlungen</b>")
+            for ap in advance_payments:
+                lines.append(f"• {esc(str(ap.get('steuerart','?')))} {esc(str(ap.get('vorauszahlungsjahr','?')))}")
+
+        return "\n".join(lines)
+
+    # --- plain-text fallback (html=False) ---
     header = name
     meta = []
     if mnr:
@@ -1509,7 +1580,8 @@ async def execute_action(action: dict) -> str:
             advance_payments=r.get("advance_payments", []),
         )
         S.PENDING_CARD_HTML = _build_person_card_html(**_card_kwargs)
-        S.PENDING_TELEGRAM_TEXT = _build_person_card_telegram(**_card_kwargs)
+        S.PENDING_TELEGRAM_TEXT = _build_person_card_telegram(**_card_kwargs, html=True)
+        S.PENDING_TELEGRAM_PARSE_MODE = "HTML"
 
         # Kurzer gesprochener Text fuer den Orb + optionaler Hinweis
         spoken = f"Hier sind die Informationen zu {r['name']}."
