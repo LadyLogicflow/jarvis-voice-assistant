@@ -454,7 +454,7 @@ async def process_message(session_id: str, user_text: str, ws: WebSocket) -> Non
         asyncio.create_task(_extract_and_save_promises(user_text))
 
     response = await S.ai.messages.create(
-        model="claude-haiku-4-5-20251001",
+        model=S.HAIKU_MODEL,
         max_tokens=1024,
         system=get_system_prompt(),
         messages=history,
@@ -558,7 +558,7 @@ async def process_message(session_id: str, user_text: str, ws: WebSocket) -> Non
         else:
             addr = pick_address()
             synth_resp = await S.ai.messages.create(
-                model="claude-haiku-4-5-20251001",
+                model=S.HAIKU_MODEL,
                 max_tokens=350,
                 system=(
                     f"Du bist Jarvis, der britisch-hoefliche KI-Butler. "
@@ -656,7 +656,7 @@ async def process_message(session_id: str, user_text: str, ws: WebSocket) -> Non
     # Research actions get more tokens; others stay at 400.
     summary_max_tokens = 700 if action["type"] in ("SEARCH", "BROWSE") else 400
     summary_resp = await S.ai.messages.create(
-        model="claude-haiku-4-5-20251001",
+        model=S.HAIKU_MODEL,
         max_tokens=summary_max_tokens,
         system=summary_system,
         messages=[{"role": "user", "content": f"Fasse zusammen:\n\n{action_result}"}],

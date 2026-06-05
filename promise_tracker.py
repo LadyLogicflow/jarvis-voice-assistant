@@ -90,7 +90,7 @@ async def extract_promises(text: str) -> list[str]:
     )
     try:
         resp = await S.ai.messages.create(
-            model="claude-haiku-4-5-20251001",
+            model=S.HAIKU_MODEL,
             max_tokens=300,
             system=sys_prompt,
             messages=[{"role": "user", "content": text[:2000]}],

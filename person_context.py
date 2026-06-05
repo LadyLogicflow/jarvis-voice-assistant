@@ -286,7 +286,7 @@ async def _synthesize(context_data: dict) -> str:
     user_msg = "\n".join(parts)
     try:
         resp = await S.ai.messages.create(
-            model="claude-haiku-4-5-20251001",
+            model=S.HAIKU_MODEL,
             max_tokens=150,
             system=_SYNTHESIS_PROMPT,
             messages=[{"role": "user", "content": user_msg}],

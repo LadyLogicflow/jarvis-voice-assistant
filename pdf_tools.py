@@ -33,7 +33,7 @@ def pop_daily_pdf_results() -> list[str]:
     return results
 
 # Haiku-Modell — konsistent mit dem Rest des Projekts.
-_HAIKU_MODEL = "claude-haiku-4-5-20251001"
+_HAIKU_MODEL = S.HAIKU_MODEL
 
 # ---------------------------------------------------------------------------
 # Lokale Extraktion via Regex (kein API-Aufruf)
@@ -427,7 +427,7 @@ async def analyze_steuerbescheid(filepath: str) -> dict:
 async def _analyze_with_haiku(text: str, filename: str) -> dict:
     """Haiku-Fallback — nur wenn lokale Extraktion versagt und keine Mandantenliste."""
     _MAX_CHARS = 12_000
-    _HAIKU_MODEL = "claude-haiku-4-5-20251001"
+    _HAIKU_MODEL = S.HAIKU_MODEL
     _PROMPT = """\
 Du analysierst einen deutschen Steuerbescheid als PDF-Text.
 Bestimme den Typ und extrahiere die relevanten Felder.

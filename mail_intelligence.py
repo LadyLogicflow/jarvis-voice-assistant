@@ -213,7 +213,7 @@ async def _classify_relevance(
     )
     try:
         resp = await S.ai.messages.create(
-            model="claude-haiku-4-5-20251001",
+            model=S.HAIKU_MODEL,
             max_tokens=10,
             messages=[{"role": "user", "content": prompt}],
         )
@@ -255,7 +255,7 @@ async def _extract_knowledge(
     )
     try:
         resp = await S.ai.messages.create(
-            model="claude-haiku-4-5-20251001",
+            model=S.HAIKU_MODEL,
             max_tokens=600,
             messages=[{"role": "user", "content": prompt}],
         )
