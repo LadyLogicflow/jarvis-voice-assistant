@@ -1434,8 +1434,20 @@ async def meal_plan_scheduler() -> None:
     1. Frage an Catrin senden (Telegram + Orb): besondere Wuensche?
     2. Bis zu 15 Minuten auf Antwort warten (S.MEAL_PLAN_AWAITING_WISHES).
     3. Plan mit Wuenschen (oder ohne, falls keine Antwort) generieren und senden.
+
+    Startup-Guard (Issue #179): Falls beim Start bereits ein Plan fuer
+    die aktuelle ISO-Woche im Cache liegt (erkannt via
+    meal_plan.get_generated_week()), wird triggered_for_week vorbelegt
+    und der Donnerstag-Trigger fuer diese Woche uebersprungen.
     """
-    triggered_for_week = ""  # ISO-Woche ("2026-W18") als Dedup-Guard
+    import meal_plan as _mp_guard
+    _startup_week = _mp_guard.get_generated_week()
+    if _startup_week:
+        log.info(
+            f"meal_plan_scheduler: Plan fuer {_startup_week!r} bereits im Cache — "
+            "Donnerstag-Trigger fuer diese Woche wird uebersprungen"
+        )
+    triggered_for_week = _startup_week  # ISO-Woche ("2026-W18") als Dedup-Guard
     _TRIGGER_WEEKDAY = 3   # Donnerstag
     _TRIGGER_TIME = "09:00"
     _WISHES_TIMEOUT = 900   # 15 Minuten
