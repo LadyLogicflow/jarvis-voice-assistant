@@ -67,10 +67,14 @@
   "mail_monitor_accounts": [
     {"name": "Apple", "host": "imap.mail.me.com", "user": "you@me.com", "port": 993, "ssl": true, "folder": "INBOX",
      "_smtp_note": "smtp_host/smtp_port optional — defaults: replace 'imap.' with 'smtp.' in host, port 587",
-     "smtp_host": "smtp.mail.me.com", "smtp_port": 587, "trash_folder": "Deleted Messages"},
+     "smtp_host": "smtp.mail.me.com", "smtp_port": 587, "trash_folder": "Deleted Messages",
+     "_spam_note": "spam_folder: IMAP folder for werbung/newsletter mails (default: 'Werbung'). iCloud uses no INBOX. prefix.",
+     "spam_folder": "Werbung"},
     {"name": "HILO",  "host": "imap.example.de",   "user": "you@hilo.de", "port": 993, "ssl": true, "folder": "INBOX",
      "_trash_note": "trash_folder: IMAP-Name des Papierkorbs. 'Trash' (Standard), 'Gelöschte Elemente', 'Papierkorb' — je nach Anbieter.",
-     "trash_folder": "Trash"}
+     "trash_folder": "Trash",
+     "_spam_note": "spam_folder: Zielordner fuer Werbung (default: 'Werbung'). IMAP-Prefix beachten, z.B. 'INBOX.Werbung' fuer Horde/Dovecot.",
+     "spam_folder": "INBOX.Werbung"}
   ],
 
   "_comment_clap": "Clap-trigger sensitivity (scripts/clap-trigger.py).",

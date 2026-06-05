@@ -195,6 +195,7 @@ def _normalize_account(raw: dict) -> dict:
         "sent_folder": raw.get("sent_folder", "Sent"),
         "trash_folder": raw.get("trash_folder", config.get("trash_folder", "Trash")),
         "drafts_folder": raw.get("drafts_folder", config.get("drafts_folder", "Drafts")),
+        "spam_folder": raw.get("spam_folder", "Werbung"),
         "env_key": env_key,
         "smtp_host": raw.get("smtp_host", _default_smtp),
         "smtp_port": int(raw.get("smtp_port", 587)),
