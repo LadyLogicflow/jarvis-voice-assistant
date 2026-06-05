@@ -2455,12 +2455,18 @@ async def execute_action(action: dict) -> str:
 
     elif t == "INSTALL_DEPS":
         # Installiert fehlende Python-Pakete im laufenden venv via sys.executable.
+        # Issue #169: subprocess.run wird im Thread-Pool ausgefuehrt damit der
+        # Event-Loop waehrend der Installation (bis zu 5 Minuten) nicht blockiert.
         import subprocess, sys
         pkg = (p.strip() or "pymupdf").lower()
         try:
-            result_proc = subprocess.run(
-                [sys.executable, "-m", "pip", "install", pkg],
-                capture_output=True, text=True, timeout=300,
+            loop = asyncio.get_running_loop()
+            result_proc = await loop.run_in_executor(
+                None,
+                lambda: subprocess.run(
+                    [sys.executable, "-m", "pip", "install", pkg],
+                    capture_output=True, text=True, timeout=300,
+                ),
             )
             if result_proc.returncode == 0:
                 last_line = [l for l in result_proc.stdout.splitlines() if l.strip()][-1] if result_proc.stdout.strip() else "OK"
