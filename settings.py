@@ -258,6 +258,11 @@ HISTORY_PATH = os.path.join(os.path.dirname(__file__), ".jarvis_history.json")
 TODOIST_PROJECTS = config.get("todoist_projects", {})
 # Default section for every new ADDTASK (section_id from Todoist URL).
 TODOIST_DEFAULT_SECTION: str = config.get("todoist_default_section", "")
+BOOKING_LINK: str = config.get(
+    "booking_link",
+    "https://hiloneuss.simplybook.it/v2/#book/service/4/count/1/provider/5/",
+)
+
 TODOIST_PROJECT_IDS = [
     pid for key in ("hilo", "dihag", "privat")
     if (pid := TODOIST_PROJECTS.get(key))

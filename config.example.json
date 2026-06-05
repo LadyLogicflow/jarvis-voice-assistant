@@ -93,5 +93,8 @@
   "_comment_meal_plan": "Speiseplanung (issue #125). meal_plan_servings_default: Standardanzahl Personen (ausser Mo/Do: immer 3). meal_plan_diabetes_mode: Typ-2-Diabetiker-geeignete Gerichte (kein Zucker, wenig einfache Kohlenhydrate). meal_plan_reminder_time: Uhrzeit der taeglichen Rezept-Erinnerung via Telegram (HH:MM).",
   "meal_plan_servings_default": 4,
   "meal_plan_diabetes_mode": true,
-  "meal_plan_reminder_time": "17:30"
+  "meal_plan_reminder_time": "17:30",
+
+  "_comment_booking": "Simplybook-Buchungslink fuer Rueckruf-Aufgaben (issue #174). Wird in Mail-Entwuerfen fuer Callback-Tasks verwendet.",
+  "booking_link": "https://hiloneuss.simplybook.it/v2/#book/service/4/count/1/provider/5/"
 }

@@ -25,7 +25,6 @@ log = logging.getLogger("jarvis.planner")
 
 _TZ = pytz.timezone("Europe/Berlin")
 _DB_PATH = os.path.join(os.path.dirname(__file__), ".jarvis_planner.json")
-_BOOKING_LINK = "https://hiloneuss.simplybook.it/v2/#book/service/4/count/1/provider/5/"
 
 # Calendar event titles treated as free (scheduling window unblocked).
 # Issue #114: "Urlaub", "FFH Neuss", "geblockt" may fill the 17-19 window
@@ -263,7 +262,7 @@ async def _sync_once() -> list[str]:
             body = (
                 f"Sehr geehrte Damen und Herren,\n\n"
                 f"für ein Telefonat bitten wir Sie, einen Termin über folgenden Link zu buchen:\n"
-                f"{_BOOKING_LINK}\n\n"
+                f"{S.BOOKING_LINK}\n\n"
                 f"Mit freundlichen Grüßen\n"
                 f"Lohnsteuerhilfeverein HILO e.V., Beratungsstelle Neuss"
                 f"{placeholder}"
