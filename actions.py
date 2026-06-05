@@ -320,20 +320,35 @@ def _build_person_card_html(
 
     if tax_assessments:
         items = []
-        for ta in tax_assessments:
+        for ta in sorted(tax_assessments, key=lambda x: str(x.get("steuerjahr", "")), reverse=True):
             steuerart = esc(ta.get("steuerart", "?"))
             jahr = esc(str(ta.get("steuerjahr", "?")))
+            datum = _fmt_date(ta.get("ausstellungsdatum") or "")
+            datum_str = esc(f" vom {datum}") if datum else ""
             b_str = esc(_betrag_str(ta))
             faellig = _fmt_date(ta.get("zahlungstermin") or "")
-            f_str = esc(f" · fällig {faellig}") if faellig and faellig != "null" else ""
-            items.append(f'<div class="p-bullet">{steuerart} {jahr}{b_str}{f_str}</div>')
+            f_str = esc(f", fällig {faellig}") if faellig and faellig != "null" else ""
+            items.append(f'<div class="p-bullet"><b>Letzter {steuerart}-Bescheid:</b> {steuerart} {jahr}{datum_str}{b_str}{f_str}</div>')
         parts.append(f'<div class="p-card-section"><div class="p-section-title">Steuerbescheide</div>{"".join(items)}</div>')
 
     if advance_payments:
-        items = [
-            f'<div class="p-bullet">{esc(ap.get("steuerart","?"))} {esc(str(ap.get("vorauszahlungsjahr","?")))}</div>'
-            for ap in advance_payments
-        ]
+        items = []
+        for ap in sorted(advance_payments, key=lambda x: str(x.get("vorauszahlungsjahr", "")), reverse=True):
+            steuerart = esc(ap.get("steuerart", "?"))
+            jahr = esc(str(ap.get("vorauszahlungsjahr", "?")))
+            datum = _fmt_date(ap.get("ausstellungsdatum") or "")
+            datum_str = esc(f" vom {datum}") if datum else ""
+            q_parts = []
+            for q, label in [("q1", "Q1"), ("q2", "Q2"), ("q3", "Q3"), ("q4", "Q4")]:
+                val = ap.get(q)
+                if val is not None:
+                    try:
+                        s = f"{abs(float(val)):,.2f} €".replace(",", "X").replace(".", ",").replace("X", ".")
+                        q_parts.append(f"{label}: {s}")
+                    except (ValueError, TypeError):
+                        q_parts.append(f"{label}: {val} €")
+            q_str = esc("  " + "  ".join(q_parts)) if q_parts else ""
+            items.append(f'<div class="p-bullet"><b>Vorauszahlungsbescheid {steuerart} {jahr}</b>{datum_str}{q_str}</div>')
         parts.append(f'<div class="p-card-section"><div class="p-section-title">Vorauszahlungen</div>{"".join(items)}</div>')
 
     return '<div class="p-card">' + "".join(parts) + "</div>"
