@@ -157,6 +157,14 @@ async def _lifespan(_app):  # type: ignore[no-untyped-def]  # AsyncGenerator
     """Startup: prime weather/tasks + spawn the morning-brief task and
     the proactive-briefs task. Shutdown: cancel both and close the
     shared httpx client."""
+    # Prüfe kritische optionale Abhängigkeiten beim Start
+    try:
+        import fitz  # noqa: F401
+    except ImportError:
+        log.error(
+            "STARTUP: PyMuPDF (fitz) nicht installiert — "
+            "PDF-Analyse deaktiviert. Fix: pip install pymupdf"
+        )
     await refresh_data()
     session_state.load_all()
     import meal_plan as _mp
