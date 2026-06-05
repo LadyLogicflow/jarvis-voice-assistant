@@ -10,6 +10,7 @@ STEUER_BRIEF, ...) they should use `import settings as S` and read
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import logging.handlers
@@ -325,6 +326,12 @@ MEAL_PLAN_WEEK: dict = {}
 # Wunsch-Interaktion: Scheduler wartet auf Antwort bevor er den Plan generiert.
 MEAL_PLAN_AWAITING_WISHES: bool = False
 MEAL_PLAN_WISHES: str = ""
+# Lock serialisiert gleichzeitige Schreibzugriffe auf MEAL_PLAN_WISHES
+# (Issue #170: Race Condition zwischen Web-UI und Telegram).
+MEAL_PLAN_WISHES_LOCK: asyncio.Lock = asyncio.Lock()
+# Event wird gesetzt sobald MEAL_PLAN_WISHES geschrieben wurde, damit der
+# Scheduler nicht mehr pollt sondern effizient wartet.
+MEAL_PLAN_WISHES_EVENT: asyncio.Event = asyncio.Event()
 
 # Apple Health / Apple Watch Daten (via Health Auto Export Webhook /health).
 # HEALTH_INFO = heutiger Stand. HEALTH_INFO_PREV = gestrige Werte (fuer Vergleich).

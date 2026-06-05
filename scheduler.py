@@ -1460,6 +1460,7 @@ async def meal_plan_scheduler() -> None:
 
                     # Wuensche zuruecksetzen und auf Antwort warten
                     S.MEAL_PLAN_WISHES = ""
+                    S.MEAL_PLAN_WISHES_EVENT.clear()
                     S.MEAL_PLAN_AWAITING_WISHES = True
                     question = (
                         "Ich erstelle gleich den Speiseplan fuer naechste Woche. "
@@ -1470,12 +1471,17 @@ async def meal_plan_scheduler() -> None:
                     else:
                         await telegram_bot.send_user_text(question)
 
-                    # Auf Antwort warten (max. 15 Minuten)
-                    waited = 0
-                    while S.MEAL_PLAN_AWAITING_WISHES and waited < _WISHES_TIMEOUT:
-                        await asyncio.sleep(30)
-                        waited += 30
+                    # Auf Antwort warten (max. 15 Minuten) — event-basiert statt
+                    # polling, damit keine Antwort verloren geht (Issue #170).
+                    try:
+                        await asyncio.wait_for(
+                            S.MEAL_PLAN_WISHES_EVENT.wait(),
+                            timeout=_WISHES_TIMEOUT,
+                        )
+                    except asyncio.TimeoutError:
+                        pass
                     S.MEAL_PLAN_AWAITING_WISHES = False
+                    S.MEAL_PLAN_WISHES_EVENT.clear()
 
                     wishes = S.MEAL_PLAN_WISHES.strip()
                     if wishes:
@@ -1498,6 +1504,7 @@ async def meal_plan_scheduler() -> None:
                     # BaseException (not just Exception) catches CancelledError so
                     # the flag is never left stuck True after task cancellation.
                     S.MEAL_PLAN_AWAITING_WISHES = False
+                    S.MEAL_PLAN_WISHES_EVENT.clear()
                     log.warning(
                         f"meal_plan_scheduler: Fehler: {type(e).__name__}: {e}"
                     )
