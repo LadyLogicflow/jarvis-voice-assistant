@@ -2453,6 +2453,24 @@ async def execute_action(action: dict) -> str:
             return "Gelöscht:\n" + "\n".join(cleared)
         return f"Keine Steuerdaten für '{mandant_q}' gefunden."
 
+    elif t == "INSTALL_DEPS":
+        # Installiert fehlende Python-Pakete im laufenden venv via sys.executable.
+        import subprocess, sys
+        pkg = (p.strip() or "pymupdf").lower()
+        try:
+            result_proc = subprocess.run(
+                [sys.executable, "-m", "pip", "install", pkg],
+                capture_output=True, text=True, timeout=300,
+            )
+            if result_proc.returncode == 0:
+                last_line = [l for l in result_proc.stdout.splitlines() if l.strip()][-1] if result_proc.stdout.strip() else "OK"
+                return f"Installation erfolgreich: {last_line}"
+            return f"Installation fehlgeschlagen (exit {result_proc.returncode}):\n{result_proc.stderr[-500:]}"
+        except subprocess.TimeoutExpired:
+            return "Timeout nach 5 Minuten — bitte nochmal versuchen."
+        except Exception as exc_inst:
+            return f"Fehler: {exc_inst}"
+
     elif t == "ANALYZE_ALL_PDFS":
         # Verarbeitet alle gespeicherten PDFs in jarvis_pdfs/ nach.
         import glob
