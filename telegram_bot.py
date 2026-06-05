@@ -135,9 +135,11 @@ async def _summarize_action(action_type: str, action_result: str) -> str:
     return summary
 
 
-async def _ask_claude(session_id: str, user_text: str) -> str:
+async def _ask_claude(session_id: str, user_text: str) -> tuple[str, str]:
     """Mirror server.process_message: LLM call, optional action, optional
-    summarization. Returns the final spoken text.
+    summarization. Returns ``(reply_text, parse_mode)`` where *parse_mode* is
+    an empty string for plain text or "HTML" / "MarkdownV2" when the action
+    produced formatted output (e.g. LOOKUP_CONTACT person card).
 
     Conversation history is loaded from *conversation.conversations* (seeded
     from disk on first use for this session_id) so every Telegram exchange
@@ -174,7 +176,7 @@ async def _ask_claude(session_id: str, user_text: str) -> str:
 
     # No action — just speak the LLM's text.
     if not action:
-        return spoken_text or reply
+        return spoken_text or reply, ""
 
     # Action follows: persist the LLM's pre-announcement *before* executing
     # the action, mirroring server.process_message (line ~288) so that
@@ -191,26 +193,28 @@ async def _ask_claude(session_id: str, user_text: str) -> str:
         return (
             f"{spoken_text} Diese Aktion ({a_type}) macht ueber Telegram keinen "
             f"Sinn, {pick_address()} — versuch's am Mac."
-        ).strip()
+        ).strip(), ""
 
     try:
         action_result = await execute_action(action)
         log.info(f"Telegram action result: '{str(action_result)[:120]}'")
     except Exception as e:
         log.warning(f"Telegram action failed: {type(e).__name__}: {e}")
-        return f"{spoken_text} Die Aktion ist fehlgeschlagen, {pick_address()}."
+        return f"{spoken_text} Die Aktion ist fehlgeschlagen, {pick_address()}.", ""
 
     # Wenn die Aktion einen separaten Telegram-Text hinterlegt hat (z.B.
     # LOOKUP_CONTACT formatierte Kachel), diesen direkt senden statt der
-    # gesprochenen Kurzfassung.
+    # gesprochenen Kurzfassung. Optionaler parse_mode fuer HTML-Formatierung.
     _tg_text = S.PENDING_TELEGRAM_TEXT
+    _tg_parse_mode = S.PENDING_TELEGRAM_PARSE_MODE
     S.PENDING_TELEGRAM_TEXT = ""
+    S.PENDING_TELEGRAM_PARSE_MODE = ""
     if _tg_text:
-        return _tg_text
+        return _tg_text, _tg_parse_mode
 
     # Empty-result sentinels.
     if isinstance(action_result, str) and action_result in EMPTY_REPLIES:
-        return EMPTY_REPLIES[action_result]
+        return EMPTY_REPLIES[action_result], ""
 
     # Actions whose result is already user-facing text. Same passthrough
     # set as server.process_message — never re-summarize these.
@@ -226,11 +230,11 @@ async def _ask_claude(session_id: str, user_text: str) -> str:
         "PLAN_NOW", "WEATHER", "IMPORT_MAIL_HISTORY",
         "SPEISEPLAN", "SPEISEPLAN_SHOW", "SPEISEPLAN_PREF",
     ):
-        return action_result
+        return action_result, ""
 
     # The rest go through a summarization pass like the WebSocket flow.
     summary = await _summarize_action(a_type, action_result)
-    return f"{spoken_text} {summary}".strip() if spoken_text else summary
+    return (f"{spoken_text} {summary}".strip() if spoken_text else summary), ""
 
 
 async def _tts_full(text: str) -> bytes:
@@ -307,14 +311,17 @@ async def _handle_message(update, context, *, source_text: Optional[str] = None)
             )
             return
 
-        reply_text = await _ask_claude(session_id, user_text)
+        reply_text, reply_parse_mode = await _ask_claude(session_id, user_text)
         log.info(f"Telegram reply: '{reply_text[:120]}'")
         if not reply_text.strip():
             reply_text = f"Ich habe keine Antwort erhalten, {pick_address()}."
         # Persist the assistant turn so the next message has full context.
         await conversation.append_message(session_id, "assistant", reply_text)
 
-        await update.message.reply_text(reply_text)
+        await update.message.reply_text(
+            reply_text,
+            parse_mode=reply_parse_mode or None,
+        )
     except Exception as e:
         log.warning(f"Telegram handler error: {type(e).__name__}: {e}")
         try:
@@ -363,10 +370,16 @@ _app = None
 _TELEGRAM_MAX_LEN = 4096
 
 
-async def send_user_text(text: str) -> bool:
+async def send_user_text(text: str, parse_mode: str = "") -> bool:
     """Push a text message to Catrin's Telegram chat from anywhere in
     the server. Returns True on success, False if not configured /
-    bot not running / send failed. Quiet-hours aware (Issue #133)."""
+    bot not running / send failed. Quiet-hours aware (Issue #133).
+
+    Args:
+        text: The message text to send.
+        parse_mode: Optional Telegram parse mode ("HTML", "MarkdownV2").
+            Pass an empty string for plain text (default).
+    """
     if S.is_quiet_hours():
         log.info("send_user_text: quiet hours, skipping Telegram")
         return False
@@ -378,7 +391,11 @@ async def send_user_text(text: str) -> bool:
     if len(text) > _TELEGRAM_MAX_LEN:
         text = text[: _TELEGRAM_MAX_LEN - 4] + " ..."
     try:
-        await _app.bot.send_message(chat_id=S.TELEGRAM_CHAT_ID, text=text)
+        await _app.bot.send_message(
+            chat_id=S.TELEGRAM_CHAT_ID,
+            text=text,
+            parse_mode=parse_mode or None,
+        )
         return True
     except Exception as e:
         log.warning(f"send_user_text failed: {type(e).__name__}: {e}")
