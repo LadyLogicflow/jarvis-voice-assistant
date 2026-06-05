@@ -133,7 +133,7 @@ TELEGRAM_QUIET_END = config.get("telegram_quiet_end", "07:00")
 # Handy schon nervt.
 MAC_QUIET_START = config.get("mac_quiet_start", "22:00")
 MAC_QUIET_END = config.get("mac_quiet_end", "07:00")
-WHISPER_MODEL = config.get("whisper_model", "base")  # tiny | base | small | medium | large
+WHISPER_MODEL = config.get("whisper_model", "small")  # tiny | base | small | medium | large
 
 # Mail backend ("applescript" = macOS Mail.app | "imap" = cross-platform).
 # Defined here (before mail_monitor_accounts compat block) because the
