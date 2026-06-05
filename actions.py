@@ -2416,6 +2416,29 @@ async def execute_action(action: dict) -> str:
                 lines.append(f"\nPDF-Text-Extraktion Fehler: {exc2}")
         return "\n".join(lines)
 
+    elif t == "ANALYZE_ALL_PDFS":
+        # Verarbeitet alle gespeicherten PDFs in /tmp/jarvis_pdfs/ nach.
+        import glob
+        from pdf_tools import analyze_steuerbescheid
+        pdf_files = sorted(glob.glob("/tmp/jarvis_pdfs/*.pdf"), key=os.path.getmtime)
+        if not pdf_files:
+            return "Keine PDFs in /tmp/jarvis_pdfs/ gefunden."
+        ok, failed, skipped = 0, 0, 0
+        for path_i in pdf_files:
+            try:
+                result_i = await analyze_steuerbescheid(path_i)
+                if result_i.get("typ") in ("Steuerbescheid", "Vorauszahlungsbescheid") and result_i.get("mandant"):
+                    ok += 1
+                elif result_i.get("typ") == "fehler":
+                    failed += 1
+                else:
+                    skipped += 1
+            except Exception as exc_i:
+                log.warning("ANALYZE_ALL_PDFS: %s: %s", os.path.basename(path_i), exc_i)
+                failed += 1
+        return (f"{len(pdf_files)} PDFs verarbeitet: {ok} gespeichert, "
+                f"{skipped} übersprungen (Typ unbekannt), {failed} Fehler.")
+
     elif t == "ANALYZE_PDF":
         # Issue #109: Steuerbescheid-Analyse via PyMuPDF + Claude Haiku.
         # payload = absoluter Pfad zur PDF-Datei.
