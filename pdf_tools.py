@@ -19,7 +19,7 @@ import settings as S
 
 log = S.log
 
-_PDF_DIR = "/tmp/jarvis_pdfs"
+_PDF_DIR = os.path.join(os.path.dirname(__file__), "jarvis_pdfs")
 
 # Analyse-Ergebnisse des laufenden Tages — werden um 20:30 in die
 # Abendzusammenfassung einbezogen und danach geleert.

@@ -2401,7 +2401,7 @@ async def execute_action(action: dict) -> str:
         # Diagnose: zeigt gespeicherte PDFs + Extraktions-Details.
         import glob, re as _re2
         lines: list[str] = []
-        pdf_files = sorted(glob.glob("/tmp/jarvis_pdfs/*.pdf"), key=os.path.getmtime, reverse=True)
+        pdf_files = sorted(glob.glob(os.path.join(os.path.dirname(__file__), "jarvis_pdfs", "*.pdf")), key=os.path.getmtime, reverse=True)
         lines.append(f"Gespeicherte PDFs: {len(pdf_files)}")
         for pf in pdf_files[:5]:
             lines.append(f"  • {os.path.basename(pf)}")
@@ -2454,12 +2454,12 @@ async def execute_action(action: dict) -> str:
         return f"Keine Steuerdaten für '{mandant_q}' gefunden."
 
     elif t == "ANALYZE_ALL_PDFS":
-        # Verarbeitet alle gespeicherten PDFs in /tmp/jarvis_pdfs/ nach.
+        # Verarbeitet alle gespeicherten PDFs in jarvis_pdfs/ nach.
         import glob
         from pdf_tools import analyze_steuerbescheid
-        pdf_files = sorted(glob.glob("/tmp/jarvis_pdfs/*.pdf"), key=os.path.getmtime)
+        pdf_files = sorted(glob.glob(os.path.join(os.path.dirname(__file__), "jarvis_pdfs", "*.pdf")), key=os.path.getmtime)
         if not pdf_files:
-            return "Keine PDFs in /tmp/jarvis_pdfs/ gefunden."
+            return "Keine PDFs in jarvis_pdfs/ gefunden."
         ok, failed, skipped = 0, 0, 0
         for path_i in pdf_files:
             try:
