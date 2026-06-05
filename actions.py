@@ -2533,10 +2533,9 @@ async def execute_action(action: dict) -> str:
     elif t == "RETRIAGE_INBOX":
         # Räumt bekannte Absender-Kategorien aus der INBOX auf — verschiebt
         # DHL/Hermes/DPD/UPS-Mails retroaktiv in den konfigurierten Ordner.
+        # Ohne Konto-Angabe werden ALLE konfigurierten Konten verarbeitet.
         import mail_actions as _ma
         import mail_triage as _mt
-        account_name = p.strip() or "HILO"
-        # Zielordner aus der triage-rules-Datei lesen
         import json as _json, os as _os
         _rules_path = _os.path.join(_os.path.dirname(__file__), "mail_triage_rules.json")
         _folder = "DHL"
@@ -2547,15 +2546,25 @@ async def execute_action(action: dict) -> str:
                 _folder = _rules.get("heuristics", {}).get("package_to_dhl_folder", "DHL")
             except Exception:
                 pass
-        moved, errors = await _ma.retriage_inbox(
-            account_name, _folder, _mt._PACKAGE_FROM_DOMAINS
-        )
-        if moved == 0 and errors == 0:
-            return f"Keine DHL/Paket-Mails im Posteingang von {account_name} gefunden."
-        parts = [f"{moved} Mail(s) in '{_folder}' verschoben"]
-        if errors:
-            parts.append(f"{errors} Fehler")
-        return f"{', '.join(parts)} ({account_name})."
+        account_name = p.strip()
+        # Kein Konto angegeben → alle konfigurierten Konten
+        if account_name:
+            accounts_to_process = [account_name]
+        else:
+            accounts_to_process = [a["name"] for a in S.MAIL_MONITOR_ACCOUNTS] or ["HILO"]
+        total_moved, total_errors = 0, 0
+        for _acc_name in accounts_to_process:
+            _m, _e = await _ma.retriage_inbox(
+                _acc_name, _folder, _mt._PACKAGE_FROM_DOMAINS
+            )
+            total_moved += _m
+            total_errors += _e
+        if total_moved == 0 and total_errors == 0:
+            return f"Keine DHL/Paket-Mails im Posteingang gefunden ({', '.join(accounts_to_process)})."
+        parts = [f"{total_moved} Mail(s) in '{_folder}' verschoben"]
+        if total_errors:
+            parts.append(f"{total_errors} Fehler")
+        return f"{', '.join(parts)} ({', '.join(accounts_to_process)})."
 
     elif t == "MAIL_KNOWLEDGE_RECENT":
         # Issue #161: Neueste Einträge im E-Mail-Wissenspeicher.
