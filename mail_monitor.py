@@ -1007,6 +1007,18 @@ async def _process_new_uids(account: dict, client, uids: list[int]) -> None:
             except Exception as e:
                 log.warning(f"mail_monitor[{name}] uid={uid}: triage failed: {type(e).__name__}: {e}")
                 triage = {"action": "none"}
+            # Per-account spam_folder overrides the global werbung_folder for
+            # werbung/newsletter mails (Issue #165). Applies when the LLM
+            # classified the mail as "werbung" OR when the newsletter heuristic
+            # fired (List-Unsubscribe header present).
+            _is_werbung_move = (
+                triage["action"] == "move"
+                and (category == "werbung" or (msg is not None and msg.get("List-Unsubscribe")))
+            )
+            if _is_werbung_move:
+                per_account_spam = account.get("spam_folder")
+                if per_account_spam:
+                    triage = dict(triage, folder=per_account_spam)
             if triage["action"] != "none":
                 log.info(f"mail_monitor[{name}] uid={uid}: triage -> {triage}")
                 import activity_log as _al
