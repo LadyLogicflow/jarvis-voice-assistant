@@ -341,6 +341,152 @@ async def _handle_jarvis_trigger(
     await _move_to_trash(account, client, uid)
 
 
+async def _handle_image_attachments(
+    account: dict,
+    uid: int,
+    sender: str,
+    subject: str,
+    attachments: list[dict],
+) -> None:
+    """Verarbeitet Bild-Anhaenge aus HILO-Mails (Issue #177).
+
+    Prueft per Claude Vision (Haiku) ob die Bilder wie Steuerdokumente aussehen.
+    Wenn ja:
+      1. Konvertiert alle Tax-Bilder zu einem durchsuchbaren PDF.
+      2. Sendet das PDF per Telegram.
+      3. Legt einen Todoist-Task an: "Unterlagen <Sender> — Steuererkl. pruefen".
+
+    Args:
+        account:     Normalisiertes Account-Dict aus settings.
+        uid:         IMAP-UID der Mail.
+        sender:      Anzeigename / Adresse des Absenders.
+        subject:     Dekodierter Betreff.
+        attachments: Liste von Attachment-Dicts (filename, content_type, data).
+    """
+    import image_tools
+    import todoist_tools
+
+    name = account["name"]
+    log.info(
+        "mail_monitor[%s] uid=%s: pruefe %d Bild-Anhang/Anhaenge auf Steuerdokumente",
+        name, uid, len(attachments),
+    )
+
+    tax_images: list[bytes] = []
+    tax_types: list[str] = []
+
+    for att in attachments:
+        img_bytes = att["data"]
+        filename = att["filename"]
+        try:
+            is_tax, doc_type = await image_tools.is_tax_document(img_bytes, filename)
+        except Exception as e:
+            log.warning(
+                "mail_monitor[%s] uid=%s: is_tax_document fehlgeschlagen fuer %r: %s: %s",
+                name, uid, filename, type(e).__name__, e,
+            )
+            continue
+
+        if is_tax:
+            log.info(
+                "mail_monitor[%s] uid=%s: Steuerdokument erkannt: %r (%s)",
+                name, uid, filename, doc_type,
+            )
+            tax_images.append(img_bytes)
+            tax_types.append(doc_type)
+        else:
+            log.debug(
+                "mail_monitor[%s] uid=%s: kein Steuerdokument: %r",
+                name, uid, filename,
+            )
+
+    if not tax_images:
+        log.info(
+            "mail_monitor[%s] uid=%s: keine Steuerdokumente unter den Bild-Anhaengen",
+            name, uid,
+        )
+        return
+
+    # --- PDF erstellen ---
+    pdf_bytes: bytes
+    try:
+        pdf_bytes = image_tools.images_to_ocr_pdf(tax_images)
+        log.info(
+            "mail_monitor[%s] uid=%s: OCR-PDF erstellt (%d bytes, %d Bild(er))",
+            name, uid, len(pdf_bytes), len(tax_images),
+        )
+    except Exception as e:
+        log.warning(
+            "mail_monitor[%s] uid=%s: PDF-Erstellung fehlgeschlagen: %s: %s",
+            name, uid, type(e).__name__, e,
+        )
+        return
+
+    # --- PDF per Telegram senden ---
+    import datetime as _dt
+    date_str = _dt.date.today().strftime("%Y%m%d")
+    safe_sender = "".join(c if c.isalnum() or c in " -_" else "_" for c in sender)[:40]
+    pdf_filename = f"Steuerbelege_{safe_sender}_{date_str}.pdf"
+
+    try:
+        pdf_dir = "/tmp/jarvis_pdfs"
+        os.makedirs(pdf_dir, exist_ok=True)
+        pdf_path = os.path.join(pdf_dir, pdf_filename)
+        with open(pdf_path, "wb") as f:
+            f.write(pdf_bytes)
+
+        doc_types_str = ", ".join(dict.fromkeys(tax_types))  # dedupliziert, Reihenfolge erhalten
+        caption = (
+            f"Steuerdokument(e) von {sender}\n"
+            f"Betreff: {subject}\n"
+            f"Typ: {doc_types_str}"
+        )
+        ok = await telegram_bot.send_user_document(pdf_path, caption=caption)
+        if ok:
+            log.info(
+                "mail_monitor[%s] uid=%s: PDF-Steuerdokument per Telegram gesendet",
+                name, uid,
+            )
+        else:
+            log.warning(
+                "mail_monitor[%s] uid=%s: Telegram-Versand fehlgeschlagen (send_user_document=False)",
+                name, uid,
+            )
+    except Exception as e:
+        log.warning(
+            "mail_monitor[%s] uid=%s: Telegram-Versand fehlgeschlagen: %s: %s",
+            name, uid, type(e).__name__, e,
+        )
+
+    # --- Todoist-Task anlegen ---
+    if S.TODOIST_TOKEN:
+        # Absender-Kurzname: Anzeigenamen kuerzen; E-Mail-Teil weglassen
+        sender_short = sender.split("<")[0].strip() or sender
+        task_content = f"Unterlagen {sender_short} — Steuererkl. pruefen"
+        try:
+            today_iso = _dt.date.today().isoformat()
+            result = await todoist_tools.add_task(
+                token=S.TODOIST_TOKEN,
+                content=task_content,
+                due=today_iso,
+                # Kein project_id: Task landet im persoenlichen Posteingang
+            )
+            log.info(
+                "mail_monitor[%s] uid=%s: Todoist-Task angelegt: %r -> %s",
+                name, uid, task_content, result,
+            )
+        except Exception as e:
+            log.warning(
+                "mail_monitor[%s] uid=%s: Todoist-Task fehlgeschlagen: %s: %s",
+                name, uid, type(e).__name__, e,
+            )
+    else:
+        log.info(
+            "mail_monitor[%s] uid=%s: kein TODOIST_TOKEN — Task uebersprungen",
+            name, uid,
+        )
+
+
 async def _move_to_trash(account: dict, client, uid: int) -> None:
     """Verschiebt eine Mail sofort in den Papierkorb.
 
@@ -811,6 +957,46 @@ async def _process_new_uids(account: dict, client, uids: list[int]) -> None:
                         f"{type(e).__name__}: {e}"
                     )
                 continue
+
+            # Bild-Anhaenge (Issue #177): Nur fuer HILO-Account.
+            # Wenn Bild-Anhaenge vorhanden: vollstaendige Mail laden, Bilder
+            # per Claude Vision auf Steuerdokumente pruefen, ggf. OCR-PDF senden
+            # und Todoist-Task anlegen. Die normale Klassifikation laeuft danach
+            # weiter — die Mail bleibt im Posteingang.
+            if name.upper() == "HILO":
+                try:
+                    # Vollstaendige Mail laden um Anhaenge zu pruefen.
+                    typ_full, data_full = await client.uid("fetch", str(uid), "BODY.PEEK[]")
+                    if typ_full == "OK" and data_full:
+                        byte_items_full: list[bytes] = []
+                        for item in data_full:
+                            if isinstance(item, (bytes, bytearray)):
+                                byte_items_full.append(bytes(item))
+                            elif (
+                                isinstance(item, (list, tuple))
+                                and len(item) >= 2
+                                and isinstance(item[1], (bytes, bytearray))
+                            ):
+                                byte_items_full.append(bytes(item[1]))
+                        if byte_items_full:
+                            msg_full = email.message_from_bytes(max(byte_items_full, key=len))
+                            all_attachments = _extract_attachments(msg_full)
+                            import image_tools as _it
+                            image_attachments = [
+                                att for att in all_attachments
+                                if att["content_type"].startswith(_it.IMAGE_MIME_PREFIXES)
+                            ]
+                            if image_attachments:
+                                asyncio.create_task(
+                                    _handle_image_attachments(
+                                        account, uid, sender, subject, image_attachments
+                                    )
+                                )
+                except Exception as _img_exc:
+                    log.warning(
+                        "mail_monitor[%s] uid=%s: Bild-Attachment-Check fehlgeschlagen: %s: %s",
+                        name, uid, type(_img_exc).__name__, _img_exc,
+                    )
 
             # We only fetch BODY.PEEK[HEADER] (Apple-strict-parser-friendly),
             # so the classifier runs on sender + subject only. Empty body
