@@ -2443,6 +2443,33 @@ async def execute_action(action: dict) -> str:
             )
         return "\n".join(lines)
 
+    elif t == "RETRIAGE_INBOX":
+        # Räumt bekannte Absender-Kategorien aus der INBOX auf — verschiebt
+        # DHL/Hermes/DPD/UPS-Mails retroaktiv in den konfigurierten Ordner.
+        import mail_actions as _ma
+        import mail_triage as _mt
+        account_name = p.strip() or "HILO"
+        # Zielordner aus der triage-rules-Datei lesen
+        import json as _json, os as _os
+        _rules_path = _os.path.join(_os.path.dirname(__file__), "mail_triage_rules.json")
+        _folder = "DHL"
+        if _os.path.exists(_rules_path):
+            try:
+                with open(_rules_path) as _f:
+                    _rules = _json.load(_f)
+                _folder = _rules.get("heuristics", {}).get("package_to_dhl_folder", "DHL")
+            except Exception:
+                pass
+        moved, errors = await _ma.retriage_inbox(
+            account_name, _folder, _mt._PACKAGE_FROM_DOMAINS
+        )
+        if moved == 0 and errors == 0:
+            return f"Keine DHL/Paket-Mails im Posteingang von {account_name} gefunden."
+        parts = [f"{moved} Mail(s) in '{_folder}' verschoben"]
+        if errors:
+            parts.append(f"{errors} Fehler")
+        return f"{', '.join(parts)} ({account_name})."
+
     elif t == "MAIL_KNOWLEDGE_RECENT":
         # Issue #161: Neueste Einträge im E-Mail-Wissenspeicher.
         # payload = Anzahl Tage (default 7)

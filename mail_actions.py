@@ -681,3 +681,68 @@ async def mark_mail_read(account_name: str, uid: int) -> bool:
                 await client.logout()
             except Exception:
                 pass
+
+
+async def retriage_inbox(
+    account_name: str,
+    target_folder: str,
+    from_domains: tuple[str, ...],
+    max_mails: int = 500,
+) -> tuple[int, int]:
+    """Sucht alle Mails in INBOX deren Absender auf einen der Domains endet,
+    markiert sie als gelesen und verschiebt sie in target_folder.
+    Returns (moved_count, error_count).
+    """
+    acc = _account_by_name(account_name)
+    if not acc or not acc["password"]:
+        return 0, 0
+    client = None
+    moved = 0
+    errors = 0
+    try:
+        client = await _connect(acc)
+        matched_uids: set[int] = set()
+        for domain in from_domains:
+            try:
+                typ, data = await client.uid("search", None, f'FROM "{domain}"')
+                if typ == "OK" and data and data[0]:
+                    raw = data[0]
+                    if isinstance(raw, (bytes, bytearray)):
+                        raw = raw.decode()
+                    for uid_str in raw.split():
+                        try:
+                            matched_uids.add(int(uid_str))
+                        except ValueError:
+                            pass
+            except Exception as e:
+                log.warning(f"retriage_inbox SEARCH FROM {domain!r}: {e}")
+        log.info(f"retriage_inbox[{account_name}] {len(matched_uids)} UIDs -> {target_folder!r}")
+        for uid in list(matched_uids)[:max_mails]:
+            try:
+                await client.uid("store", str(uid), "+FLAGS", "(\\Seen)")
+                typ, _ = await client.uid("move", str(uid), target_folder)
+                if typ != "OK":
+                    typ2, _ = await client.uid("copy", str(uid), target_folder)
+                    if typ2 == "OK":
+                        await client.uid("store", str(uid), "+FLAGS", "(\\Deleted)")
+                    else:
+                        errors += 1
+                        continue
+                moved += 1
+            except Exception as e:
+                log.warning(f"retriage_inbox uid={uid}: {type(e).__name__}: {e}")
+                errors += 1
+        if moved:
+            try:
+                await client.expunge()
+            except Exception:
+                pass
+    except Exception as e:
+        log.warning(f"retriage_inbox[{account_name}]: {type(e).__name__}: {e}")
+    finally:
+        if client is not None:
+            try:
+                await client.logout()
+            except Exception:
+                pass
+    return moved, errors
