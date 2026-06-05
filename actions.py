@@ -2383,11 +2383,11 @@ async def execute_action(action: dict) -> str:
         return f"Weiterleitung an {to_name} fehlgeschlagen — bitte SMTP-Konfiguration pruefen."
 
     elif t == "DEBUG_PDF":
-        # Diagnose: zeigt gespeicherte PDFs + was persons_db für einen Mandanten hat.
-        import glob
+        # Diagnose: zeigt gespeicherte PDFs + Extraktions-Details.
+        import glob, re as _re2
         lines: list[str] = []
         pdf_files = sorted(glob.glob("/tmp/jarvis_pdfs/*.pdf"), key=os.path.getmtime, reverse=True)
-        lines.append(f"Gespeicherte PDFs in /tmp/jarvis_pdfs: {len(pdf_files)}")
+        lines.append(f"Gespeicherte PDFs: {len(pdf_files)}")
         for pf in pdf_files[:5]:
             lines.append(f"  • {os.path.basename(pf)}")
         query = p.strip()
@@ -2395,16 +2395,25 @@ async def execute_action(action: dict) -> str:
             import persons_db as _pdb2
             tax_list = _pdb2.get_tax_assessments(query)
             adv_list = _pdb2.get_advance_payments(query) if hasattr(_pdb2, "get_advance_payments") else []
-            lines.append(f"\npersons_db für '{query}': {len(tax_list)} Steuerbescheide, {len(adv_list)} Vorauszahlungen")
-            for ta in tax_list:
-                lines.append(f"  • {ta.get('steuerart','?')} {ta.get('steuerjahr','?')} Betrag={ta.get('betrag_eur','?')}")
-            if pdf_files:
-                try:
-                    from pdf_tools import analyze_steuerbescheid
-                    result2 = await analyze_steuerbescheid(pdf_files[0])
-                    lines.append(f"\nLetztes PDF analysiert: typ={result2.get('typ')}, mandant={result2.get('mandant')!r}, betrag={result2.get('betrag_eur')}")
-                except Exception as exc2:
-                    lines.append(f"\nPDF-Analyse Fehler: {exc2}")
+            lines.append(f"persons_db '{query}': {len(tax_list)} Steuerbescheide, {len(adv_list)} Vorauszahlungen")
+        if pdf_files:
+            try:
+                from pdf_tools import extract_text, _extract_local
+                txt = extract_text(pdf_files[0])
+                # Zeige relevante Zeilen (Identifikation, Steuernr, Mandant, Betrag)
+                keywords = ("identifikation", "steuernummer", "st.-nr", "bescheid ergeht",
+                            "herrn", "frau", "nachzahlung", "erstattung", "festgesetzt",
+                            "verbleibende", "fällig", "zahlungstermin")
+                relevant = [ln.strip() for ln in txt.splitlines()
+                            if any(kw in ln.lower() for kw in keywords)][:25]
+                lines.append(f"\nPDF-Text (relevante Zeilen aus {os.path.basename(pdf_files[0])}):")
+                lines.extend(f"  {ln}" for ln in relevant)
+                data = _extract_local(txt)
+                lines.append(f"\nExtraktion: typ={data.get('typ')!r} mandant={data.get('mandant')!r} "
+                             f"steuerart={data.get('steuerart')!r} jahr={data.get('steuerjahr')!r} "
+                             f"betrag={data.get('betrag_eur')}")
+            except Exception as exc2:
+                lines.append(f"\nPDF-Text-Extraktion Fehler: {exc2}")
         return "\n".join(lines)
 
     elif t == "ANALYZE_PDF":
