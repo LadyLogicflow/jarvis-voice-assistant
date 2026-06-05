@@ -2589,4 +2589,130 @@ async def execute_action(action: dict) -> str:
             )
         return "\n".join(lines)
 
+    elif t == "MANDANTEN_OVERVIEW":
+        # Issue #176: Alle Mandanten mit gespeicherten Steuerbescheiden oder
+        # Vorauszahlungen als HTML-Tabellenkachel anzeigen.
+        import persons_db as _pdb_ov
+
+        # Alle Profile durchsuchen und nur solche mit Steuerdaten sammeln.
+        mandanten: list[dict] = []
+        for prof in _pdb_ov.all_profiles():
+            ta_list = list(getattr(prof, "tax_assessments", []))
+            ap_list = list(getattr(prof, "advance_payments", []))
+            if not ta_list and not ap_list:
+                continue
+
+            # Neuesten Steuerbescheid ermitteln (nach steuerjahr desc).
+            latest_ta: dict | None = None
+            if ta_list:
+                latest_ta = max(ta_list, key=lambda x: str(x.get("steuerjahr", "")))
+
+            # Nächsten Zahlungstermin aus Bescheiden extrahieren (frühestes Datum).
+            next_faellig: str | None = None
+            for ta in ta_list:
+                faellig = (ta.get("zahlungstermin") or "").strip()
+                if faellig and faellig != "null":
+                    if next_faellig is None or faellig < next_faellig:
+                        next_faellig = faellig
+
+            mandanten.append({
+                "name": prof.name,
+                "latest_ta": latest_ta,
+                "next_faellig": next_faellig,
+                "n_ta": len(ta_list),
+                "n_ap": len(ap_list),
+            })
+
+        if not mandanten:
+            spoken = (
+                f"Es sind noch keine Steuerbescheide oder Vorauszahlungen gespeichert, "
+                f"{pick_address()}. Analysieren Sie zunächst ein PDF mit "
+                f"'Analysiere das PDF'."
+            )
+            return spoken
+
+        # Sortieren: Fälligkeit aufsteigend, None-Werte ans Ende.
+        mandanten.sort(
+            key=lambda m: (m["next_faellig"] is None, m["next_faellig"] or "")
+        )
+
+        def _esc(s: str) -> str:
+            return str(s).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+        def _betrag_cell(ta: dict) -> str:
+            betrag = ta.get("betrag_eur")
+            if betrag is None:
+                return "—"
+            try:
+                b = float(betrag)
+                richtung = "Erstattung" if b >= 0 else "Nachzahlung"
+                s = f"{abs(b):,.2f} €".replace(",", "X").replace(".", ",").replace("X", ".")
+                return _esc(f"{richtung} {s}")
+            except (ValueError, TypeError):
+                return _esc(f"{betrag} €")
+
+        rows_html = ""
+        for m in mandanten:
+            ta = m["latest_ta"]
+            if ta:
+                bescheid_str = _esc(f"{ta.get('steuerart', '?')} {ta.get('steuerjahr', '?')}")
+                betrag_str = _betrag_cell(ta)
+            else:
+                bescheid_str = "—"
+                betrag_str = "—"
+
+            faellig_raw = m["next_faellig"] or ""
+            faellig_str = _esc(_fmt_date(faellig_raw)) if faellig_raw else "—"
+
+            # Fälligkeits-Farbe: rot wenn überfällig, orange wenn < 30 Tage.
+            faellig_class = ""
+            if faellig_raw and faellig_raw != "null":
+                try:
+                    from datetime import date as _date
+                    _today = _date.today().isoformat()
+                    _delta_days = (
+                        _date.fromisoformat(faellig_raw) - _date.fromisoformat(_today)
+                    ).days
+                    if _delta_days < 0:
+                        faellig_class = ' style="color:#e74c3c;font-weight:bold"'
+                    elif _delta_days <= 30:
+                        faellig_class = ' style="color:#e67e22;font-weight:bold"'
+                except Exception:
+                    pass
+
+            rows_html += (
+                f"<tr>"
+                f"<td>{_esc(m['name'])}</td>"
+                f"<td>{bescheid_str}</td>"
+                f"<td>{betrag_str}</td>"
+                f"<td{faellig_class}>{faellig_str}</td>"
+                f"</tr>"
+            )
+
+        n = len(mandanten)
+        card_html = (
+            '<div class="p-card">'
+            '<div class="p-card-name">Mandanten-Übersicht</div>'
+            f'<div class="p-card-meta">'
+            f'<span class="p-badge">{n} Mandant{"en" if n != 1 else ""}</span>'
+            f'</div>'
+            '<div class="p-card-section">'
+            '<table style="width:100%;border-collapse:collapse;font-size:0.9em">'
+            '<thead><tr style="border-bottom:1px solid #555">'
+            "<th style=\"text-align:left;padding:4px 6px\">Mandant</th>"
+            "<th style=\"text-align:left;padding:4px 6px\">Letzter Bescheid</th>"
+            "<th style=\"text-align:left;padding:4px 6px\">Betrag</th>"
+            "<th style=\"text-align:left;padding:4px 6px\">Fälligkeit</th>"
+            "</tr></thead>"
+            f"<tbody>{rows_html}</tbody>"
+            "</table>"
+            "</div>"
+            "</div>"
+        )
+        S.PENDING_CARD_HTML = card_html
+        return (
+            f"Hier ist die Mandanten-Übersicht, {pick_address()}. "
+            f"{n} Mandant{'en' if n != 1 else ''} mit gespeicherten Steuerdaten."
+        )
+
     return ""
