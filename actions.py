@@ -2416,6 +2416,28 @@ async def execute_action(action: dict) -> str:
                 lines.append(f"\nPDF-Text-Extraktion Fehler: {exc2}")
         return "\n".join(lines)
 
+    elif t == "CLEAR_TAX_DATA":
+        # Löscht alle gespeicherten Steuerbescheide + Vorauszahlungen für einen Mandanten.
+        import persons_db as _pdb3
+        mandant_q = p.strip()
+        if not mandant_q:
+            return f"Für wen soll ich die Steuerdaten löschen, {pick_address()}?"
+        needle = _pdb3._norm(mandant_q)
+        cleared = []
+        _pdb3._load()
+        for prof in _pdb3._persons.values():
+            if prof.name and needle in _pdb3._norm(prof.name):
+                n_ta = len(prof.tax_assessments)
+                n_ap = len(prof.advance_payments)
+                prof.tax_assessments.clear()
+                prof.advance_payments.clear()
+                if n_ta or n_ap:
+                    cleared.append(f"{prof.name}: {n_ta} Bescheide, {n_ap} Vorauszahlungen gelöscht")
+        if cleared:
+            _pdb3._save()
+            return "Gelöscht:\n" + "\n".join(cleared)
+        return f"Keine Steuerdaten für '{mandant_q}' gefunden."
+
     elif t == "ANALYZE_ALL_PDFS":
         # Verarbeitet alle gespeicherten PDFs in /tmp/jarvis_pdfs/ nach.
         import glob
