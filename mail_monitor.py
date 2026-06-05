@@ -452,7 +452,7 @@ async def _classify(sender: str, subject: str, body_preview: str) -> tuple[str, 
     user_msg = f"Von: {sender}\nBetreff: {subject}\n\n{body_preview[:1500]}"
     try:
         resp = await S.ai.messages.create(
-            model="claude-haiku-4-5-20251001",
+            model=S.HAIKU_MODEL,
             max_tokens=50,
             system=_CLASSIFIER_PROMPT,
             messages=[{"role": "user", "content": user_msg}],
@@ -491,7 +491,7 @@ async def _summarize_body(sender: str, subject: str, body: str) -> str:
     """Return a 1-2 sentence German summary of the mail body, or '' on failure."""
     try:
         resp = await S.ai.messages.create(
-            model="claude-haiku-4-5-20251001",
+            model=S.HAIKU_MODEL,
             max_tokens=120,
             system=_SUMMARY_PROMPT,
             messages=[{"role": "user", "content":
@@ -560,7 +560,7 @@ async def _classify_outgoing(to_addr: str, subject: str, body_preview: str) -> b
     user_msg = f"An: {to_addr}\nBetreff: {subject}\n\n{body_preview[:1500]}"
     try:
         resp = await S.ai.messages.create(
-            model="claude-haiku-4-5-20251001",
+            model=S.HAIKU_MODEL,
             max_tokens=50,
             system=_SENT_CLASSIFIER_PROMPT,
             messages=[{"role": "user", "content": user_msg}],

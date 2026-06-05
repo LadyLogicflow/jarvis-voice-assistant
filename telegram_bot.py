@@ -126,7 +126,7 @@ async def _summarize_action(action_type: str, action_result: str) -> str:
             f"KEINE ACTION-Tags."
         )
     resp = await S.ai.messages.create(
-        model="claude-haiku-4-5-20251001",
+        model=S.HAIKU_MODEL,
         max_tokens=400,
         system=sys_prompt,
         messages=[{"role": "user", "content": f"Fasse zusammen:\n\n{action_result}"}],
@@ -156,7 +156,7 @@ async def _ask_claude(session_id: str, user_text: str) -> str:
     ]
 
     response = await S.ai.messages.create(
-        model="claude-haiku-4-5-20251001",
+        model=S.HAIKU_MODEL,
         max_tokens=1024,
         system=get_system_prompt(),
         messages=history,

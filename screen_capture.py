@@ -23,6 +23,7 @@ from typing import TYPE_CHECKING
 
 from PIL import ImageGrab
 
+import settings as S
 from prompt import llm_text
 
 if TYPE_CHECKING:
@@ -84,7 +85,7 @@ async def describe_screen_from_b64(image_b64: str, anthropic_client: "AsyncAnthr
 
 async def _vision_call(b64: str, media_type: str, anthropic_client: "AsyncAnthropic") -> str:
     response = await anthropic_client.messages.create(
-        model="claude-haiku-4-5-20251001",
+        model=S.HAIKU_MODEL,
         max_tokens=300,
         messages=[{
             "role": "user",

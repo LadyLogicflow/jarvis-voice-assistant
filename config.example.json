@@ -15,6 +15,7 @@
   "_comment_runtime": "Optional runtime tunables. Defaults shown.",
   "server_port": 8340,
   "elevenlabs_model": "eleven_turbo_v2_5",
+  "haiku_model": "claude-haiku-4-5-20251001",
   "greeting_cooldown": 10.0,
   "activate_cooldown": 90.0,
   "refresh_cooldown": 30.0,

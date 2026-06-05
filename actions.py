@@ -175,7 +175,7 @@ async def _generate_draft_body(mail_data: dict, instruction: str = "") -> str:
         )
     try:
         resp = await S.ai.messages.create(
-            model="claude-haiku-4-5-20251001",
+            model=S.HAIKU_MODEL,
             max_tokens=600,
             system=sys_prompt,
             messages=[{"role": "user", "content": user_msg}],
@@ -202,7 +202,7 @@ async def _revise_draft_body(old_body: str, instruction: str) -> str:
     )
     try:
         resp = await S.ai.messages.create(
-            model="claude-haiku-4-5-20251001",
+            model=S.HAIKU_MODEL,
             max_tokens=600,
             system=sys_prompt,
             messages=[{"role": "user", "content": user_msg}],
@@ -788,7 +788,7 @@ async def execute_action(action: dict) -> str:
         user_msg = f"Von: {_sanitize(sender)}\nBetreff: {_sanitize(subject)}\n\n{_sanitize(body)}"
         try:
             resp = await S.ai.messages.create(
-                model="claude-haiku-4-5-20251001",
+                model=S.HAIKU_MODEL,
                 max_tokens=200,
                 system=sys_prompt,
                 messages=[{"role": "user", "content": user_msg}],
@@ -1812,7 +1812,7 @@ async def execute_action(action: dict) -> str:
         )
         try:
             resp = await S.ai.messages.create(
-                model="claude-haiku-4-5-20251001",
+                model=S.HAIKU_MODEL,
                 max_tokens=80,
                 system=gen_prompt,
                 messages=[{"role": "user", "content": user_msg}],
@@ -2112,7 +2112,7 @@ async def execute_action(action: dict) -> str:
                 '"cook_time_minutes": <Ganzzahl>}'
             )
             resp = await S.ai.messages.create(
-                model="claude-haiku-4-5-20251001",
+                model=S.HAIKU_MODEL,
                 max_tokens=1000,
                 system=swap_prompt,
                 messages=[{"role": "user", "content": f"Gericht: {new_dish}"}],

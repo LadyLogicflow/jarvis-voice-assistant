@@ -481,7 +481,7 @@ async def refresh_steuer_brief(raw: str | None = None) -> None:
         if raw is None:
             raw = await steuer_news.fetch_all_sources()
         resp = await S.ai.messages.create(
-            model="claude-haiku-4-5-20251001",
+            model=S.HAIKU_MODEL,
             max_tokens=600,
             system=(
                 f"Du bist Jarvis, der britisch-hoefliche KI-Butler von {S.USER_NAME}. "
@@ -579,7 +579,7 @@ async def build_weekly_outlook() -> str:
     )
     try:
         resp = await S.ai.messages.create(
-            model="claude-haiku-4-5-20251001",
+            model=S.HAIKU_MODEL,
             max_tokens=1500,
             system=sys_prompt,
             messages=[{"role": "user", "content": user_msg}],
@@ -766,7 +766,7 @@ async def morning_brief_scheduler() -> None:
                         + (f"\nAktuelle Tagesdaten:{today_block}" if today_block else "")
                     )
                     resp = await S.ai.messages.create(
-                        model="claude-haiku-4-5-20251001",
+                        model=S.HAIKU_MODEL,
                         max_tokens=600,
                         system=system_prompt,
                         messages=[{"role": "user", "content": user_msg}],
@@ -861,7 +861,7 @@ async def _generate_proactive_message(slot: str) -> str:
             today_block += f"\n{_label}:\n{health_block}"
     user_msg = f"Aktuelle Tagesdaten:{today_block or ' (keine offenen Punkte)'}"
     resp = await S.ai.messages.create(
-        model="claude-haiku-4-5-20251001",
+        model=S.HAIKU_MODEL,
         max_tokens=500,
         system=system_prompt,
         messages=[{"role": "user", "content": user_msg}],
@@ -1025,7 +1025,7 @@ async def build_evening_brief() -> str:
     system_prompt = _EVENING_BRIEF_PROMPT.format(addr=addr)
     try:
         resp = await S.ai.messages.create(
-            model="claude-haiku-4-5-20251001",
+            model=S.HAIKU_MODEL,
             max_tokens=400,
             system=system_prompt,
             messages=[{"role": "user", "content": user_content}],
@@ -1246,7 +1246,7 @@ async def generate_evening_summary(detailed: bool = False) -> str:
 
     try:
         resp = await S.ai.messages.create(
-            model="claude-haiku-4-5-20251001",
+            model=S.HAIKU_MODEL,
             max_tokens=max_tokens,
             system=system_prompt,
             messages=[{"role": "user", "content": user_content}],
@@ -1753,7 +1753,7 @@ async def _process_birthday_drafts(now: datetime.datetime) -> None:
         )
         try:
             resp = await S.ai.messages.create(
-                model="claude-haiku-4-5-20251001",
+                model=S.HAIKU_MODEL,
                 max_tokens=400,
                 system="Du bist Jarvis. Antworte NUR mit JSON, kein Praeamble.",
                 messages=[{"role": "user", "content": prompt}],
