@@ -2,7 +2,7 @@
 PDF-Tools fuer JARVIS (Issue #159 / #109).
 
 Bietet:
-- save_pdf()             — Speichert rohe PDF-Bytes nach /tmp/jarvis_pdfs/.
+- save_pdf()             — Speichert rohe PDF-Bytes nach jarvis_pdfs/ im Projektverzeichnis.
 - extract_text()         — Extrahiert den Volltext einer PDF via PyMuPDF.
 - analyze_steuerbescheid() — Klassifiziert + extrahiert Felder via Claude Haiku
                              und speichert das Ergebnis in persons_db.
