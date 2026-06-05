@@ -100,13 +100,23 @@ def add(
     try:
         import memory_search as _ms
         import asyncio as _asyncio
+        import logging as _logging
         doc_id = _ms.make_doc_id("note", note.id)
+
+        def _index_and_log() -> None:
+            try:
+                _ms.index_text(note.text, "note", doc_id, {"kind": note.kind, "note_id": note.id})
+            except Exception as exc:
+                _logging.getLogger(__name__).warning(
+                    "notes memory indexing failed: %s", exc, exc_info=True
+                )
+
         try:
             loop = _asyncio.get_running_loop()
-            loop.run_in_executor(None, _ms.index_text, note.text, "note", doc_id,
-                                 {"kind": note.kind, "note_id": note.id})
+            _asyncio.ensure_future(loop.run_in_executor(None, _index_and_log))
         except RuntimeError:
-            _ms.index_text(note.text, "note", doc_id, {"kind": note.kind, "note_id": note.id})
+            # No running event loop — call synchronously (e.g. during tests)
+            _index_and_log()
     except Exception:
         pass
     return note

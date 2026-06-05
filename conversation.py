@@ -184,9 +184,21 @@ async def append_message(session_id: str, role: str, content: str) -> None:
     if content:
         try:
             import memory_search as _ms
+            import logging as _logging
             _doc_id = _ms.make_doc_id(f"conversation_{role}", content)
             loop = asyncio.get_running_loop()
-            loop.run_in_executor(None, _ms.index_text, content, "conversation", _doc_id, {"role": role})
+
+            def _index_and_log() -> None:
+                try:
+                    _ms.index_text(content, "conversation", _doc_id, {"role": role})
+                except Exception as exc:
+                    _logging.getLogger(__name__).warning(
+                        "conversation memory indexing failed: %s", exc, exc_info=True
+                    )
+
+            asyncio.ensure_future(
+                asyncio.get_event_loop().run_in_executor(None, _index_and_log)
+            )
         except Exception:
             pass
     if len(conv) > MAX_CONVERSATION_HISTORY:
