@@ -37,6 +37,9 @@ faster-whisper>=1.0  # local STT, no PyTorch / no API key
 # IMAP IDLE push monitor (issue #48) — async, supports IDLE
 aioimaplib>=1.0
 
+# Async SQLite für Promise-Tracker und Persistenz
+aiosqlite>=0.20.0
+
 # ICS calendar feed parser (Microsoft 365 / Outlook calendar)
 icalendar>=5.0
 
