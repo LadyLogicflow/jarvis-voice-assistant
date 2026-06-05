@@ -234,6 +234,11 @@ async def _lifespan(_app):  # type: ignore[no-untyped-def]  # AsyncGenerator
     try:
         yield
     finally:
+        # Signal reindex_all() to stop between batches *before* we cancel the
+        # asyncio task.  This prevents a rapid-restart race where the old
+        # process's thread-pool work keeps writing to ChromaDB while the new
+        # process has already opened it (Issue #173).
+        memory_search.request_shutdown()
         tasks_to_cancel = [task_reindex, task_brief, task_evening, task_proactive,
                            task_telegram, task_mail, task_weekly, task_memory,
                            task_planner, task_meal_plan, task_meal_reminder,

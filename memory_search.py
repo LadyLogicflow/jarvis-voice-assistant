@@ -54,6 +54,33 @@ except ImportError:
 _AVAILABLE = _CHROMADB_AVAILABLE and _ST_AVAILABLE
 
 # ---------------------------------------------------------------------------
+# Graceful-shutdown coordination (Issue #173)
+#
+# reindex_all() runs sync work in a thread-pool via run_in_executor.
+# asyncio.Task.cancel() only raises CancelledError at the *next* await point
+# inside the coroutine, but the thread-pool work that is already dispatched
+# keeps running.  On rapid restart two ChromaDB write processes can therefore
+# race and corrupt the database.
+#
+# Fix: a threading.Event (not asyncio.Event — the checks happen inside threads)
+# that reindex_all() tests between batches.  server.py calls request_shutdown()
+# before cancelling the asyncio task, so the running thread finishes its
+# current batch and then stops cleanly before the new process opens ChromaDB.
+# ---------------------------------------------------------------------------
+_shutdown_event = threading.Event()
+
+
+def request_shutdown() -> None:
+    """Signal reindex_all() to stop between batches on the next opportunity.
+
+    Must be called from the asyncio lifespan teardown *before* the
+    task_reindex asyncio.Task is cancelled so the thread-pool work drains
+    cleanly (Issue #173).
+    """
+    _shutdown_event.set()
+
+
+# ---------------------------------------------------------------------------
 # Lazy-initialisierte Singletons
 # ---------------------------------------------------------------------------
 _chroma_client: Any | None = None
@@ -421,18 +448,31 @@ async def reindex_all() -> None:
     loop = asyncio.get_running_loop()
     # Sync-Calls in Thread-Pool damit der Event-Loop nicht blockiert
     # (SentenceTransformer-Load dauert auf Pi 4 bis zu 2 Minuten)
+    #
+    # Between each batch we check _shutdown_event so that a server shutdown
+    # can abort the reindex before the next source starts writing to ChromaDB
+    # (Issue #173: prevents write-race / DB corruption on rapid restart).
     try:
         await loop.run_in_executor(None, index_conversation_history)
     except Exception as exc:
         log.warning("memory_search.reindex_all: conversation fehlgeschlagen: %s", exc)
+    if _shutdown_event.is_set():
+        log.info("memory_search.reindex_all: Shutdown angefordert — Reindex abgebrochen nach conversation.")
+        return
     try:
         await loop.run_in_executor(None, index_notes)
     except Exception as exc:
         log.warning("memory_search.reindex_all: notes fehlgeschlagen: %s", exc)
+    if _shutdown_event.is_set():
+        log.info("memory_search.reindex_all: Shutdown angefordert — Reindex abgebrochen nach notes.")
+        return
     try:
         await loop.run_in_executor(None, index_persons)
     except Exception as exc:
         log.warning("memory_search.reindex_all: persons fehlgeschlagen: %s", exc)
+    if _shutdown_event.is_set():
+        log.info("memory_search.reindex_all: Shutdown angefordert — Reindex abgebrochen nach persons.")
+        return
     try:
         await index_todoist_tasks()
     except Exception as exc:
