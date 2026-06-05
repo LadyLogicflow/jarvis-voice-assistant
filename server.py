@@ -164,9 +164,13 @@ async def _lifespan(_app):  # type: ignore[no-untyped-def]  # AsyncGenerator
         log.warning("STARTUP: PyMuPDF fehlt — starte Auto-Install …")
         try:
             import subprocess, sys as _sys
-            _r = subprocess.run(
-                [_sys.executable, "-m", "pip", "install", "pymupdf"],
-                capture_output=True, text=True, timeout=300,
+            _loop = asyncio.get_event_loop()
+            _r = await _loop.run_in_executor(
+                None,
+                lambda: subprocess.run(
+                    [_sys.executable, "-m", "pip", "install", "pymupdf"],
+                    capture_output=True, text=True, timeout=300,
+                ),
             )
             if _r.returncode == 0:
                 log.info("STARTUP: PyMuPDF erfolgreich installiert.")
