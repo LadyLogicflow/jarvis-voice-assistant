@@ -157,14 +157,23 @@ async def _lifespan(_app):  # type: ignore[no-untyped-def]  # AsyncGenerator
     """Startup: prime weather/tasks + spawn the morning-brief task and
     the proactive-briefs task. Shutdown: cancel both and close the
     shared httpx client."""
-    # Prüfe kritische optionale Abhängigkeiten beim Start
+    # Prüfe PyMuPDF; fehlt es, wird es automatisch nachinstalliert.
     try:
         import fitz  # noqa: F401
     except ImportError:
-        log.error(
-            "STARTUP: PyMuPDF (fitz) nicht installiert — "
-            "PDF-Analyse deaktiviert. Fix: pip install pymupdf"
-        )
+        log.warning("STARTUP: PyMuPDF fehlt — starte Auto-Install …")
+        try:
+            import subprocess, sys as _sys
+            _r = subprocess.run(
+                [_sys.executable, "-m", "pip", "install", "pymupdf"],
+                capture_output=True, text=True, timeout=300,
+            )
+            if _r.returncode == 0:
+                log.info("STARTUP: PyMuPDF erfolgreich installiert.")
+            else:
+                log.error("STARTUP: PyMuPDF-Install fehlgeschlagen: %s", _r.stderr[-300:])
+        except Exception as _e:
+            log.error("STARTUP: PyMuPDF-Auto-Install Fehler: %s", _e)
     await refresh_data()
     session_state.load_all()
     import meal_plan as _mp
@@ -309,6 +318,43 @@ async def health_webhook(request: Request) -> dict:
              f"Bewegung {parsed.get('move_kcal')} kcal, "
              f"Training {parsed.get('exercise_min')} min")
     return {"ok": True, "date": parsed.get("date")}
+
+
+@app.post("/maintenance/update", dependencies=[Depends(require_jarvis_token)])
+async def maintenance_update() -> dict:
+    """Git pull + pip install -r requirements.txt + background restart.
+    Geschuetzt durch JARVIS_AUTH_TOKEN. Nur im Heimnetz / Tailscale erreichbar.
+    """
+    import subprocess, sys as _sys, asyncio as _aio, os as _os
+    project_dir = _os.path.dirname(_os.path.abspath(__file__))
+    results: dict[str, str] = {}
+
+    # 1) git pull
+    try:
+        r = subprocess.run(["git", "-C", project_dir, "pull"], capture_output=True, text=True, timeout=60)
+        results["git_pull"] = r.stdout.strip() or r.stderr.strip() or "ok"
+    except Exception as e:
+        results["git_pull"] = f"error: {e}"
+
+    # 2) pip install -r requirements.txt
+    try:
+        r2 = subprocess.run(
+            [_sys.executable, "-m", "pip", "install", "-r", f"{project_dir}/requirements.txt"],
+            capture_output=True, text=True, timeout=300,
+        )
+        lines = [l for l in r2.stdout.splitlines() if l.strip()]
+        results["pip_install"] = lines[-1] if lines else (r2.stderr[-200:] or "ok")
+    except Exception as e:
+        results["pip_install"] = f"error: {e}"
+
+    # 3) background restart (3 s Delay damit die Response noch rausgeht)
+    async def _restart():
+        await _aio.sleep(3)
+        subprocess.Popen(["sudo", "systemctl", "restart", "jarvis"])
+    _aio.create_task(_restart())
+
+    results["restart"] = "geplant in 3 s"
+    return results
 
 
 @app.get("/health/status")
