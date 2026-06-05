@@ -330,6 +330,12 @@ MEAL_PLAN_REMINDER_TIME: str = config.get("meal_plan_reminder_time", "17:30")
 #                     "ingredients": list[str], "cook_time_minutes": int}}
 MEAL_PLAN_WEEK: dict = {}
 
+# ISO-Wochen-String des gespeicherten Plans (z.B. "2026-W23").
+# Wird von load_meal_plan() beim Serverstart befuellt und von
+# meal_plan_scheduler() ausgelesen um doppelte Generierung nach einem
+# Neustart zu vermeiden (Issue #179).
+MEAL_PLAN_GENERATED_WEEK: str = ""
+
 # Wunsch-Interaktion: Scheduler wartet auf Antwort bevor er den Plan generiert.
 MEAL_PLAN_AWAITING_WISHES: bool = False
 MEAL_PLAN_WISHES: str = ""

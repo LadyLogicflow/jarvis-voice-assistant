@@ -327,35 +327,74 @@ async def generate_meal_plan(start_today: bool = False, wishes: str = "",
 
 
 def save_meal_plan() -> None:
-    """Persistiert S.MEAL_PLAN_WEEK atomar als JSON-Datei (temp + os.replace)."""
+    """Persistiert S.MEAL_PLAN_WEEK atomar als JSON-Datei (temp + os.replace).
+
+    Schreibt zusaetzlich den aktuellen ISO-Wochen-String unter dem
+    Schluessel ``"generated_week"`` in den Cache, damit nach einem
+    Neustart erkannt werden kann, ob der Plan bereits dieser Woche
+    gehoert (Issue #179).
+    """
     import tempfile
+    today = datetime.date.today()
+    iso_year, iso_week, _ = today.isocalendar()
+    generated_week = f"{iso_year}-W{iso_week:02d}"
+    payload = dict(S.MEAL_PLAN_WEEK)
+    payload["generated_week"] = generated_week
     try:
         dir_ = os.path.dirname(MEAL_PLAN_CACHE_PATH)
         with tempfile.NamedTemporaryFile(
             "w", encoding="utf-8", dir=dir_, delete=False, suffix=".tmp"
         ) as f:
-            json.dump(S.MEAL_PLAN_WEEK, f, ensure_ascii=False, indent=2)
+            json.dump(payload, f, ensure_ascii=False, indent=2)
             tmp_path = f.name
         os.replace(tmp_path, MEAL_PLAN_CACHE_PATH)
-        log.info(f"save_meal_plan: {len(S.MEAL_PLAN_WEEK)} Eintraege gespeichert")
+        log.info(
+            f"save_meal_plan: {len(S.MEAL_PLAN_WEEK)} Eintraege gespeichert "
+            f"(generated_week={generated_week})"
+        )
     except Exception as e:
         log.warning(f"save_meal_plan: {type(e).__name__}: {e}")
 
 
 def load_meal_plan() -> None:
-    """Laedt den persistierten Speisenplan beim Serverstart."""
+    """Laedt den persistierten Speisenplan beim Serverstart.
+
+    Der Schluessel ``"generated_week"`` wird aus dem Cache gelesen und
+    in S.MEAL_PLAN_GENERATED_WEEK gespeichert, aber NICHT in
+    S.MEAL_PLAN_WEEK eingetragen (Issue #179).
+    """
     if not os.path.exists(MEAL_PLAN_CACHE_PATH):
         return
     try:
         with open(MEAL_PLAN_CACHE_PATH, "r", encoding="utf-8") as f:
             data = json.load(f)
         if isinstance(data, dict):
+            # Metadaten-Schluessel herausloesen, bevor wir die Eintraege laden.
+            generated_week = data.pop("generated_week", "")
+            S.MEAL_PLAN_GENERATED_WEEK = generated_week
             # Clear first so stale in-memory state is fully replaced by the cache.
             S.MEAL_PLAN_WEEK.clear()
             S.MEAL_PLAN_WEEK.update(data)
-            log.info(f"load_meal_plan: {len(data)} Eintraege geladen")
+            log.info(
+                f"load_meal_plan: {len(data)} Eintraege geladen "
+                f"(generated_week={generated_week!r})"
+            )
     except Exception as e:
         log.warning(f"load_meal_plan: {type(e).__name__}: {e}")
+
+
+def get_generated_week() -> str:
+    """Gibt den ISO-Wochen-String des gespeicherten Speiseplans zurueck.
+
+    Beispiel: ``"2026-W23"``. Leerer String wenn kein Plan gespeichert
+    wurde oder der Cache kein ``generated_week``-Feld enthaelt.
+
+    Dient als Dedup-Guard in ``meal_plan_scheduler`` (Issue #179).
+
+    Returns:
+        ISO-Wochen-String oder leerer String.
+    """
+    return getattr(S, "MEAL_PLAN_GENERATED_WEEK", "")
 
 
 async def get_today_recipe() -> str:
