@@ -166,13 +166,13 @@ def route(
                 account, rules,
             )
 
-    pkg_folder = heur.get("package_to_dhl_folder")
+    pkg_folder = heur.get("package_to_dhl_folder", "DHL")
     if pkg_folder and any(d in sender_l for d in _PACKAGE_FROM_DOMAINS):
         return _apply_folder_override(
             {"action": "move", "folder": pkg_folder}, account, rules
         )
 
-    travel_folder = heur.get("travel_to_reise_folder")
+    travel_folder = heur.get("travel_to_reise_folder", "Reise")
     if travel_folder and any(d in sender_l for d in _TRAVEL_FROM_DOMAINS):
         return _apply_folder_override(
             {"action": "move", "folder": travel_folder}, account, rules
@@ -181,7 +181,7 @@ def route(
     # 3) Newsletter heuristic — List-Unsubscribe header alone is definitive;
     #    LLM category is not required (newsletters often misclassified as "info")
     if msg is not None:
-        newsletter_folder = heur.get("newsletter_to_werbung_folder")
+        newsletter_folder = heur.get("newsletter_to_werbung_folder", "Werbung")
         if newsletter_folder and msg.get("List-Unsubscribe"):
             return _apply_folder_override(
                 {"action": "move", "folder": newsletter_folder}, account, rules
