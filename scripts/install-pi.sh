@@ -13,7 +13,7 @@ echo "=== JARVIS Pi Setup (user: $JARVIS_USER) ==="
 
 # System-Abhängigkeiten
 apt-get update -qq
-apt-get install -y git python3 python3-venv python3-pip libopenblas-dev
+apt-get install -y git python3 python3-full python3-venv python3-pip libopenblas-dev
 
 # Virtual environment erstellen (falls noch nicht vorhanden)
 if [ ! -f "$REPO_DIR/.venv/bin/python" ]; then
