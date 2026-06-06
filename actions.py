@@ -2677,14 +2677,17 @@ async def execute_action(action: dict) -> str:
             accounts_to_process = [a["name"] for a in S.MAIL_MONITOR_ACCOUNTS] or ["HILO"]
         total_moved, total_errors = 0, 0
         for _acc_name in accounts_to_process:
+            # Konto-spezifischen Ordner holen, Fallback auf globalen _folder
+            _acc_obj = next((a for a in S.MAIL_MONITOR_ACCOUNTS if a["name"] == _acc_name), None)
+            _acc_folder = (_acc_obj.get("dhl_folder") or _folder) if _acc_obj else _folder
             _m, _e = await _ma.retriage_inbox(
-                _acc_name, _folder, _mt._PACKAGE_FROM_DOMAINS
+                _acc_name, _acc_folder, _mt._PACKAGE_FROM_DOMAINS
             )
             total_moved += _m
             total_errors += _e
         if total_moved == 0 and total_errors == 0:
             return f"Keine DHL/Paket-Mails im Posteingang gefunden ({', '.join(accounts_to_process)})."
-        parts = [f"{total_moved} Mail(s) in '{_folder}' verschoben"]
+        parts = [f"{total_moved} Mail(s) in Paket-Ordner verschoben"]
         if total_errors:
             parts.append(f"{total_errors} Fehler")
         return f"{', '.join(parts)} ({', '.join(accounts_to_process)})."
@@ -2831,5 +2834,52 @@ async def execute_action(action: dict) -> str:
             f"Hier ist die Mandanten-Übersicht, {pick_address()}. "
             f"{n} Mandant{'en' if n != 1 else ''} mit gespeicherten Steuerdaten."
         )
+
+    elif t == "JARVIS_UPDATE":
+        # Issue #186: Sprachbefehl "Update dich" / "Aktualisiere dich"
+        # Ruft intern den /maintenance/update-Mechanismus auf (git pull + pip install
+        # + systemctl restart jarvis). Die Antwort wird noch vorgelesen, dann
+        # startet JARVIS neu.
+        import asyncio as _asyncio
+        import subprocess as _sp
+        import sys as _sys
+        import os as _os
+
+        async def _do_update() -> None:
+            await _asyncio.sleep(2)  # kurze Pause damit die Antwort noch gesprochen wird
+            project_dir = _os.path.dirname(_os.path.abspath(__file__))
+            try:
+                _sp.run(
+                    ["git", "-C", project_dir, "pull"],
+                    check=False,
+                    capture_output=True,
+                    timeout=60,
+                )
+            except Exception as _ue:
+                import logging
+                logging.getLogger("jarvis.actions").warning("JARVIS_UPDATE git pull: %s", _ue)
+            try:
+                _sp.run(
+                    [_sys.executable, "-m", "pip", "install", "-r",
+                     f"{project_dir}/requirements.txt"],
+                    check=False,
+                    capture_output=True,
+                    timeout=300,
+                )
+            except Exception as _ue:
+                import logging
+                logging.getLogger("jarvis.actions").warning("JARVIS_UPDATE pip install: %s", _ue)
+            try:
+                _sp.Popen(
+                    ["sudo", "systemctl", "restart", "jarvis"],
+                    stdout=_sp.DEVNULL,
+                    stderr=_sp.DEVNULL,
+                )
+            except Exception as _ue:
+                import logging
+                logging.getLogger("jarvis.actions").warning("JARVIS_UPDATE restart: %s", _ue)
+
+        _asyncio.create_task(_do_update())
+        return f"Ich lade die neueste Version und starte mich neu — bis gleich, {pick_address()}."
 
     return ""
