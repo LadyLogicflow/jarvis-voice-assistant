@@ -766,6 +766,10 @@ async def morning_brief_scheduler() -> None:
                     _live_weather = await weather_tools.get_weather_neuss()
                     if _live_weather:
                         today_block += f"\nAktuelles Wetter Neuss (live): {_live_weather}"
+                    # Issue #200: optionales Film-Motivationszitat mit Cooldown
+                    motivation_q = jarvis_quotes.quote_maybe("motivation_film", 0.3)
+                    if motivation_q:
+                        today_block += f"\n{motivation_q}"
                     user_msg = (
                         f"Datum: {now.strftime('%A, %d.%m.%Y')}, "
                         f"Uhrzeit: {now.strftime('%H:%M')}"
@@ -1041,6 +1045,10 @@ async def build_evening_brief() -> str:
         _closing = jarvis_quotes.quote("closing")
         if _closing and brief_text:
             brief_text = brief_text + " " + _closing
+        # Issue #200: optionales Film-Abschlusszitat mit Cooldown (30 % Chance)
+        _closing_film = jarvis_quotes.quote_maybe("closing_film", 0.3)
+        if _closing_film and brief_text:
+            brief_text = brief_text + " " + _closing_film
         return brief_text
     except Exception as e:
         log.warning(
