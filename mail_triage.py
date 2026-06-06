@@ -55,9 +55,12 @@ _BOUNCE_SUBJECT_PATTERNS = (
     "returned mail", "delivery failure", "undeliverable",
 )
 _PACKAGE_FROM_DOMAINS = (
-    "@dhl.com", "@dhl.de", "@hermesworld.com", "@my.hermesworld.com",
+    "@dhl.com", "@dhl.de", "@dhl-paket.de",
+    "@post.dhl.com", "@notifications.dhl.com",
+    "@hermesworld.com", "@my.hermesworld.com",
     "@dpd.com", "@dpd.de", "@ups.com", "@ankunft.dpd",
     "@amazon-logistics.de", "@versand.amazon.de",
+    "@gls-group.eu",
 )
 _TRAVEL_FROM_DOMAINS = (
     "@bahn.de", "@deutschebahn.com", "@lufthansa.com", "@booking.com",

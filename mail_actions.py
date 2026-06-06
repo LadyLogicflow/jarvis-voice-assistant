@@ -701,6 +701,10 @@ async def retriage_inbox(
     errors = 0
     try:
         client = await _connect(acc)
+        # Immer in INBOX suchen, unabhaengig vom account["folder"] Monitor-Setting
+        _sel = await client.select("INBOX")
+        if getattr(_sel, "result", None) != "OK":
+            raise RuntimeError(f"SELECT INBOX failed for {account_name!r}: {_sel}")
         matched_uids: set[int] = set()
         for domain in from_domains:
             try:
