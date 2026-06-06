@@ -2957,4 +2957,25 @@ async def execute_action(action: dict) -> str:
         asyncio.create_task(_do_update())
         return f"Ich lade die neueste Version und starte mich neu — bis gleich, {_update_address}."
 
+    elif t == "JARVIS_VERSION":
+        # Issue #190: Aktuellen git-Commit-Hash + Datum synchron abfragen.
+        # subprocess.run ist hier unbedenklich — der Aufruf dauert < 100 ms
+        # und blockiert den Event-Loop nicht nennenswert.
+        project_dir = os.path.dirname(os.path.abspath(__file__))
+        try:
+            _res = subprocess.run(
+                ["git", "-C", project_dir, "log", "-1",
+                 "--format=%h %cd", "--date=format:%d.%m.%Y"],
+                capture_output=True, text=True, timeout=5,
+            )
+            if _res.returncode == 0 and _res.stdout.strip():
+                _parts = _res.stdout.strip().split(None, 1)
+                _hash = _parts[0]
+                _date = _parts[1] if len(_parts) > 1 else ""
+                _version = f"Commit {_hash} vom {_date}" if _date else f"Commit {_hash}"
+                return f"Ich laufe auf {_version}, {pick_address()}."
+        except Exception as _ve:
+            log.warning("JARVIS_VERSION git log: %s", _ve)
+        return f"Die Versionsinfo ist leider nicht verfügbar, {pick_address()}."
+
     return ""
