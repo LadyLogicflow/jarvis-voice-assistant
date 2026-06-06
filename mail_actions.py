@@ -745,12 +745,14 @@ async def retriage_inbox(
         for uid in list(matched_uids)[:max_mails]:
             try:
                 await client.uid("store", str(uid), "+FLAGS", "(\\Seen)")
-                typ, _ = await client.uid("move", str(uid), target_folder)
+                typ, move_data = await client.uid("move", str(uid), target_folder)
                 if typ != "OK":
-                    typ2, _ = await client.uid("copy", str(uid), target_folder)
+                    log.warning(f"retriage_inbox uid={uid}: MOVE failed ({typ}) -> trying COPY to {target_folder!r}: {move_data}")
+                    typ2, copy_data = await client.uid("copy", str(uid), target_folder)
                     if typ2 == "OK":
                         await client.uid("store", str(uid), "+FLAGS", "(\\Deleted)")
                     else:
+                        log.warning(f"retriage_inbox uid={uid}: COPY also failed ({typ2}): {copy_data}")
                         errors += 1
                         continue
                 moved += 1
