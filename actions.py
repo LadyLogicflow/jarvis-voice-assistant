@@ -18,6 +18,8 @@ import asyncio
 import datetime
 import html as _html_module
 import os
+import subprocess
+import sys
 
 import settings as S
 
@@ -2837,49 +2839,41 @@ async def execute_action(action: dict) -> str:
 
     elif t == "JARVIS_UPDATE":
         # Issue #186: Sprachbefehl "Update dich" / "Aktualisiere dich"
-        # Ruft intern den /maintenance/update-Mechanismus auf (git pull + pip install
-        # + systemctl restart jarvis). Die Antwort wird noch vorgelesen, dann
-        # startet JARVIS neu.
-        import asyncio as _asyncio
-        import subprocess as _sp
-        import sys as _sys
-        import os as _os
-
+        # git pull + pip install in run_in_executor (non-blocking), dann systemctl restart.
         async def _do_update() -> None:
-            await _asyncio.sleep(2)  # kurze Pause damit die Antwort noch gesprochen wird
-            project_dir = _os.path.dirname(_os.path.abspath(__file__))
+            await asyncio.sleep(4)  # TTS-Puffer bevor Neustart
+            project_dir = os.path.dirname(os.path.abspath(__file__))
+            _loop = asyncio.get_event_loop()
             try:
-                _sp.run(
-                    ["git", "-C", project_dir, "pull"],
-                    check=False,
-                    capture_output=True,
-                    timeout=60,
+                await _loop.run_in_executor(
+                    None,
+                    lambda: subprocess.run(
+                        ["git", "-C", project_dir, "pull"],
+                        capture_output=True, timeout=60,
+                    ),
                 )
             except Exception as _ue:
-                import logging
-                logging.getLogger("jarvis.actions").warning("JARVIS_UPDATE git pull: %s", _ue)
+                log.warning("JARVIS_UPDATE git pull: %s", _ue)
             try:
-                _sp.run(
-                    [_sys.executable, "-m", "pip", "install", "-r",
-                     f"{project_dir}/requirements.txt"],
-                    check=False,
-                    capture_output=True,
-                    timeout=300,
+                await _loop.run_in_executor(
+                    None,
+                    lambda: subprocess.run(
+                        [sys.executable, "-m", "pip", "install", "-r",
+                         os.path.join(project_dir, "requirements.txt")],
+                        capture_output=True, timeout=300,
+                    ),
                 )
             except Exception as _ue:
-                import logging
-                logging.getLogger("jarvis.actions").warning("JARVIS_UPDATE pip install: %s", _ue)
+                log.warning("JARVIS_UPDATE pip install: %s", _ue)
             try:
-                _sp.Popen(
+                subprocess.Popen(
                     ["sudo", "systemctl", "restart", "jarvis"],
-                    stdout=_sp.DEVNULL,
-                    stderr=_sp.DEVNULL,
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                 )
             except Exception as _ue:
-                import logging
-                logging.getLogger("jarvis.actions").warning("JARVIS_UPDATE restart: %s", _ue)
+                log.warning("JARVIS_UPDATE restart: %s", _ue)
 
-        _asyncio.create_task(_do_update())
+        asyncio.create_task(_do_update())
         return f"Ich lade die neueste Version und starte mich neu — bis gleich, {pick_address()}."
 
     return ""
