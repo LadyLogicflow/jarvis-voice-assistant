@@ -20,6 +20,7 @@ import datetime
 import json
 import logging
 import os
+import re
 from typing import Any
 
 import settings as S
@@ -878,7 +879,7 @@ def generate_meal_plan_pdf(categorized_ingredients: dict[str, list[str]] | None 
             )
             recipe_page.insert_textbox(
                 fitz.Rect(PAGE_W - 105, y, PAGE_W - MARGIN, y + 18),
-                f"⏱ {cook_time} min",
+                f"{cook_time} min",
                 fontsize=10, fontname="helv", color=COL_GREY, align=2,
             )
             y += 26
@@ -921,8 +922,7 @@ def generate_meal_plan_pdf(categorized_ingredients: dict[str, list[str]] | None 
                 )
                 y += 16
                 # Rezept in Schritte aufteilen (Sätze oder Zeilenumbrüche)
-                import re as _re
-                steps_raw = _re.split(r"(?<=[.!?])\s+|\n+", recipe.strip())
+                steps_raw = re.split(r"(?<=[.!?])\s+|\n+", recipe.strip())
                 steps = [s.strip() for s in steps_raw if s.strip()]
                 for idx_s, step in enumerate(steps, 1):
                     step_text = f"{idx_s}. {step}"
@@ -942,8 +942,11 @@ def generate_meal_plan_pdf(categorized_ingredients: dict[str, list[str]] | None 
             # Naehrwert-Fusszeile
             if kcal or carbs:
                 footer_text = f"ca. {kcal} kcal · {carbs} g KH pro Portion"
-                # Am Ende der Seite positionieren
                 footer_y = PAGE_H - MARGIN - 14
+                # Neue Seite wenn Rezept-Text bis in den Footer-Bereich reicht
+                if y > footer_y - 5:
+                    recipe_page = doc.new_page(width=PAGE_W, height=PAGE_H)
+                    footer_y = PAGE_H - MARGIN - 14
                 recipe_page.insert_textbox(
                     fitz.Rect(MARGIN, footer_y, PAGE_W - MARGIN, footer_y + 13),
                     footer_text,
