@@ -829,7 +829,9 @@ async def execute_action(action: dict) -> str:
             return result
         except Exception as e:
             log.warning("ADDCAL fehlgeschlagen: %s: %s", type(e).__name__, e)
-            return f"Termin konnte nicht angelegt werden: {e}"
+            error_text = f"Termin konnte nicht angelegt werden: {e}"
+            film_q = jarvis_quotes.quote_maybe("error_film", 0.4)
+            return f"{film_q} {error_text}".strip() if film_q else error_text
 
     elif t == "VACATION":
         # Issue #111: Abwesenheitsnotiz via Gmail Settings API setzen/deaktivieren.
@@ -854,7 +856,9 @@ async def execute_action(action: dict) -> str:
             )
         except Exception as e:
             log.warning("VACATION fehlgeschlagen: %s: %s", type(e).__name__, e)
-            return f"Abwesenheitsnotiz konnte nicht gesetzt werden: {e}"
+            error_text = f"Abwesenheitsnotiz konnte nicht gesetzt werden: {e}"
+            film_q = jarvis_quotes.quote_maybe("error_film", 0.4)
+            return f"{film_q} {error_text}".strip() if film_q else error_text
 
     elif t == "NOTE":
         parts = p.split("|", 1)
@@ -1528,7 +1532,9 @@ async def execute_action(action: dict) -> str:
             log.warning(f"RECALL semantic search failed: {type(e).__name__}: {e}")
 
         if not results:
-            return f"Ich finde nichts zu {query}, {pick_address()}."
+            _unc_q = jarvis_quotes.quote_maybe("uncertainty", 0.25)
+            base = f"Ich finde nichts zu {query}, {pick_address()}."
+            return f"{base} {_unc_q}".strip() if _unc_q else base
         return f"Zu {query} habe ich:\n" + "\n".join(f"- {r}" for r in results[:15])
 
     elif t == "MAIL_LOG":
@@ -1582,13 +1588,18 @@ async def execute_action(action: dict) -> str:
                 log.warning("TAGESABSCHLUSS tasks failed: %s: %s", type(_e).__name__, _e)
 
         if not parts:
-            return f"Ein ruhiger Tag, {pick_address()}. Nichts Besonderes zu berichten."
+            _unc_q = jarvis_quotes.quote_maybe("uncertainty", 0.25)
+            base = f"Ein ruhiger Tag, {pick_address()}. Nichts Besonderes zu berichten."
+            return f"{base} {_unc_q}".strip() if _unc_q else base
 
         summary = "\n\n".join(parts)
         # Issue #199: JARVIS-Abschlusszitat im Marvel-Stil
         _closing = jarvis_quotes.quote("closing")
         preamble = f"{_closing}\n\n" if _closing else ""
-        return f"{preamble}Tagesabschluss, {pick_address()}:\n\n{summary}"
+        # Issue #200: optionales Film-Abschlusszitat mit Cooldown
+        _closing_film = jarvis_quotes.quote_maybe("closing_film", 0.3)
+        suffix = f" {_closing_film}" if _closing_film else ""
+        return f"{preamble}Tagesabschluss, {pick_address()}:\n\n{summary}{suffix}"
 
     elif t == "LOOKUP_CONTACT":
         # "Was ist die Telefonnummer von X?" / "Wer ist X?".
