@@ -714,11 +714,11 @@ async def retriage_inbox(
         matched_uids: set[int] = set()
         for domain in from_domains:
             try:
-                # Regulaeres SEARCH (Sequenznummern) statt UID SEARCH —
-                # viele IMAP-Server (z.B. Horde/Dovecot mit UIDPLUS) unterstuetzen
-                # UID SEARCH nicht. Seq-Nummern werden anschliessend per FETCH in UIDs
-                # umgewandelt, damit die weiteren UID-basierten Operationen funktionieren.
-                typ, data = await client.search(None, f'FROM "{domain}"')
+                # Regulaeres SEARCH ohne CHARSET (charset=None vermeidet den aioimaplib-
+                # Default "utf-8" der "SEARCH CHARSET utf-8 ..." sendet, was Apple iCloud
+                # ablehnt). None als positionales Arg wuerde als Kriterium "None" landen —
+                # daher keyword-only. Seq-Nummern → UIDs via anschliessenden FETCH (UID).
+                typ, data = await client.search("FROM", f'"{domain}"', charset=None)
                 raw_val = ""
                 if data and data[0]:
                     raw_val = data[0].decode() if isinstance(data[0], (bytes, bytearray)) else str(data[0])
