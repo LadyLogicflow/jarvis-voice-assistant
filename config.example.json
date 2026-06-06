@@ -71,15 +71,14 @@
      "smtp_host": "smtp.mail.me.com", "smtp_port": 587, "trash_folder": "Deleted Messages",
      "_spam_note": "spam_folder: IMAP folder for werbung/newsletter mails (default: 'Werbung'). iCloud uses no INBOX. prefix.",
      "spam_folder": "Werbung",
-     "_triage_folders_note": "dhl_folder/junk_folder: konto-spezifische Zielordner fuer Paket- bzw. Spam-Mails (Issue #185). Leer = globaler Fallback aus mail_triage_rules.json.",
-     "dhl_folder": "Pakete",
-     "junk_folder": "Junk"},
+     "_triage_folders_note": "dhl_folder: konto-spezifischer Zielordner fuer Paket-Mails (Issue #185). Leer = globaler Fallback aus mail_triage_rules.json.",
+     "dhl_folder": "Pakete"},
     {"name": "HILO",  "host": "imap.example.de",   "user": "you@hilo.de", "port": 993, "ssl": true, "folder": "INBOX",
      "_trash_note": "trash_folder: IMAP-Name des Papierkorbs. 'Trash' (Standard), 'Gelöschte Elemente', 'Papierkorb' — je nach Anbieter.",
      "trash_folder": "Trash",
      "_spam_note": "spam_folder: Zielordner fuer Werbung (default: 'Werbung'). IMAP-Prefix beachten, z.B. 'INBOX.Werbung' fuer Horde/Dovecot.",
      "spam_folder": "INBOX.Werbung",
-     "_triage_folders_note": "dhl_folder/junk_folder: konto-spezifische Zielordner (leer = globaler Fallback). Beispiel: HILO nutzt 'DHL', Apple nutzt 'Pakete'.",
+     "_triage_folders_note": "dhl_folder: konto-spezifischer Zielordner fuer Paket-Mails (leer = globaler Fallback). Beispiel: HILO nutzt 'DHL', Apple nutzt 'Pakete'.",
      "dhl_folder": "DHL"}
   ],
 
