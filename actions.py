@@ -2655,45 +2655,37 @@ async def execute_action(action: dict) -> str:
         return "\n".join(lines)
 
     elif t == "RETRIAGE_INBOX":
-        # Räumt bekannte Absender-Kategorien aus der INBOX auf — verschiebt
-        # DHL/Hermes/DPD/UPS-Mails retroaktiv in den konfigurierten Ordner.
-        # Ohne Konto-Angabe werden ALLE konfigurierten Konten verarbeitet.
         import mail_actions as _ma
         import mail_triage as _mt
-        import json as _json, os as _os
-        _rules_path = _os.path.join(_os.path.dirname(__file__), "mail_triage_rules.json")
-        _folder = "DHL"
-        if _os.path.exists(_rules_path):
-            try:
-                with open(_rules_path) as _f:
-                    _rules = _json.load(_f)
-                _folder = _rules.get("heuristics", {}).get("package_to_dhl_folder", "DHL")
-            except Exception:
-                pass
         account_name = p.strip()
-        # Kein Konto angegeben → alle konfigurierten Konten
         if account_name:
             accounts_to_process = [account_name]
         else:
             accounts_to_process = [a["name"] for a in S.MAIL_MONITOR_ACCOUNTS] or ["HILO"]
         log.info(
-            f"RETRIAGE_INBOX: accounts_configured={[a['name'] for a in S.MAIL_MONITOR_ACCOUNTS]} "
-            f"accounts_to_process={accounts_to_process} global_folder={_folder!r}"
+            f"RETRIAGE_INBOX: accounts={accounts_to_process} "
+            f"rules={[r['name'] for r in _mt.TRIAGE_RULES]}"
         )
         total_moved, total_errors = 0, 0
-        for _acc_name in accounts_to_process:
-            # Konto-spezifischen Ordner holen, Fallback auf globalen _folder
-            _acc_obj = next((a for a in S.MAIL_MONITOR_ACCOUNTS if a["name"] == _acc_name), None)
-            _acc_folder = (_acc_obj.get("dhl_folder") or _folder) if _acc_obj else _folder
-            log.info(f"RETRIAGE_INBOX: processing {_acc_name!r} -> folder {_acc_folder!r}")
-            _m, _e = await _ma.retriage_inbox(
-                _acc_name, _acc_folder, _mt._PACKAGE_FROM_DOMAINS
-            )
-            total_moved += _m
-            total_errors += _e
+        processed_folders: list[str] = []
+        for rule in _mt.TRIAGE_RULES:
+            for _acc_name in accounts_to_process:
+                _acc_obj = next((a for a in S.MAIL_MONITOR_ACCOUNTS if a["name"] == _acc_name), None)
+                # DHL-Ordner kann per Konto überschrieben werden; Amazon-Ordner nicht
+                if rule["name"] == "Pakete":
+                    _folder = (_acc_obj.get("dhl_folder") or rule["folder"]) if _acc_obj else rule["folder"]
+                else:
+                    _folder = rule["folder"]
+                log.info(f"RETRIAGE_INBOX: {_acc_name!r} rule={rule['name']!r} -> {_folder!r}")
+                _m, _e = await _ma.retriage_inbox(_acc_name, _folder, rule["domains"])
+                total_moved += _m
+                total_errors += _e
+            if rule["folder"] not in processed_folders:
+                processed_folders.append(rule["folder"])
         if total_moved == 0 and total_errors == 0:
-            return f"Keine DHL/Paket-Mails im Posteingang gefunden ({', '.join(accounts_to_process)})."
-        parts = [f"{total_moved} Mail(s) in Paket-Ordner verschoben"]
+            folders_str = ", ".join(processed_folders)
+            return f"Keine Mails zum Sortieren gefunden ({', '.join(accounts_to_process)}, Ordner: {folders_str})."
+        parts = [f"{total_moved} Mail(s) sortiert ({', '.join(processed_folders)})"]
         if total_errors:
             parts.append(f"{total_errors} Fehler")
         return f"{', '.join(parts)} ({', '.join(accounts_to_process)})."

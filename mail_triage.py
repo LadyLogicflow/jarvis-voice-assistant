@@ -67,6 +67,24 @@ _TRAVEL_FROM_DOMAINS = (
     "@airbnb.com", "@flixbus.com", "@flixtrain.com", "@rail-online.de",
 )
 
+_AMAZON_FROM_DOMAINS = (
+    "@amazon.de", "@amazon.com", "@marketplace.amazon.de",
+    "@email.amazon.de", "@gc.email.amazon.de", "@review.amazon.de",
+)
+
+TRIAGE_RULES = [
+    {
+        "name": "Pakete",
+        "domains": _PACKAGE_FROM_DOMAINS,
+        "folder": "DHL",
+    },
+    {
+        "name": "Amazon",
+        "domains": _AMAZON_FROM_DOMAINS,
+        "folder": "Amazon",
+    },
+]
+
 
 def _has_attachment(msg) -> bool:
     """Cheap detection of any non-text attachment in a parsed Message."""
