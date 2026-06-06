@@ -2010,6 +2010,43 @@ async def execute_action(action: dict) -> str:
             session_state.clear_active_mail("default")
         return "Einladung abgelehnt, Mail markiert."
 
+    elif t == "ACCEPT_DOCTOLIB_APPOINTMENT":
+        state = session_state.get("default")
+        doc = state.pending_doctolib
+        active = state.active_mail
+        if not doc:
+            return f"Es liegt keine Doctolib-Terminbestätigung vor, {pick_address()}."
+        title = f"Arzttermin{' ' + doc.doctor if doc.doctor else ''}"
+        when = doc.when_iso or doc.when_human
+        try:
+            await google_calendar_tools.add_event(title, when)
+        except Exception as e:
+            log.warning(f"ACCEPT_DOCTOLIB_APPOINTMENT calendar failed: {type(e).__name__}: {e}")
+            return f"Termin konnte nicht eingetragen werden: {type(e).__name__}"
+        # Notiz zu Catrins eigenem Personenprofil (falls vorhanden)
+        try:
+            import persons_db as _pdb
+            _self_profiles = [p for p in _pdb.all_profiles() if "catrin" in p.name.lower() or "caterina" in p.name.lower()]
+            if _self_profiles:
+                note_text = f"Arzttermin {doc.doctor} am {doc.when_human}" if doc.doctor else f"Arzttermin am {doc.when_human}"
+                _pdb.add_note(_self_profiles[0].contact_id, note_text)
+        except Exception as e:
+            log.warning(f"ACCEPT_DOCTOLIB_APPOINTMENT person note failed: {type(e).__name__}: {e}")
+        if active:
+            await mail_actions.mark_mail_read(active.account, active.uid)
+            session_state.clear_active_mail("default")
+        session_state.clear_pending_doctolib("default")
+        return f"Termin '{title}' am {doc.when_human} eingetragen und Mail abgehakt."
+
+    elif t == "DECLINE_DOCTOLIB_APPOINTMENT":
+        state = session_state.get("default")
+        active = state.active_mail
+        session_state.clear_pending_doctolib("default")
+        if active:
+            await mail_actions.mark_mail_read(active.account, active.uid)
+            session_state.clear_active_mail("default")
+        return "Doctolib-Termin nicht eingetragen. Mail als gelesen markiert."
+
     elif t == "MAIL_TO_TASK":
         # Aufgabe aus aktueller Mail generieren + in Todoist-Inbox
         # ablegen + Mail markieren. Benutzt active_mail aus session_state.

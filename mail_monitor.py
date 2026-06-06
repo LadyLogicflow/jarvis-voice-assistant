@@ -649,6 +649,48 @@ async def _summarize_body(sender: str, subject: str, body: str) -> str:
         return ""
 
 
+_DOCTOLIB_DOMAINS = ("@mail.doctolib.de", "@doctolib.com", "@doctolib.de")
+
+_DOCTOLIB_EXTRACT_PROMPT = """Du extrahierst Termindaten aus einer Doctolib-Bestaetigungsmail.
+Antworte ausschliesslich mit JSON (kein Markdown):
+{"doctor": "<Arztname>", "date": "<YYYY-MM-DD oder leer>", "time": "<HH:MM oder leer>", "when_human": "<lesbare Datumsangabe deutsch>"}
+Wenn kein Arztname erkennbar ist, setze doctor auf "".
+Wenn kein Datum erkennbar ist, setze date auf "" und when_human auf "".
+Beispiel: {"doctor": "G. Erdmann", "date": "2026-06-15", "time": "10:00", "when_human": "Montag, 15. Juni 2026 um 10:00 Uhr"}"""
+
+
+async def _extract_doctolib_appointment(body: str) -> dict | None:
+    """Extrahiert Arzt, Datum und Uhrzeit aus dem Doctolib-Mail-Body via LLM.
+    Gibt None zurueck wenn kein verwertbarer Termin erkannt."""
+    import json as _json
+    try:
+        resp = await S.ai.messages.create(
+            model=S.HAIKU_MODEL,
+            max_tokens=80,
+            system=_DOCTOLIB_EXTRACT_PROMPT,
+            messages=[{"role": "user", "content": body[:2000]}],
+        )
+        raw = llm_text(resp).strip()
+        if raw.startswith("```"):
+            raw = re.sub(r"^```(?:json)?\s*", "", raw)
+            raw = re.sub(r"\s*```$", "", raw).strip()
+        data = _json.loads(raw)
+        if not data.get("when_human") and not data.get("date"):
+            return None
+        # ISO-Timestamp fuer Google Calendar
+        when_iso = ""
+        if data.get("date") and data.get("time"):
+            when_iso = f"{data['date']}T{data['time']}:00"
+        return {
+            "doctor": data.get("doctor", ""),
+            "when_human": data.get("when_human", ""),
+            "when_iso": when_iso,
+        }
+    except Exception as e:
+        log.warning(f"mail_monitor: doctolib extract failed: {type(e).__name__}: {e}")
+        return None
+
+
 def _format_for_telegram(
     account_name: str, sender: str, subject: str,
     category: str, summary: str = "", reply_needed: bool = False,
@@ -1182,6 +1224,52 @@ async def _process_new_uids(account: dict, client, uids: list[int]) -> None:
                         log.warning(f"mail_monitor[{name}] mac alert (cal) failed: "
                                     f"{type(e).__name__}: {e}")
                 continue
+
+            # Doctolib-Terminbestaetigung? (Stage 5b)
+            if any(d in sender.lower() for d in _DOCTOLIB_DOMAINS):
+                try:
+                    body_data = await mail_actions.read_mail_body(name, uid)
+                    appointment = await _extract_doctolib_appointment(
+                        body_data.get("text", "") or body_data.get("html", "")
+                    )
+                except Exception as _de:
+                    log.warning(f"mail_monitor[{name}] uid={uid}: doctolib extract err: {_de}")
+                    appointment = None
+                if appointment:
+                    log.info(f"mail_monitor[{name}] uid={uid}: doctolib appointment "
+                             f"doctor={appointment['doctor']!r} when={appointment['when_human']!r}")
+                    _mail_ref_doc = session_state.MailRef(
+                        account=name, uid=uid, sender=sender, subject=subject,
+                        date=msg.get("Date", ""),
+                        message_id=msg.get("Message-ID", ""),
+                        references=msg.get("References", ""),
+                    )
+                    session_state.broadcast_active_mail(_mail_ref_doc)
+                    session_state.set_pending_doctolib(
+                        "default",
+                        session_state.PendingDoctolib(
+                            doctor=appointment["doctor"],
+                            when_human=appointment["when_human"],
+                            when_iso=appointment["when_iso"],
+                        ),
+                    )
+                    doctor_part = f" bei {appointment['doctor']}" if appointment["doctor"] else ""
+                    spoken = (
+                        f"Terminbestätigung von Doctolib"
+                        + (f": {appointment['when_human']}" if appointment["when_human"] else "")
+                        + doctor_part
+                        + ". Ist das Ihr Termin?"
+                    )
+                    caption = f"📅 Doctolib-Termin [{name}]\n{spoken}"
+                    if not S.is_quiet_hours():
+                        await telegram_bot.send_user_voice(spoken, caption=caption, mail_ref=_mail_ref_doc)
+                    if not S.is_mac_quiet_hours() and _mail_alert_handler is not None:
+                        try:
+                            await _mail_alert_handler(spoken)
+                        except Exception as _e:
+                            log.warning(f"mail_monitor[{name}] mac alert (doctolib) failed: {_e}")
+                    continue
+                # Kein Termin erkannt → normal weiterverarbeiten
 
             # Auto-Triage zuerst pruefen — Sender-Regeln, Heuristiken
             # (Bounce/Paket/Reise/Newsletter), und werbung_action.

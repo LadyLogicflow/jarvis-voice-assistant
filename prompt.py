@@ -266,8 +266,17 @@ def build_system_prompt() -> str:
             f"\n  An: {_sanitize(_pending.to)}, Betreff: {_sanitize(_pending.subject)}"
         )
     _pcal = _state.pending_calendar
+    _pdoc = _state.pending_doctolib
     _pper = _state.pending_person
     _both_pending = _pcal is not None and _pper is not None
+    if _pdoc:
+        doctor_str = f" bei {_pdoc.doctor}" if _pdoc.doctor else ""
+        active_mail_block += (
+            f"\nPending-Doctolib-Termin (Bestätigungsmail erkannt):"
+            f"\n  Termin: {_pdoc.when_human}{doctor_str}"
+            f"\n  Wenn {addr} sagt \"ja\", \"ja eintragen\", \"mein Termin\", \"eintragen\" -> [ACTION:ACCEPT_DOCTOLIB_APPOINTMENT]"
+            f"\n  Wenn {addr} sagt \"nein\", \"nicht meiner\", \"ablehnen\" -> [ACTION:DECLINE_DOCTOLIB_APPOINTMENT]"
+        )
     if _pcal:
         # When a person action is ALSO pending, require an explicit keyword for
         # the calendar so that a bare "ja" (which typically answers the most
@@ -498,6 +507,8 @@ AKTIONEN - Schreibe die passende Aktion ans ENDE deiner Antwort. Der Text VOR de
 [ACTION:DRAFT_CANCEL] - Verwirft den aktiven Pending-Entwurf, ohne abzulegen. Nutze wenn {addr} sagt "vergiss den Entwurf", "nicht antworten doch nicht", "abbrechen".
 [ACTION:ACCEPT_CALENDAR_INVITE] - Legt den vorgeschlagenen Kalender-Termin (aus einer Mail-Einladung, siehe Pending-Termin-Einladung unter AKTUELLE DATEN) im Google Kalender an, markiert die Mail als gelesen. Nutze wenn {addr} sagt "eintragen", "ja eintragen", "annehmen". KEIN Text davor.
 [ACTION:DECLINE_CALENDAR_INVITE] - Verwirft die vorgeschlagene Kalender-Einladung, markiert die Mail als gelesen. Nutze wenn {addr} sagt "ablehnen", "nein nicht eintragen", "lass den Termin".
+[ACTION:ACCEPT_DOCTOLIB_APPOINTMENT] - Trägt den vorgeschlagenen Doctolib-Arzttermin im Google Kalender ein, speichert eine Notiz im Personenprofil und markiert die Mail als gelesen. Nutze NUR wenn unter AKTUELLE DATEN ein Pending-Doctolib-Termin steht UND {addr} sagt "ja", "eintragen", "mein Termin", "ja eintragen". KEIN Text davor, NUR die Aktion.
+[ACTION:DECLINE_DOCTOLIB_APPOINTMENT] - Verwirft die Doctolib-Terminbestätigung ohne Kalender-Eintrag, markiert die Mail als gelesen. Nutze wenn unter AKTUELLE DATEN ein Pending-Doctolib-Termin steht UND {addr} sagt "nein", "nicht meiner", "ablehnen", "lass das". KEIN Text davor, NUR die Aktion.
 [ACTION:ACCEPT_PERSON_ACTION] - Bestätigt einen vorgeschlagenen Personen-Update (neuer Kontakt anlegen / Email-Drift aktualisieren / Telefon-Drift ergaenzen — siehe Pending-Personen-Aktion unter AKTUELLE DATEN). Nutze wenn {addr} sagt "ja", "anlegen", "aktualisieren", "ergaenzen". KEIN Text davor.
 [ACTION:DECLINE_PERSON_ACTION] - Verwirft den vorgeschlagenen Personen-Update. Nutze wenn {addr} sagt "nein", "verwerfen", "lass". KEIN Text davor.
 [ACTION:MEMORIZE] inhalt - Speichert eine Notiz, Vorliebe oder Abneigung. Trigger-Phrasen von {addr}: "merk dir ...", "notier ...", "halt fest ...". Wenn der Inhalt Person-bezogen ist ("zu Mueller: ..."), wird die Notiz an die Person verknuepft. Wenn der Inhalt nach einer Aufgabe klingt (Imperativ + Zeitangabe), schlaegt Jarvis auch eine Todoist-Aufgabe vor. Beispiel: [ACTION:MEMORIZE] zu Mueller: Bilanz braucht's bis Freitag

@@ -76,6 +76,15 @@ class PendingCalendar:
 
 
 @dataclass
+class PendingDoctolib:
+    """Doctolib-Terminbestaetigung. Catrin bestaetigt mit 'Ja, eintragen'
+    (-> Google Calendar + Personenprofil-Notiz) oder lehnt ab."""
+    doctor: str               # z.B. "G. Erdmann"
+    when_human: str           # z.B. "Montag, 15. Juni 2026 um 10:00"
+    when_iso: str = ""        # z.B. "2026-06-15T10:00:00" fuer Google Calendar
+
+
+@dataclass
 class PendingPersonAction:
     """Vorgeschlagenes Update der Personen-DB / Apple Kontakte.
     kind: 'new_person' | 'email_drift' | 'phone_drift' | 'call_choice'.
@@ -99,6 +108,7 @@ class SessionState:
     active_mail: Optional[MailRef] = None
     pending_draft: Optional[PendingDraft] = None
     pending_calendar: Optional[PendingCalendar] = None
+    pending_doctolib: Optional[PendingDoctolib] = None
     pending_person: Optional[PendingPersonAction] = None
     recent_mails: list[MailRef] = field(default_factory=list)
     # Issue #118: Emotionale Kalibrierung
@@ -144,6 +154,7 @@ def _serialize(state: SessionState) -> dict:
         "active_mail": asdict(state.active_mail) if state.active_mail else None,
         "pending_draft": asdict(state.pending_draft) if state.pending_draft else None,
         "pending_calendar": asdict(state.pending_calendar) if state.pending_calendar else None,
+        "pending_doctolib": asdict(state.pending_doctolib) if state.pending_doctolib else None,
         "pending_person": asdict(state.pending_person) if state.pending_person else None,
         "recent_mails": [asdict(m) for m in state.recent_mails],
         "stress_level": state.stress_level,
@@ -155,12 +166,14 @@ def _deserialize(raw: dict) -> SessionState:
     am = raw.get("active_mail")
     pd = raw.get("pending_draft")
     pc = raw.get("pending_calendar")
+    pdoc = raw.get("pending_doctolib")
     pp = raw.get("pending_person")
     rm = raw.get("recent_mails") or []
     return SessionState(
         active_mail=MailRef(**{k: v for k, v in am.items() if k in MailRef.__dataclass_fields__}) if am else None,
         pending_draft=PendingDraft(**{k: v for k, v in pd.items() if k in PendingDraft.__dataclass_fields__}) if pd else None,
         pending_calendar=PendingCalendar(**{k: v for k, v in pc.items() if k in PendingCalendar.__dataclass_fields__}) if pc else None,
+        pending_doctolib=PendingDoctolib(**{k: v for k, v in pdoc.items() if k in PendingDoctolib.__dataclass_fields__}) if pdoc else None,
         pending_person=PendingPersonAction(**{k: v for k, v in pp.items() if k in PendingPersonAction.__dataclass_fields__}) if pp else None,
         recent_mails=[MailRef(**{k: v for k, v in m.items() if k in MailRef.__dataclass_fields__}) for m in rm if isinstance(m, dict)],
         stress_level=int(raw.get("stress_level", 0)),
@@ -284,6 +297,18 @@ def set_pending_calendar(session_id: str, cal: PendingCalendar) -> None:
 def clear_pending_calendar(session_id: str) -> None:
     state = get(session_id)
     state.pending_calendar = None
+    _save(session_id)
+
+
+def set_pending_doctolib(session_id: str, doc: PendingDoctolib) -> None:
+    state = get(session_id)
+    state.pending_doctolib = doc
+    _save(session_id)
+
+
+def clear_pending_doctolib(session_id: str) -> None:
+    state = get(session_id)
+    state.pending_doctolib = None
     _save(session_id)
 
 
