@@ -714,17 +714,26 @@ async def retriage_inbox(
         matched_uids: set[int] = set()
         for domain in from_domains:
             try:
-                typ, data = await client.uid("search", None, f'FROM "{domain}"')
+                # Regulaeres SEARCH (Sequenznummern) statt UID SEARCH —
+                # viele IMAP-Server (z.B. Horde/Dovecot mit UIDPLUS) unterstuetzen
+                # UID SEARCH nicht. Seq-Nummern werden anschliessend per FETCH in UIDs
+                # umgewandelt, damit die weiteren UID-basierten Operationen funktionieren.
+                typ, data = await client.search(None, f'FROM "{domain}"')
                 raw_val = ""
                 if data and data[0]:
                     raw_val = data[0].decode() if isinstance(data[0], (bytes, bytearray)) else str(data[0])
                 before = len(matched_uids)
                 if typ == "OK" and raw_val.strip():
-                    for uid_str in raw_val.split():
-                        try:
-                            matched_uids.add(int(uid_str))
-                        except ValueError:
-                            pass
+                    seq_nums = [s for s in raw_val.split() if s.isdigit()]
+                    if seq_nums:
+                        # Seq-Nummern → UIDs via FETCH (UID)
+                        ftyp, fdata = await client.fetch(",".join(seq_nums), "(UID)")
+                        if ftyp == "OK":
+                            for item in fdata:
+                                txt = item.decode(errors="replace") if isinstance(item, (bytes, bytearray)) else str(item)
+                                m = re.search(r'\bUID\s+(\d+)', txt)
+                                if m:
+                                    matched_uids.add(int(m.group(1)))
                 found = len(matched_uids) - before
                 if found:
                     log.info(f"retriage_inbox[{account_name}] FROM {domain!r} -> {found} neue UIDs")
