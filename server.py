@@ -471,7 +471,13 @@ async def process_message(session_id: str, user_text: str, ws: WebSocket) -> Non
     # RECALL / LOOKUP_CONTACT: hold spoken_text — the LLM often pre-announces
     # a summary before the action tag, which would be read aloud and then
     # contradicted (RECALL) or redundant (LOOKUP_CONTACT, card is the answer).
-    _hold_spoken = action is not None and action["type"] in ("RECALL", "LOOKUP_CONTACT")
+    # JARVIS_UPDATE: the action itself returns the complete user-facing reply;
+    # the LLM's pre-announcement would be spoken first and then misread
+    # (Issue #189 — "Caterina wird..." confusion from pick_address() in the
+    # action result string).
+    _hold_spoken = action is not None and action["type"] in (
+        "RECALL", "LOOKUP_CONTACT", "JARVIS_UPDATE"
+    )
 
     if spoken_text and not _hold_spoken:
         log.info(f"Jarvis: {spoken_text[:80]}")
@@ -585,6 +591,8 @@ async def process_message(session_id: str, user_text: str, ws: WebSocket) -> Non
     # through verbatim. Forcing them through the summary pipeline below
     # would (a) mangle long content like full mail bodies, (b) clip via
     # max_tokens, (c) waste an LLM round-trip.
+    # JARVIS_UPDATE: the action result is the complete butler confirmation;
+    # no LLM wrapping needed (Issue #189).
     if action["type"] in (
         "STEUERNEWS", "ADDTASK", "DONETASK", "ADDCAL", "NOTE",
         "MAIL_LOG", "READ_MAIL", "SUMMARIZE_MAIL",
@@ -597,6 +605,7 @@ async def process_message(session_id: str, user_text: str, ws: WebSocket) -> Non
         "PLAN_NOW", "IMPORT_MAIL_HISTORY",
         "PROACTIVE_DELIVER", "PROACTIVE_DECLINE",
         "SPEISEPLAN", "SPEISEPLAN_SHOW", "SPEISEPLAN_PREF",
+        "JARVIS_UPDATE",
     ):
         await append_message(session_id, "assistant", action_result)
         await speak(action_result, ws, display=action_result, card_html=_card_html)
