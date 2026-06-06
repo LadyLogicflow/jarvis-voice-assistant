@@ -27,6 +27,7 @@ import settings as S
 import browser_tools
 import google_calendar_tools
 import imap_mail_tools
+import jarvis_quotes
 import mail_actions
 import mail_tools
 import notes_tools
@@ -34,6 +35,7 @@ from prompt import _sanitize, llm_text, pick_address
 import screen_capture
 import session_state
 import todoist_tools
+import weather_tools
 
 log = S.log
 
@@ -1583,7 +1585,10 @@ async def execute_action(action: dict) -> str:
             return f"Ein ruhiger Tag, {pick_address()}. Nichts Besonderes zu berichten."
 
         summary = "\n\n".join(parts)
-        return f"Tagesabschluss, {pick_address()}:\n\n{summary}"
+        # Issue #199: JARVIS-Abschlusszitat im Marvel-Stil
+        _closing = jarvis_quotes.quote("closing")
+        preamble = f"{_closing}\n\n" if _closing else ""
+        return f"{preamble}Tagesabschluss, {pick_address()}:\n\n{summary}"
 
     elif t == "LOOKUP_CONTACT":
         # "Was ist die Telefonnummer von X?" / "Wer ist X?".

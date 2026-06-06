@@ -29,11 +29,13 @@ from tenacity import (
 import google_calendar_tools
 import health_tools
 from holidays import check_free_day
+import jarvis_quotes
 import offer_monitor
 from prompt import llm_text, pick_address
 import settings as S
 import steuer_news
 import todoist_tools
+import weather_tools
 
 log = S.log
 
@@ -760,6 +762,10 @@ async def morning_brief_scheduler() -> None:
                         if health_block:
                             _label = "Gesundheitsdaten gestern" if S.HEALTH_INFO_PREV else "Gesundheitsdaten"
                             today_block += f"\n{_label}:\n{health_block}"
+                    # Echtzeit-Wetter Neuss via Open-Meteo (Issue #199)
+                    _live_weather = await weather_tools.get_weather_neuss()
+                    if _live_weather:
+                        today_block += f"\nAktuelles Wetter Neuss (live): {_live_weather}"
                     user_msg = (
                         f"Datum: {now.strftime('%A, %d.%m.%Y')}, "
                         f"Uhrzeit: {now.strftime('%H:%M')}"
@@ -1030,7 +1036,12 @@ async def build_evening_brief() -> str:
             system=system_prompt,
             messages=[{"role": "user", "content": user_content}],
         )
-        return trim_to_complete_sentences(llm_text(resp).strip())
+        brief_text = trim_to_complete_sentences(llm_text(resp).strip())
+        # Issue #199: JARVIS-Abschlusszitat im Marvel-Stil (Closing-Quote)
+        _closing = jarvis_quotes.quote("closing")
+        if _closing and brief_text:
+            brief_text = brief_text + " " + _closing
+        return brief_text
     except Exception as e:
         log.warning(
             f"build_evening_brief: LLM call failed: {type(e).__name__}: {e}"
