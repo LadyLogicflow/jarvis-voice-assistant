@@ -315,12 +315,14 @@ async def generate_meal_plan(start_today: bool = False, wishes: str = "",
             "cook_time_minutes": int(entry.get("cook_time_minutes", 45)),
         }
 
-    # Naehrwerte (kcal, Kohlenhydrate) pro Gericht via Haiku schaetzen
-    for date_str, entry in result.items():
+    # Naehrwerte (kcal, Kohlenhydrate) pro Gericht via Haiku schaetzen — parallel
+    async def _estimate_one(date_str: str, entry: dict) -> None:
         dish = entry.get("dish", "")
         ingredients = entry.get("ingredients", [])
         if not dish:
-            continue
+            entry["kcal_estimate"] = 0
+            entry["carbs_estimate"] = 0
+            return
         try:
             nut_resp = await S.ai.messages.create(
                 model=S.HAIKU_MODEL,
@@ -354,6 +356,8 @@ async def generate_meal_plan(start_today: bool = False, wishes: str = "",
             )
             entry["kcal_estimate"] = 0
             entry["carbs_estimate"] = 0
+
+    await asyncio.gather(*[_estimate_one(d, e) for d, e in result.items()])
 
     # Bring!-Sync: Wocheneinkauf automatisch uebertragen wenn konfiguriert
     if S.BRING_EMAIL and S.BRING_PASSWORD:

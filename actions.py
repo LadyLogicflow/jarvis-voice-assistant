@@ -2102,6 +2102,11 @@ async def execute_action(action: dict) -> str:
                     f"Das PDF wurde erstellt, konnte aber nicht gesendet werden, "
                     f"{pick_address()}. Bitte Telegram-Konfiguration prüfen."
                 )
+            finally:
+                try:
+                    os.remove(pdf_path)
+                except OSError:
+                    pass
         return (
             f"Der Speiseplan konnte leider nicht als PDF erstellt werden, "
             f"{pick_address()}."
@@ -2148,6 +2153,11 @@ async def execute_action(action: dict) -> str:
                 await _tb.send_user_document(pdf_path, caption="Speiseplan der Woche")
             except Exception as _pdf_exc:
                 log.warning("SPEISEPLAN: PDF-Versand fehlgeschlagen: %s", _pdf_exc)
+            finally:
+                try:
+                    os.remove(pdf_path)
+                except OSError:
+                    pass
         # Kurzer TTS-Text (kein vollständiges Vorlesen)
         dates = sorted(S.MEAL_PLAN_WEEK.keys())
         n = len(dates)
@@ -2292,6 +2302,12 @@ async def execute_action(action: dict) -> str:
             except Exception:
                 _regen_dates = None
         plan = await _mp.generate_meal_plan(start_today=True, explicit_dates=_regen_dates)
+        changes_text = " und ".join(changes)
+        if not plan:
+            return (
+                f"Gespeichert: {changes_text}. Der neue Plan konnte leider nicht "
+                f"erstellt werden, {pick_address()}."
+            )
         _pref_ing = await _mp.get_ingredients_for_week()
         _pref_cat = await _mp.categorize_ingredients(_pref_ing) if _pref_ing else None
         pdf_path = _mp.generate_meal_plan_pdf(categorized_ingredients=_pref_cat)
@@ -2301,13 +2317,11 @@ async def execute_action(action: dict) -> str:
                 await _tb.send_user_document(pdf_path, caption="Speiseplan (aktualisiert)")
             except Exception as _pe:
                 log.warning("SPEISEPLAN_PREF: PDF-Versand fehlgeschlagen: %s", _pe)
-
-        changes_text = " und ".join(changes)
-        if not plan:
-            return (
-                f"Gespeichert: {changes_text}. Der neue Plan konnte leider nicht "
-                f"erstellt werden, {pick_address()}."
-            )
+            finally:
+                try:
+                    os.remove(pdf_path)
+                except OSError:
+                    pass
         S.PENDING_CARD_HTML = _mp.build_meal_plan_card_html()
         return f"Verstanden — {changes_text}. Neuer Plan ist fertig, {pick_address()}."
 
