@@ -1549,7 +1549,7 @@ async def execute_action(action: dict) -> str:
                 "advance_payments": [],
             })
         if not results:
-            return f"Ich finde niemanden mit dem Namen {query} in deinen Kontakten."
+            return f"Ich finde niemanden mit dem Namen {query} in Ihren Kontakten."
         if len(results) > 1:
             names = "\n".join(f"- {r['name']}" for r in results[:8])
             return (
@@ -1693,7 +1693,7 @@ async def execute_action(action: dict) -> str:
             return f"Wen soll ich anrufen, {pick_address()}?"
         results = await phone.find_callable(query)
         if not results:
-            return f"Ich finde niemanden mit dem Namen {query} in deinen Kontakten."
+            return f"Ich finde niemanden mit dem Namen {query} in Ihren Kontakten."
         if len(results) == 1:
             name, label, number = results[0]
             ok = await phone.start_call(number)
@@ -2120,7 +2120,7 @@ async def execute_action(action: dict) -> str:
         if not S.MEAL_PLAN_WEEK:
             return (
                 f"Es gibt noch keinen Speisenplan, {pick_address()}. "
-                f"Sag 'Erstell einen Speiseplan' und ich frage dich nach deinen Wuenschen."
+                f"Sagen Sie 'Erstell einen Speiseplan' und ich frage Sie nach Ihren Wünschen."
             )
         S.PENDING_CARD_HTML = _mp.build_meal_plan_card_html()
         dates = sorted(S.MEAL_PLAN_WEEK.keys())
@@ -2208,7 +2208,7 @@ async def execute_action(action: dict) -> str:
         # Kurzer TTS-Text (kein vollständiges Vorlesen)
         dates = sorted(S.MEAL_PLAN_WEEK.keys())
         n = len(dates)
-        return f"Plan ist fertig, {pick_address()} — {n} Tage, die Übersicht siehst du gleich."
+        return f"Plan ist fertig, {pick_address()} — {n} Tage, die Übersicht sehen Sie gleich."
 
     elif t == "SPEISEPLAN_SWAP":
         # Issue #125: Ein einzelnes Gericht tauschen.
