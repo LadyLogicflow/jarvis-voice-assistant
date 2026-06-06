@@ -1205,6 +1205,16 @@ async def _process_new_uids(account: dict, client, uids: list[int]) -> None:
                 per_account_spam = account.get("spam_folder")
                 if per_account_spam:
                     triage = dict(triage, folder=per_account_spam)
+            # Per-account dhl_folder overrides the global package_to_dhl_folder
+            # for Paket-Mails (Issue #185). Sender-Domain check mirrors mail_triage.py.
+            _is_package_move = (
+                triage["action"] == "move"
+                and any(d in triage_sender.lower() for d in mail_triage._PACKAGE_FROM_DOMAINS)
+            )
+            if _is_package_move:
+                per_account_dhl = account.get("dhl_folder")
+                if per_account_dhl:
+                    triage = dict(triage, folder=per_account_dhl)
             if triage["action"] != "none":
                 log.info(f"mail_monitor[{name}] uid={uid}: triage -> {triage}")
                 import activity_log as _al

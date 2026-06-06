@@ -201,6 +201,8 @@ def _normalize_account(raw: dict) -> dict:
         "env_key": env_key,
         "smtp_host": raw.get("smtp_host", _default_smtp),
         "smtp_port": int(raw.get("smtp_port", 587)),
+        "dhl_folder": raw.get("dhl_folder", ""),   # Zielordner fuer Paket-Mails (leer = global fallback)
+        "junk_folder": raw.get("junk_folder", ""),  # Zielordner fuer Spam/Junk (leer = global fallback)
     }
 
 
