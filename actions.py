@@ -2845,20 +2845,96 @@ async def execute_action(action: dict) -> str:
     elif t == "JARVIS_UPDATE":
         # Issue #186: Sprachbefehl "Update dich" / "Aktualisiere dich"
         # git pull + pip install in run_in_executor (non-blocking), dann systemctl restart.
+        # Issue #188: Commit-Status nach dem Update per Telegram melden.
+        _update_address = pick_address()  # einmal ziehen, konsistent in Vor- und Nachricht
+
         async def _do_update() -> None:
             await asyncio.sleep(4)  # TTS-Puffer bevor Neustart
             project_dir = os.path.dirname(os.path.abspath(__file__))
             _loop = asyncio.get_event_loop()
+
+            # Hash VOR dem Pull merken
             try:
-                await _loop.run_in_executor(
+                _pre = await _loop.run_in_executor(
+                    None,
+                    lambda: subprocess.run(
+                        ["git", "-C", project_dir, "log", "--oneline", "-1"],
+                        capture_output=True, text=True, timeout=15,
+                    ),
+                )
+                _hash_before = _pre.stdout.strip().split()[0] if _pre.returncode == 0 and _pre.stdout.strip() else ""
+            except Exception as _ue:
+                log.warning("JARVIS_UPDATE git log (pre): %s", _ue)
+                _hash_before = ""
+
+            # git pull
+            _pull_ok = False
+            _pull_up_to_date = False
+            _pull_error = ""
+            try:
+                _res = await _loop.run_in_executor(
                     None,
                     lambda: subprocess.run(
                         ["git", "-C", project_dir, "pull"],
-                        capture_output=True, timeout=60,
+                        capture_output=True, text=True, timeout=60,
                     ),
                 )
+                if _res.returncode == 0:
+                    _pull_ok = True
+                    _pull_up_to_date = "already up to date" in _res.stdout.lower()
+                else:
+                    _pull_error = (_res.stderr or _res.stdout or "unbekannter Fehler").strip()
             except Exception as _ue:
                 log.warning("JARVIS_UPDATE git pull: %s", _ue)
+                _pull_error = str(_ue)
+
+            # Hash NACH dem Pull + Datum ermitteln (nur bei neuem Stand)
+            _version_msg = ""
+            if _pull_ok and not _pull_up_to_date:
+                try:
+                    _post = await _loop.run_in_executor(
+                        None,
+                        lambda: subprocess.run(
+                            ["git", "-C", project_dir, "log", "--oneline", "-1",
+                             "--format=%h %cd", "--date=format:%d.%m.%Y"],
+                            capture_output=True, text=True, timeout=15,
+                        ),
+                    )
+                    if _post.returncode == 0 and _post.stdout.strip():
+                        _parts = _post.stdout.strip().split(None, 1)
+                        _new_hash = _parts[0]
+                        _new_date = _parts[1] if len(_parts) > 1 else ""
+                        if _new_hash != _hash_before:
+                            _version_msg = (
+                                f"Version vom {_new_date}, Commit {_new_hash} ist aktiv."
+                                if _new_date else f"Commit {_new_hash} ist aktiv."
+                            )
+                except Exception as _ue:
+                    log.warning("JARVIS_UPDATE git log (post): %s", _ue)
+
+            # Telegram-Folgenachricht senden
+            try:
+                import telegram_bot as _tb_upd
+                if not _pull_ok:
+                    _follow_up = (
+                        f"Aktualisierung fehlgeschlagen: {_pull_error}. "
+                        f"Ich starte mich trotzdem neu."
+                    )
+                elif _pull_up_to_date:
+                    _follow_up = (
+                        f"Ich bin bereits auf dem neuesten Stand. "
+                        f"Ich starte mich trotzdem neu — bis gleich, {_update_address}."
+                    )
+                else:
+                    _follow_up = (
+                        f"Ich lade die neueste Version — bis gleich, {_update_address}. "
+                        + (_version_msg if _version_msg else "")
+                    ).rstrip()
+                await _tb_upd.send_user_text(_follow_up)
+            except Exception as _ue:
+                log.warning("JARVIS_UPDATE telegram follow-up: %s", _ue)
+
+            # pip install
             try:
                 await _loop.run_in_executor(
                     None,
@@ -2879,6 +2955,6 @@ async def execute_action(action: dict) -> str:
                 log.warning("JARVIS_UPDATE restart: %s", _ue)
 
         asyncio.create_task(_do_update())
-        return f"Ich lade die neueste Version und starte mich neu — bis gleich, {pick_address()}."
+        return f"Ich lade die neueste Version und starte mich neu — bis gleich, {_update_address}."
 
     return ""
