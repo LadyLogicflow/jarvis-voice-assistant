@@ -2080,6 +2080,33 @@ async def execute_action(action: dict) -> str:
         n = len(dates)
         return f"Hier ist der aktuelle Plan, {pick_address()} — {n} Tage."
 
+    elif t == "SPEISEPLAN_PDF":
+        # Issue #181: Aktuellen Speiseplan als PDF per Telegram senden.
+        import meal_plan as _mp
+        if not S.MEAL_PLAN_WEEK:
+            return (
+                f"Es gibt noch keinen Speisenplan, {pick_address()}. "
+                f"Bitte erst einen Speiseplan erstellen."
+            )
+        _pdf_ing = await _mp.get_ingredients_for_week()
+        _pdf_cat = await _mp.categorize_ingredients(_pdf_ing) if _pdf_ing else None
+        pdf_path = _mp.generate_meal_plan_pdf(categorized_ingredients=_pdf_cat)
+        if pdf_path:
+            try:
+                import telegram_bot as _tb
+                await _tb.send_user_document(pdf_path, caption="Speiseplan")
+                return f"Der Speiseplan wurde als PDF an Ihr Telegram gesendet, {pick_address()}."
+            except Exception as _pdf_exc:
+                log.warning("SPEISEPLAN_PDF: Versand fehlgeschlagen: %s", _pdf_exc)
+                return (
+                    f"Das PDF wurde erstellt, konnte aber nicht gesendet werden, "
+                    f"{pick_address()}. Bitte Telegram-Konfiguration prüfen."
+                )
+        return (
+            f"Der Speiseplan konnte leider nicht als PDF erstellt werden, "
+            f"{pick_address()}."
+        )
+
     elif t == "SPEISEPLAN":
         # On-demand: heute bis Freitag, oder benutzerdefinierter Zeitraum via daterange:.
         # Payload-Format: [daterange:YYYY-MM-DD:YYYY-MM-DD|]wuensche
@@ -2111,8 +2138,10 @@ async def execute_action(action: dict) -> str:
             )
         # Card-HTML fuer Web-Frontend
         S.PENDING_CARD_HTML = _mp.build_meal_plan_card_html()
-        # PDF generieren und per Telegram senden
-        pdf_path = _mp.generate_meal_plan_pdf()
+        # Zutaten kategorisieren (async) und PDF generieren
+        _all_ing = await _mp.get_ingredients_for_week()
+        _cat_ing = await _mp.categorize_ingredients(_all_ing) if _all_ing else None
+        pdf_path = _mp.generate_meal_plan_pdf(categorized_ingredients=_cat_ing)
         if pdf_path:
             try:
                 import telegram_bot as _tb
@@ -2263,7 +2292,9 @@ async def execute_action(action: dict) -> str:
             except Exception:
                 _regen_dates = None
         plan = await _mp.generate_meal_plan(start_today=True, explicit_dates=_regen_dates)
-        pdf_path = _mp.generate_meal_plan_pdf()
+        _pref_ing = await _mp.get_ingredients_for_week()
+        _pref_cat = await _mp.categorize_ingredients(_pref_ing) if _pref_ing else None
+        pdf_path = _mp.generate_meal_plan_pdf(categorized_ingredients=_pref_cat)
         if pdf_path:
             try:
                 import telegram_bot as _tb

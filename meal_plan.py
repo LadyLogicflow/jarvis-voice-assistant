@@ -314,6 +314,72 @@ async def generate_meal_plan(start_today: bool = False, wishes: str = "",
             "cook_time_minutes": int(entry.get("cook_time_minutes", 45)),
         }
 
+    # Naehrwerte (kcal, Kohlenhydrate) pro Gericht via Haiku schaetzen
+    for date_str, entry in result.items():
+        dish = entry.get("dish", "")
+        ingredients = entry.get("ingredients", [])
+        if not dish:
+            continue
+        try:
+            nut_resp = await S.ai.messages.create(
+                model=S.HAIKU_MODEL,
+                max_tokens=100,
+                system=(
+                    "Schätze den Kaloriengehalt und Kohlenhydratgehalt pro Portion "
+                    "fuer das genannte Gericht auf Basis der Zutaten. "
+                    "Antworte NUR mit gueltigem JSON: "
+                    '{"kcal_per_serving": <int>, "carbs_g_per_serving": <int>}'
+                ),
+                messages=[{
+                    "role": "user",
+                    "content": (
+                        f"Gericht: {dish}\n"
+                        f"Zutaten: {', '.join(ingredients[:10])}"
+                    ),
+                }],
+            )
+            nut_raw = nut_resp.content[0].text.strip() if nut_resp and nut_resp.content else "{}"
+            if nut_raw.startswith("```"):
+                nut_raw = "\n".join(
+                    l for l in nut_raw.splitlines() if not l.strip().startswith("```")
+                )
+            nut_data = json.loads(nut_raw)
+            entry["kcal_estimate"] = int(nut_data.get("kcal_per_serving", 0))
+            entry["carbs_estimate"] = int(nut_data.get("carbs_g_per_serving", 0))
+        except Exception as nut_exc:
+            log.debug(
+                "generate_meal_plan: Naehrwert-Schaetzung fehlgeschlagen fuer %r: %s",
+                dish, nut_exc,
+            )
+            entry["kcal_estimate"] = 0
+            entry["carbs_estimate"] = 0
+
+    # Bring!-Sync: Wocheneinkauf automatisch uebertragen wenn konfiguriert
+    if S.BRING_EMAIL and S.BRING_PASSWORD:
+        try:
+            import bring_tools
+            all_ingredients: list[str] = []
+            seen_norm: set[str] = set()
+            for entry in result.values():
+                for ing in entry.get("ingredients", []):
+                    cleaned = ing.strip()
+                    if not cleaned:
+                        continue
+                    key = _normalize_ingredient(cleaned)
+                    if key not in seen_norm:
+                        seen_norm.add(key)
+                        all_ingredients.append(cleaned)
+            if all_ingredients:
+                count = await bring_tools.bring_add_items(all_ingredients)
+                log.info(
+                    "generate_meal_plan: %d Zutaten an Bring! uebertragen", count
+                )
+        except Exception as bring_exc:
+            log.warning(
+                "generate_meal_plan: Bring!-Sync fehlgeschlagen: %s: %s",
+                type(bring_exc).__name__, bring_exc,
+            )
+
     # Clear before update so stale entries from prior generations are not kept.
     S.MEAL_PLAN_WEEK.clear()
     S.MEAL_PLAN_WEEK.update(result)
@@ -525,8 +591,78 @@ def build_meal_plan_card_html() -> str:
     )
 
 
-def generate_meal_plan_pdf() -> str | None:
-    """Erstellt eine PDF-Datei mit dem aktuellen Speisenplan.
+async def categorize_ingredients(ingredients: list[str]) -> dict[str, list[str]]:
+    """Kategorisiert Zutaten via Haiku in fuenf Einkaufsgruppen.
+
+    Args:
+        ingredients: Liste von Zutatennamen (ggf. mit Mengenangaben).
+
+    Returns:
+        Dict mit Kategorie als Schluessel und Liste von Zutaten als Wert.
+        Kategorien: "Obst & Gemüse", "Fleisch & Wurst",
+        "Milcherzeugnisse", "Trockenwaren & Gewürze", "Sonstiges".
+        Bei Fehler landen alle Zutaten unter "Sonstiges".
+    """
+    categories = [
+        "Obst & Gemüse",
+        "Fleisch & Wurst",
+        "Milcherzeugnisse",
+        "Trockenwaren & Gewürze",
+        "Sonstiges",
+    ]
+    default: dict[str, list[str]] = {c: [] for c in categories}
+    if not ingredients:
+        return default
+
+    try:
+        resp = await S.ai.messages.create(
+            model=S.HAIKU_MODEL,
+            max_tokens=1500,
+            system=(
+                "Kategorisiere die folgende Einkaufsliste in genau diese fuenf Kategorien:\n"
+                '"Obst & Gemüse", "Fleisch & Wurst", "Milcherzeugnisse", '
+                '"Trockenwaren & Gewürze", "Sonstiges".\n'
+                "Antworte AUSSCHLIESSLICH mit gueltigem JSON. Format:\n"
+                '{"Obst & Gemüse": [...], "Fleisch & Wurst": [...], '
+                '"Milcherzeugnisse": [...], "Trockenwaren & Gewürze": [...], '
+                '"Sonstiges": [...]}'
+            ),
+            messages=[{
+                "role": "user",
+                "content": "Zutaten:\n" + "\n".join(f"- {i}" for i in ingredients),
+            }],
+        )
+        raw = resp.content[0].text.strip() if resp and resp.content else "{}"
+        if raw.startswith("```"):
+            raw = "\n".join(l for l in raw.splitlines() if not l.strip().startswith("```"))
+        data = json.loads(raw)
+        result: dict[str, list[str]] = {c: [] for c in categories}
+        for cat in categories:
+            items = data.get(cat, [])
+            if isinstance(items, list):
+                result[cat] = [str(i) for i in items]
+        return result
+    except Exception as e:
+        log.warning(
+            "categorize_ingredients: Fehler: %s: %s", type(e).__name__, e
+        )
+        fallback = {c: [] for c in categories}
+        fallback["Sonstiges"] = list(ingredients)
+        return fallback
+
+
+def generate_meal_plan_pdf(categorized_ingredients: dict[str, list[str]] | None = None) -> str | None:
+    """Erstellt eine ansprechende PDF-Datei mit dem aktuellen Speisenplan.
+
+    Das PDF umfasst vier Bereiche:
+    - Seite 1: Titelseite (Cover)
+    - Seite 2: Wochenübersicht als Tabelle
+    - Seite 3: Einkaufsliste nach Kategorien
+    - Seiten 4+: Rezepte (ein Tag pro Seite)
+
+    Args:
+        categorized_ingredients: Vorberechnete Kategorisierung der Zutaten.
+            Wenn None, werden alle Zutaten unter "Sonstiges" gelistet.
 
     Returns:
         Absoluter Pfad zur PDF-Datei, oder None bei Fehler.
@@ -539,64 +675,280 @@ def generate_meal_plan_pdf() -> str | None:
         log.warning("generate_meal_plan_pdf: PyMuPDF nicht installiert")
         return None
     try:
-        pdf_dir = "/tmp/jarvis_pdfs"
+        pdf_dir = os.path.join(os.path.dirname(__file__), "jarvis_pdfs")
         os.makedirs(pdf_dir, exist_ok=True)
         dates = sorted(S.MEAL_PLAN_WEEK.keys())
         first = datetime.date.fromisoformat(dates[0]) if dates else datetime.date.today()
+        last = datetime.date.fromisoformat(dates[-1]) if dates else first
         kw = first.isocalendar()[1]
         year = first.year
         pdf_path = os.path.join(pdf_dir, f"speiseplan_kw{kw:02d}_{year}.pdf")
+
         PAGE_W, PAGE_H, MARGIN = 595, 842, 50
+        # Farben
+        COL_DARK_BLUE = (0.05, 0.25, 0.55)
+        COL_BLUE = (0.1, 0.4, 0.75)
+        COL_GREY = (0.45, 0.45, 0.45)
+        COL_BLACK = (0.0, 0.0, 0.0)
+        COL_ROW_ALT = (0.94, 0.94, 0.94)
+        COL_COVER_BG = (0.9, 0.95, 1.0)
+
         doc = fitz.open()
-        page = doc.new_page(width=PAGE_W, height=PAGE_H)
+
+        # ------------------------------------------------------------------
+        # Seite 1 — Cover
+        # ------------------------------------------------------------------
+        cover = doc.new_page(width=PAGE_W, height=PAGE_H)
+        # Hintergrund
+        cover.draw_rect(
+            fitz.Rect(0, 0, PAGE_W, PAGE_H),
+            color=COL_COVER_BG, fill=COL_COVER_BG,
+        )
+        # Titel
+        cover.insert_textbox(
+            fitz.Rect(MARGIN, 280, PAGE_W - MARGIN, 340),
+            "Speiseplan",
+            fontsize=36, fontname="helvB",
+            color=COL_DARK_BLUE, align=1,
+        )
+        # Datumsbereich
+        date_range = f"{first.strftime('%d.%m.')} – {last.strftime('%d.%m.%Y')}"
+        cover.insert_textbox(
+            fitz.Rect(MARGIN, 350, PAGE_W - MARGIN, 375),
+            date_range,
+            fontsize=16, fontname="helv",
+            color=COL_BLUE, align=1,
+        )
+        # KW-Info
+        cover.insert_textbox(
+            fitz.Rect(MARGIN, 382, PAGE_W - MARGIN, 400),
+            f"Kalenderwoche {kw} / {year}",
+            fontsize=12, fontname="helv",
+            color=COL_GREY, align=1,
+        )
+
+        # ------------------------------------------------------------------
+        # Seite 2 — Wochenübersicht
+        # ------------------------------------------------------------------
+        overview = doc.new_page(width=PAGE_W, height=PAGE_H)
         y = float(MARGIN)
+        overview.insert_textbox(
+            fitz.Rect(MARGIN, y, PAGE_W - MARGIN, y + 26),
+            "Wochenübersicht",
+            fontsize=18, fontname="helvB", color=COL_DARK_BLUE,
+        )
+        y += 34
+        # Tabellenspalten: Wochentag | Gericht | kcal | KH (g) | Zeit
+        col_x = [MARGIN, 145, 355, 415, 470, PAGE_W - MARGIN]
+        col_headers = ["Wochentag", "Gericht", "kcal", "KH (g)", "Zeit"]
+        row_h = 20
+        # Kopfzeile
+        overview.draw_rect(
+            fitz.Rect(MARGIN, y, PAGE_W - MARGIN, y + row_h),
+            color=COL_BLUE, fill=COL_BLUE,
+        )
+        for i, header in enumerate(col_headers):
+            overview.insert_textbox(
+                fitz.Rect(col_x[i] + 3, y + 3, col_x[i + 1] - 2, y + row_h - 2),
+                header,
+                fontsize=8.5, fontname="helvB", color=(1, 1, 1),
+            )
+        y += row_h
+        for idx, date_str in enumerate(dates):
+            e = S.MEAL_PLAN_WEEK[date_str]
+            try:
+                d = datetime.date.fromisoformat(date_str)
+                day_label = f"{_weekday_de(d.weekday())}, {d.strftime('%d.%m.')}"
+            except ValueError:
+                day_label = date_str
+            dish = e.get("dish", "")
+            cook_time = e.get("cook_time_minutes", 45)
+            kcal = e.get("kcal_estimate", 0)
+            carbs = e.get("carbs_estimate", 0)
+            row_color = COL_ROW_ALT if idx % 2 == 1 else (1.0, 1.0, 1.0)
+            overview.draw_rect(
+                fitz.Rect(MARGIN, y, PAGE_W - MARGIN, y + row_h),
+                color=row_color, fill=row_color,
+            )
+            row_values = [
+                day_label,
+                dish,
+                str(kcal) if kcal else "–",
+                str(carbs) if carbs else "–",
+                f"{cook_time} min",
+            ]
+            for i, val in enumerate(row_values):
+                overview.insert_textbox(
+                    fitz.Rect(col_x[i] + 3, y + 3, col_x[i + 1] - 2, y + row_h - 2),
+                    val,
+                    fontsize=8, fontname="helv", color=COL_BLACK,
+                )
+            y += row_h
 
-        def _ensure_space(needed: float) -> None:
-            nonlocal page, y
-            if y + needed > PAGE_H - MARGIN:
-                page = doc.new_page(width=PAGE_W, height=PAGE_H)
+        # ------------------------------------------------------------------
+        # Seite 3 — Einkaufsliste
+        # ------------------------------------------------------------------
+        shopping = doc.new_page(width=PAGE_W, height=PAGE_H)
+        y = float(MARGIN)
+        shopping.insert_textbox(
+            fitz.Rect(MARGIN, y, PAGE_W - MARGIN, y + 26),
+            "Einkaufsliste",
+            fontsize=18, fontname="helvB", color=COL_DARK_BLUE,
+        )
+        y += 34
+
+        # Kategorisierte Zutaten verwenden (oder alle unter Sonstiges)
+        if categorized_ingredients is None:
+            all_ing: list[str] = []
+            seen_norm: set[str] = set()
+            for entry in S.MEAL_PLAN_WEEK.values():
+                for ing in entry.get("ingredients", []):
+                    cleaned = ing.strip()
+                    if not cleaned:
+                        continue
+                    key = _normalize_ingredient(cleaned)
+                    if key not in seen_norm:
+                        seen_norm.add(key)
+                        all_ing.append(cleaned)
+            categorized_ingredients = {"Sonstiges": sorted(all_ing)}
+
+        for category, items in categorized_ingredients.items():
+            if not items:
+                continue
+            # Prüfen ob genug Platz für Kategorie-Header
+            if y + 20 > PAGE_H - MARGIN:
+                shopping = doc.new_page(width=PAGE_W, height=PAGE_H)
                 y = float(MARGIN)
+            # Kategorie-Header
+            shopping.insert_textbox(
+                fitz.Rect(MARGIN, y, PAGE_W - MARGIN, y + 16),
+                category,
+                fontsize=10, fontname="helvB", color=COL_BLUE,
+            )
+            y += 18
+            for item in items:
+                if y + 14 > PAGE_H - MARGIN:
+                    shopping = doc.new_page(width=PAGE_W, height=PAGE_H)
+                    y = float(MARGIN)
+                # Checkbox-Quadrat
+                shopping.draw_rect(
+                    fitz.Rect(MARGIN, y + 2, MARGIN + 8, y + 10),
+                    color=COL_GREY,
+                )
+                shopping.insert_textbox(
+                    fitz.Rect(MARGIN + 12, y, PAGE_W - MARGIN, y + 13),
+                    item,
+                    fontsize=8.5, fontname="helv", color=COL_BLACK,
+                )
+                y += 14
+            y += 6  # Abstand zwischen Kategorien
 
-        _ensure_space(40)
-        page.insert_textbox(fitz.Rect(MARGIN, y, PAGE_W - MARGIN, y + 28),
-                            f"Speiseplan KW {kw} / {year}",
-                            fontsize=18, fontname="helvB", color=(0.05, 0.4, 0.75))
-        y += 36
-
+        # ------------------------------------------------------------------
+        # Seiten 4+ — Rezepte (ein Tag pro Seite)
+        # ------------------------------------------------------------------
         for date_str in dates:
             e = S.MEAL_PLAN_WEEK[date_str]
             try:
                 d = datetime.date.fromisoformat(date_str)
-                label = f"{_weekday_de(d.weekday())}, {d.strftime('%d.%m.%Y')}"
+                weekday_label = _weekday_de(d.weekday())
+                date_label = d.strftime("%d.%m.%Y")
             except ValueError:
-                label = date_str
+                weekday_label = date_str
+                date_label = ""
             dish = e.get("dish", "")
-            servings = e.get("servings", S.MEAL_PLAN_SERVINGS_DEFAULT)
             cook_time = e.get("cook_time_minutes", 45)
             ingredients = e.get("ingredients", [])
             recipe = e.get("recipe", "")
+            kcal = e.get("kcal_estimate", 0)
+            carbs = e.get("carbs_estimate", 0)
 
-            _ensure_space(170)
-            page.insert_textbox(fitz.Rect(MARGIN, y, PAGE_W - MARGIN, y + 20),
-                                f"{label} — {dish}",
-                                fontsize=12, fontname="helvB", color=(0, 0, 0))
-            y += 22
-            page.insert_textbox(fitz.Rect(MARGIN, y, PAGE_W - MARGIN, y + 14),
-                                f"{servings} Personen · ca. {cook_time} Min.",
-                                fontsize=9, fontname="helv", color=(0.5, 0.5, 0.5))
+            recipe_page = doc.new_page(width=PAGE_W, height=PAGE_H)
+            y = float(MARGIN)
+
+            # Kopfzeile: Wochentag + Datum links, Gericht Mitte, Zeit rechts
+            recipe_page.insert_textbox(
+                fitz.Rect(MARGIN, y, 180, y + 18),
+                f"{weekday_label}, {date_label}",
+                fontsize=10, fontname="helvB", color=COL_DARK_BLUE,
+            )
+            recipe_page.insert_textbox(
+                fitz.Rect(180, y, PAGE_W - 110, y + 18),
+                dish,
+                fontsize=14, fontname="helvB", color=COL_BLACK, align=1,
+            )
+            recipe_page.insert_textbox(
+                fitz.Rect(PAGE_W - 105, y, PAGE_W - MARGIN, y + 18),
+                f"⏱ {cook_time} min",
+                fontsize=10, fontname="helv", color=COL_GREY, align=2,
+            )
+            y += 26
+
+            # Trennlinie
+            recipe_page.draw_line(
+                fitz.Point(MARGIN, y), fitz.Point(PAGE_W - MARGIN, y),
+                color=COL_BLUE, width=0.5,
+            )
+            y += 10
+
+            # Zutaten
+            recipe_page.insert_textbox(
+                fitz.Rect(MARGIN, y, PAGE_W - MARGIN, y + 14),
+                "Zutaten",
+                fontsize=11, fontname="helvB", color=COL_DARK_BLUE,
+            )
             y += 16
-            if ingredients:
-                page.insert_textbox(fitz.Rect(MARGIN, y, PAGE_W - MARGIN, y + 36),
-                                    "Zutaten: " + ", ".join(ingredients),
-                                    fontsize=8.5, fontname="helv", color=(0.2, 0.2, 0.2))
-                y += 38
+            for ing in ingredients:
+                if y + 13 > PAGE_H - MARGIN - 30:
+                    recipe_page = doc.new_page(width=PAGE_W, height=PAGE_H)
+                    y = float(MARGIN)
+                recipe_page.insert_textbox(
+                    fitz.Rect(MARGIN, y, PAGE_W - MARGIN, y + 12),
+                    f"• {ing}",
+                    fontsize=8.5, fontname="helv", color=COL_BLACK,
+                )
+                y += 13
+            y += 8
+
+            # Zubereitung
             if recipe:
-                snippet = recipe[:400] + ("…" if len(recipe) > 400 else "")
-                page.insert_textbox(fitz.Rect(MARGIN, y, PAGE_W - MARGIN, y + 80),
-                                    snippet,
-                                    fontsize=8, fontname="helv", color=(0.3, 0.3, 0.3))
-                y += 84
-            y += 14
+                if y + 18 > PAGE_H - MARGIN - 30:
+                    recipe_page = doc.new_page(width=PAGE_W, height=PAGE_H)
+                    y = float(MARGIN)
+                recipe_page.insert_textbox(
+                    fitz.Rect(MARGIN, y, PAGE_W - MARGIN, y + 14),
+                    "Zubereitung",
+                    fontsize=11, fontname="helvB", color=COL_DARK_BLUE,
+                )
+                y += 16
+                # Rezept in Schritte aufteilen (Sätze oder Zeilenumbrüche)
+                import re as _re
+                steps_raw = _re.split(r"(?<=[.!?])\s+|\n+", recipe.strip())
+                steps = [s.strip() for s in steps_raw if s.strip()]
+                for idx_s, step in enumerate(steps, 1):
+                    step_text = f"{idx_s}. {step}"
+                    # Dynamische Höhe schätzen: ca. 12pt pro Zeile, 60 Zeichen pro Zeile
+                    est_lines = max(1, len(step_text) // 75 + 1)
+                    step_h = est_lines * 12 + 4
+                    if y + step_h > PAGE_H - MARGIN - 30:
+                        recipe_page = doc.new_page(width=PAGE_W, height=PAGE_H)
+                        y = float(MARGIN)
+                    recipe_page.insert_textbox(
+                        fitz.Rect(MARGIN, y, PAGE_W - MARGIN, y + step_h),
+                        step_text,
+                        fontsize=8.5, fontname="helv", color=COL_BLACK,
+                    )
+                    y += step_h + 2
+
+            # Naehrwert-Fusszeile
+            if kcal or carbs:
+                footer_text = f"ca. {kcal} kcal · {carbs} g KH pro Portion"
+                # Am Ende der Seite positionieren
+                footer_y = PAGE_H - MARGIN - 14
+                recipe_page.insert_textbox(
+                    fitz.Rect(MARGIN, footer_y, PAGE_W - MARGIN, footer_y + 13),
+                    footer_text,
+                    fontsize=8, fontname="helv", color=COL_GREY, align=1,
+                )
 
         doc.save(pdf_path)
         doc.close()
