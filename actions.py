@@ -275,6 +275,7 @@ def _build_person_card_html(
     tax_assessments: list | None = None,
     advance_payments: list | None = None,
     tasks: list | None = None,
+    completed_tasks: list | None = None,
 ) -> str:
     """HTML-Kachel fuer die JARVIS-Web-UI (LOOKUP_CONTACT)."""
     def esc(s: str) -> str:
@@ -373,6 +374,15 @@ def _build_person_card_html(
             items.append(f'<div class="p-bullet">{content}{flag}</div>')
         parts.append(f'<div class="p-card-section"><div class="p-section-title">Offene Aufgaben</div>{"".join(items)}</div>')
 
+    if completed_tasks:
+        items = []
+        for task in completed_tasks:
+            content = esc(task.get("content", "(ohne Titel)"))
+            completed_at = task.get("completed_at", "")
+            date_str = esc(f" (erledigt: {_fmt_date(completed_at[:10])})" if completed_at else "")
+            items.append(f'<div class="p-bullet" style="color:#888">✓ {content}{date_str}</div>')
+        parts.append(f'<div class="p-card-section"><div class="p-section-title">Erledigte Aufgaben</div>{"".join(items)}</div>')
+
     return '<div class="p-card">' + "".join(parts) + "</div>"
 
 
@@ -389,6 +399,7 @@ def _build_person_card_telegram(
     tax_assessments: list | None = None,
     advance_payments: list | None = None,
     tasks: list | None = None,
+    completed_tasks: list | None = None,
     html: bool = False,
 ) -> str:
     """Formatierter Telegram-Text.
@@ -475,6 +486,14 @@ def _build_person_card_telegram(
                     flag = ""
                 lines.append(f"• {content}{flag}")
 
+        if completed_tasks:
+            lines.append("\n<b>Erledigte Aufgaben</b>")
+            for task in completed_tasks:
+                content = esc(task.get("content", "(ohne Titel)"))
+                completed_at = task.get("completed_at", "")
+                date_str = f" (erledigt: {esc(_fmt_date(completed_at[:10]))})" if completed_at else ""
+                lines.append(f"✓ {content}{date_str}")
+
         return "\n".join(lines)
 
     # --- plain-text fallback (html=False) ---
@@ -552,6 +571,14 @@ def _build_person_card_telegram(
             else:
                 flag = ""
             lines.append(f"• {content}{flag}")
+
+    if completed_tasks:
+        lines.append("\n── Erledigte Aufgaben ──")
+        for task in completed_tasks:
+            content = task.get("content", "(ohne Titel)")
+            completed_at = task.get("completed_at", "")
+            date_str = f" (erledigt: {_fmt_date(completed_at[:10])})" if completed_at else ""
+            lines.append(f"✓ {content}{date_str}")
 
     return "\n".join(lines)
 
@@ -1659,15 +1686,16 @@ async def execute_action(action: dict) -> str:
             datum_info = f" vom {_fmt_date(datum)}" if datum else ""
             out_parts.append(f"Vorauszahlungsbescheid {steuerart} {jahr}{datum_info}.")
 
-        # Todoist-Aufgaben zur Person laden
+        # Todoist-Aufgaben zur Person laden (offen + erledigt)
         _person_tasks: list[dict] = []
+        _person_completed: list[dict] = []
         try:
             import todoist_tools as _td
             if S.TODOIST_TOKEN:
+                _name_tokens = [tok for tok in r["name"].split() if len(tok) >= 3]
+                # Offene Tasks
                 _all_tasks = await _td._fetch_all_tasks(S.TODOIST_TOKEN)
                 if isinstance(_all_tasks, list):
-                    _name_tokens = [tok for tok in r["name"].split() if len(tok) >= 3]
-                    from datetime import date as _date
                     for _task in _all_tasks:
                         if _task.get("checked") or _task.get("is_deleted"):
                             continue
@@ -1675,6 +1703,15 @@ async def execute_action(action: dict) -> str:
                         if any(tok.lower() in _content_low for tok in _name_tokens):
                             _person_tasks.append(_task)
                     _person_tasks.sort(key=lambda t: (t.get("due") or {}).get("date", "9999"))
+                # Erledigte Tasks
+                _completed_all = await _td._fetch_completed_tasks(S.TODOIST_TOKEN, limit=200)
+                for _task in _completed_all:
+                    _content_low = _task.get("content", "").lower()
+                    if any(tok.lower() in _content_low for tok in _name_tokens):
+                        _person_completed.append(_task)
+                _person_completed.sort(
+                    key=lambda t: t.get("completed_at", ""), reverse=True
+                )
         except Exception as _te:
             log.warning(f"LOOKUP_CONTACT todoist: {_te}")
 
@@ -1699,6 +1736,7 @@ async def execute_action(action: dict) -> str:
             tax_assessments=r.get("tax_assessments", []),
             advance_payments=r.get("advance_payments", []),
             tasks=_person_tasks or None,
+            completed_tasks=_person_completed or None,
         )
         S.PENDING_CARD_HTML = _build_person_card_html(**_card_kwargs)
         S.PENDING_TELEGRAM_TEXT = _build_person_card_telegram(**_card_kwargs, html=True)
@@ -1706,9 +1744,15 @@ async def execute_action(action: dict) -> str:
 
         # Kurzer gesprochener Text fuer den Orb + optionaler Hinweis
         spoken = f"Hier sind die Informationen zu {r['name']}."
-        if _person_tasks:
-            n = len(_person_tasks)
-            spoken += f" Es gibt {n} offene Todoist-Aufgabe{'n' if n != 1 else ''} zu dieser Person."
+        if _person_tasks or _person_completed:
+            parts_spoken = []
+            if _person_tasks:
+                n = len(_person_tasks)
+                parts_spoken.append(f"{n} offene{'n' if n != 1 else ''}")
+            if _person_completed:
+                n = len(_person_completed)
+                parts_spoken.append(f"{n} erledigte{'n' if n != 1 else ''}")
+            spoken += f" Todoist-Aufgaben: {' und '.join(parts_spoken)}."
         # Hinweis wenn offene Punkte vorhanden
         if r.get("open_points"):
             n = len(r["open_points"])

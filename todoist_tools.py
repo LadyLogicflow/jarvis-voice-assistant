@@ -12,6 +12,7 @@ from typing import Optional
 import httpx
 
 BASE = "https://api.todoist.com/api/v1"
+SYNC_BASE = "https://api.todoist.com/sync/v9"
 log = logging.getLogger("jarvis")
 
 
@@ -83,6 +84,34 @@ async def _fetch_all_tasks(token: str) -> list[dict] | str:
                 log.warning(f"todoist pagination broke at cursor={cursor!r}: {e}")
                 break
     return all_tasks
+
+
+async def _fetch_completed_tasks(token: str, limit: int = 200) -> list[dict]:
+    """Erledigte Tasks aus dem Todoist Sync-Archiv laden (max. `limit` Eintraege).
+
+    Nutzt GET /sync/v9/archive/items. Gibt eine Liste von Dicts zurueck mit
+    mindestens ``content`` (str) und ``completed_at`` (ISO-Timestamp-String).
+    Bei Fehler: leere Liste (nicht fatal, da optionale Ergaenzung).
+    """
+    all_items: list[dict] = []
+    async with httpx.AsyncClient(timeout=15) as c:
+        cursor = None
+        while len(all_items) < limit:
+            try:
+                params: dict = {"limit": min(200, limit - len(all_items))}
+                if cursor:
+                    params["cursor"] = cursor
+                r = await c.get(f"{SYNC_BASE}/archive/items", headers=_h(token), params=params)
+                r.raise_for_status()
+                payload = r.json()
+                all_items.extend(payload.get("items", []))
+                cursor = payload.get("next_cursor")
+                if not cursor or not payload.get("has_more"):
+                    break
+            except Exception as e:
+                log.warning(f"todoist completed tasks fetch failed: {e}")
+                break
+    return all_items
 
 
 async def get_tasks(
