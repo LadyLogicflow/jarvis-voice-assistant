@@ -745,14 +745,20 @@ async def retriage_inbox(
         for uid in list(matched_uids)[:max_mails]:
             try:
                 await client.uid("store", str(uid), "+FLAGS", "(\\Seen)")
-                typ, move_data = await client.uid("move", str(uid), target_folder)
-                if typ != "OK":
-                    log.warning(f"retriage_inbox uid={uid}: MOVE failed ({typ}) -> trying COPY to {target_folder!r}: {move_data}")
+                # Versuche MOVE (RFC 6851); bei Exception (z.B. Apple iCloud hat kein MOVE)
+                # oder non-OK-Response direkt COPY+DELETE als Fallback.
+                move_ok = False
+                try:
+                    typ, _ = await client.uid("move", str(uid), target_folder)
+                    move_ok = (typ == "OK")
+                except Exception:
+                    pass  # kein MOVE-Support, weiter mit COPY-Fallback
+                if not move_ok:
                     typ2, copy_data = await client.uid("copy", str(uid), target_folder)
                     if typ2 == "OK":
                         await client.uid("store", str(uid), "+FLAGS", "(\\Deleted)")
                     else:
-                        log.warning(f"retriage_inbox uid={uid}: COPY also failed ({typ2}): {copy_data}")
+                        log.warning(f"retriage_inbox uid={uid}: COPY failed ({typ2}): {copy_data}")
                         errors += 1
                         continue
                 moved += 1
