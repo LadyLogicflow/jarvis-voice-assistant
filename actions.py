@@ -2576,7 +2576,6 @@ async def execute_action(action: dict) -> str:
         # Installiert fehlende Python-Pakete im laufenden venv via sys.executable.
         # Issue #169: subprocess.run wird im Thread-Pool ausgefuehrt damit der
         # Event-Loop waehrend der Installation (bis zu 5 Minuten) nicht blockiert.
-        import subprocess, sys
         pkg = (p.strip() or "pymupdf").lower()
         try:
             loop = asyncio.get_running_loop()
