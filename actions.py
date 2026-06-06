@@ -2677,11 +2677,16 @@ async def execute_action(action: dict) -> str:
             accounts_to_process = [account_name]
         else:
             accounts_to_process = [a["name"] for a in S.MAIL_MONITOR_ACCOUNTS] or ["HILO"]
+        log.info(
+            f"RETRIAGE_INBOX: accounts_configured={[a['name'] for a in S.MAIL_MONITOR_ACCOUNTS]} "
+            f"accounts_to_process={accounts_to_process} global_folder={_folder!r}"
+        )
         total_moved, total_errors = 0, 0
         for _acc_name in accounts_to_process:
             # Konto-spezifischen Ordner holen, Fallback auf globalen _folder
             _acc_obj = next((a for a in S.MAIL_MONITOR_ACCOUNTS if a["name"] == _acc_name), None)
             _acc_folder = (_acc_obj.get("dhl_folder") or _folder) if _acc_obj else _folder
+            log.info(f"RETRIAGE_INBOX: processing {_acc_name!r} -> folder {_acc_folder!r}")
             _m, _e = await _ma.retriage_inbox(
                 _acc_name, _acc_folder, _mt._PACKAGE_FROM_DOMAINS
             )

@@ -695,32 +695,44 @@ async def retriage_inbox(
     """
     acc = _account_by_name(account_name)
     if not acc or not acc["password"]:
+        log.warning(f"retriage_inbox[{account_name}] Konto nicht gefunden oder kein Passwort")
         return 0, 0
     client = None
     moved = 0
     errors = 0
+    log.info(
+        f"retriage_inbox START account={account_name!r} target={target_folder!r} "
+        f"domains={len(from_domains)} max={max_mails}"
+    )
     try:
         client = await _connect(acc)
         # Immer in INBOX suchen, unabhaengig vom account["folder"] Monitor-Setting
         _sel = await client.select("INBOX")
+        log.info(f"retriage_inbox[{account_name}] SELECT INBOX -> result={getattr(_sel, 'result', '?')} data={getattr(_sel, 'lines', _sel)!r:.200}")
         if getattr(_sel, "result", None) != "OK":
             raise RuntimeError(f"SELECT INBOX failed for {account_name!r}: {_sel}")
         matched_uids: set[int] = set()
         for domain in from_domains:
             try:
                 typ, data = await client.uid("search", None, f'FROM "{domain}"')
-                if typ == "OK" and data and data[0]:
-                    raw = data[0]
-                    if isinstance(raw, (bytes, bytearray)):
-                        raw = raw.decode()
-                    for uid_str in raw.split():
+                raw_val = ""
+                if data and data[0]:
+                    raw_val = data[0].decode() if isinstance(data[0], (bytes, bytearray)) else str(data[0])
+                before = len(matched_uids)
+                if typ == "OK" and raw_val.strip():
+                    for uid_str in raw_val.split():
                         try:
                             matched_uids.add(int(uid_str))
                         except ValueError:
                             pass
+                found = len(matched_uids) - before
+                if found:
+                    log.info(f"retriage_inbox[{account_name}] FROM {domain!r} -> {found} neue UIDs")
+                else:
+                    log.debug(f"retriage_inbox[{account_name}] FROM {domain!r} -> 0 (typ={typ})")
             except Exception as e:
                 log.warning(f"retriage_inbox SEARCH FROM {domain!r}: {e}")
-        log.info(f"retriage_inbox[{account_name}] {len(matched_uids)} UIDs -> {target_folder!r}")
+        log.info(f"retriage_inbox[{account_name}] {len(matched_uids)} UIDs gesamt -> verschieben nach {target_folder!r}")
         for uid in list(matched_uids)[:max_mails]:
             try:
                 await client.uid("store", str(uid), "+FLAGS", "(\\Seen)")
