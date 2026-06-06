@@ -1459,6 +1459,51 @@ async def execute_action(action: dict) -> str:
         lines = "\n".join(f"- {e}" for e in entries)
         return f"Folgende Mails habe ich heute verarbeitet:\n{lines}"
 
+    elif t == "TAGESABSCHLUSS":
+        import activity_log as _al
+        import datetime as _dt
+        parts: list[str] = []
+
+        mail_entries = _al.get_daily_summary().get("mail_processed", [])
+        if mail_entries:
+            mail_lines = "\n".join(f"- {e}" for e in mail_entries)
+            parts.append(f"Mail-Aktivitäten heute:\n{mail_lines}")
+        else:
+            parts.append("Heute keine Mails vom Monitor verarbeitet.")
+
+        _today = _dt.date.today()
+        _time_min = _dt.datetime.combine(_today, _dt.time.min, tzinfo=_dt.timezone.utc)
+        _time_max = _dt.datetime.combine(_today, _dt.time.max, tzinfo=_dt.timezone.utc)
+        try:
+            cal_result = await google_calendar_tools.get_events(
+                days=1, time_min=_time_min, time_max=_time_max,
+            )
+            if cal_result and cal_result.strip():
+                parts.append(f"Termine heute:\n{cal_result.strip()}")
+        except Exception as _e:
+            log.warning("TAGESABSCHLUSS calendar failed: %s: %s", type(_e).__name__, _e)
+
+        if S.TODOIST_TOKEN and S.TODOIST_TOKEN != "YOUR_TODOIST_API_TOKEN":
+            try:
+                raw_tasks = await todoist_tools.get_tasks(
+                    S.TODOIST_TOKEN,
+                    project_ids=S.TODOIST_PROJECT_IDS or None,
+                    section_ids_per_project=S.TODOIST_SECTIONS_PER_PROJECT or None,
+                )
+                if raw_tasks and raw_tasks != "KEINE_TASKS":
+                    task_lines = [l for l in raw_tasks.splitlines() if l.startswith("•")]
+                    due_lines = [l for l in task_lines if "(heute)" in l or "überfällig" in l]
+                    if due_lines:
+                        parts.append("Offene Aufgaben heute:\n" + "\n".join(due_lines))
+            except Exception as _e:
+                log.warning("TAGESABSCHLUSS tasks failed: %s: %s", type(_e).__name__, _e)
+
+        if not parts:
+            return f"Ein ruhiger Tag, {pick_address()}. Nichts Besonderes zu berichten."
+
+        summary = "\n\n".join(parts)
+        return f"Tagesabschluss, {pick_address()}:\n\n{summary}"
+
     elif t == "LOOKUP_CONTACT":
         # "Was ist die Telefonnummer von X?" / "Wer ist X?".
         # Sucht in persons_db + Apple Kontakte (Substring auf Name).
