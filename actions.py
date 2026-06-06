@@ -2094,7 +2094,12 @@ async def execute_action(action: dict) -> str:
         if pdf_path:
             try:
                 import telegram_bot as _tb
+                import os as _os
                 await _tb.send_user_document(pdf_path, caption="Speiseplan")
+                try:
+                    _os.remove(pdf_path)
+                except OSError:
+                    pass
                 return f"Der Speiseplan wurde als PDF an Ihr Telegram gesendet, {pick_address()}."
             except Exception as _pdf_exc:
                 log.warning("SPEISEPLAN_PDF: Versand fehlgeschlagen: %s", _pdf_exc)
@@ -2145,7 +2150,12 @@ async def execute_action(action: dict) -> str:
         if pdf_path:
             try:
                 import telegram_bot as _tb
+                import os as _os
                 await _tb.send_user_document(pdf_path, caption="Speiseplan der Woche")
+                try:
+                    _os.remove(pdf_path)
+                except OSError:
+                    pass
             except Exception as _pdf_exc:
                 log.warning("SPEISEPLAN: PDF-Versand fehlgeschlagen: %s", _pdf_exc)
         # Kurzer TTS-Text (kein vollständiges Vorlesen)
@@ -2292,22 +2302,26 @@ async def execute_action(action: dict) -> str:
             except Exception:
                 _regen_dates = None
         plan = await _mp.generate_meal_plan(start_today=True, explicit_dates=_regen_dates)
-        _pref_ing = await _mp.get_ingredients_for_week()
-        _pref_cat = await _mp.categorize_ingredients(_pref_ing) if _pref_ing else None
-        pdf_path = _mp.generate_meal_plan_pdf(categorized_ingredients=_pref_cat)
-        if pdf_path:
-            try:
-                import telegram_bot as _tb
-                await _tb.send_user_document(pdf_path, caption="Speiseplan (aktualisiert)")
-            except Exception as _pe:
-                log.warning("SPEISEPLAN_PREF: PDF-Versand fehlgeschlagen: %s", _pe)
-
         changes_text = " und ".join(changes)
         if not plan:
             return (
                 f"Gespeichert: {changes_text}. Der neue Plan konnte leider nicht "
                 f"erstellt werden, {pick_address()}."
             )
+        _pref_ing = await _mp.get_ingredients_for_week()
+        _pref_cat = await _mp.categorize_ingredients(_pref_ing) if _pref_ing else None
+        pdf_path = _mp.generate_meal_plan_pdf(categorized_ingredients=_pref_cat)
+        if pdf_path:
+            try:
+                import telegram_bot as _tb
+                import os as _os
+                await _tb.send_user_document(pdf_path, caption="Speiseplan (aktualisiert)")
+                try:
+                    _os.remove(pdf_path)
+                except OSError:
+                    pass
+            except Exception as _pe:
+                log.warning("SPEISEPLAN_PREF: PDF-Versand fehlgeschlagen: %s", _pe)
         S.PENDING_CARD_HTML = _mp.build_meal_plan_card_html()
         return f"Verstanden — {changes_text}. Neuer Plan ist fertig, {pick_address()}."
 
