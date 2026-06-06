@@ -274,6 +274,7 @@ def _build_person_card_html(
     notes: list | None = None,
     tax_assessments: list | None = None,
     advance_payments: list | None = None,
+    tasks: list | None = None,
 ) -> str:
     """HTML-Kachel fuer die JARVIS-Web-UI (LOOKUP_CONTACT)."""
     def esc(s: str) -> str:
@@ -354,6 +355,24 @@ def _build_person_card_html(
             items.append(f'<div class="p-bullet"><b>Vorauszahlungsbescheid {steuerart} {jahr}</b>{datum_str}{q_str}</div>')
         parts.append(f'<div class="p-card-section"><div class="p-section-title">Vorauszahlungen</div>{"".join(items)}</div>')
 
+    if tasks:
+        from datetime import date as _date
+        _today = _date.today().isoformat()
+        items = []
+        for task in tasks:
+            content = esc(task.get("content", "(ohne Titel)"))
+            due_date = (task.get("due") or {}).get("date", "")
+            if due_date and due_date < _today:
+                flag = ' <span style="color:#e05252;font-weight:bold">⚠ überfällig</span>'
+            elif due_date == _today:
+                flag = ' <span style="color:#e08a00;font-weight:bold">(heute)</span>'
+            elif due_date:
+                flag = esc(f" (fällig: {_fmt_date(due_date)})")
+            else:
+                flag = ""
+            items.append(f'<div class="p-bullet">{content}{flag}</div>')
+        parts.append(f'<div class="p-card-section"><div class="p-section-title">Offene Aufgaben</div>{"".join(items)}</div>')
+
     return '<div class="p-card">' + "".join(parts) + "</div>"
 
 
@@ -369,6 +388,7 @@ def _build_person_card_telegram(
     notes: list | None = None,
     tax_assessments: list | None = None,
     advance_payments: list | None = None,
+    tasks: list | None = None,
     html: bool = False,
 ) -> str:
     """Formatierter Telegram-Text.
@@ -438,6 +458,23 @@ def _build_person_card_telegram(
             for ap in advance_payments:
                 lines.append(f"• {esc(str(ap.get('steuerart','?')))} {esc(str(ap.get('vorauszahlungsjahr','?')))}")
 
+        if tasks:
+            from datetime import date as _date
+            _today = _date.today().isoformat()
+            lines.append("\n<b>Offene Aufgaben</b>")
+            for task in tasks:
+                content = esc(task.get("content", "(ohne Titel)"))
+                due_date = (task.get("due") or {}).get("date", "")
+                if due_date and due_date < _today:
+                    flag = " ⚠ überfällig"
+                elif due_date == _today:
+                    flag = " (heute)"
+                elif due_date:
+                    flag = f" (fällig: {esc(_fmt_date(due_date))})"
+                else:
+                    flag = ""
+                lines.append(f"• {content}{flag}")
+
         return "\n".join(lines)
 
     # --- plain-text fallback (html=False) ---
@@ -498,6 +535,23 @@ def _build_person_card_telegram(
         lines.append("\n── Vorauszahlungen ──")
         for ap in advance_payments:
             lines.append(f"• {ap.get('steuerart','?')} {ap.get('vorauszahlungsjahr','?')}")
+
+    if tasks:
+        from datetime import date as _date
+        _today = _date.today().isoformat()
+        lines.append("\n── Offene Aufgaben ──")
+        for task in tasks:
+            content = task.get("content", "(ohne Titel)")
+            due_date = (task.get("due") or {}).get("date", "")
+            if due_date and due_date < _today:
+                flag = " ⚠ überfällig"
+            elif due_date == _today:
+                flag = " (heute)"
+            elif due_date:
+                flag = f" (fällig: {_fmt_date(due_date)})"
+            else:
+                flag = ""
+            lines.append(f"• {content}{flag}")
 
     return "\n".join(lines)
 
@@ -1605,6 +1659,25 @@ async def execute_action(action: dict) -> str:
             datum_info = f" vom {_fmt_date(datum)}" if datum else ""
             out_parts.append(f"Vorauszahlungsbescheid {steuerart} {jahr}{datum_info}.")
 
+        # Todoist-Aufgaben zur Person laden
+        _person_tasks: list[dict] = []
+        try:
+            import todoist_tools as _td
+            if S.TODOIST_TOKEN:
+                _all_tasks = await _td._fetch_all_tasks(S.TODOIST_TOKEN)
+                if isinstance(_all_tasks, list):
+                    _name_tokens = [tok for tok in r["name"].split() if len(tok) >= 3]
+                    from datetime import date as _date
+                    for _task in _all_tasks:
+                        if _task.get("checked") or _task.get("is_deleted"):
+                            continue
+                        _content_low = _task.get("content", "").lower()
+                        if any(tok.lower() in _content_low for tok in _name_tokens):
+                            _person_tasks.append(_task)
+                    _person_tasks.sort(key=lambda t: (t.get("due") or {}).get("date", "9999"))
+        except Exception as _te:
+            log.warning(f"LOOKUP_CONTACT todoist: {_te}")
+
         # Mandanten-CSV: Mitgliedsnr + Steuernr fuer die Kachel
         try:
             import mandanten as _mand
@@ -1625,6 +1698,7 @@ async def execute_action(action: dict) -> str:
             notes=r.get("notes", []),
             tax_assessments=r.get("tax_assessments", []),
             advance_payments=r.get("advance_payments", []),
+            tasks=_person_tasks or None,
         )
         S.PENDING_CARD_HTML = _build_person_card_html(**_card_kwargs)
         S.PENDING_TELEGRAM_TEXT = _build_person_card_telegram(**_card_kwargs, html=True)
@@ -1632,6 +1706,9 @@ async def execute_action(action: dict) -> str:
 
         # Kurzer gesprochener Text fuer den Orb + optionaler Hinweis
         spoken = f"Hier sind die Informationen zu {r['name']}."
+        if _person_tasks:
+            n = len(_person_tasks)
+            spoken += f" Es gibt {n} offene Todoist-Aufgabe{'n' if n != 1 else ''} zu dieser Person."
         # Hinweis wenn offene Punkte vorhanden
         if r.get("open_points"):
             n = len(r["open_points"])
