@@ -2094,12 +2094,7 @@ async def execute_action(action: dict) -> str:
         if pdf_path:
             try:
                 import telegram_bot as _tb
-                import os as _os
                 await _tb.send_user_document(pdf_path, caption="Speiseplan")
-                try:
-                    _os.remove(pdf_path)
-                except OSError:
-                    pass
                 return f"Der Speiseplan wurde als PDF an Ihr Telegram gesendet, {pick_address()}."
             except Exception as _pdf_exc:
                 log.warning("SPEISEPLAN_PDF: Versand fehlgeschlagen: %s", _pdf_exc)
@@ -2107,6 +2102,11 @@ async def execute_action(action: dict) -> str:
                     f"Das PDF wurde erstellt, konnte aber nicht gesendet werden, "
                     f"{pick_address()}. Bitte Telegram-Konfiguration prüfen."
                 )
+            finally:
+                try:
+                    os.remove(pdf_path)
+                except OSError:
+                    pass
         return (
             f"Der Speiseplan konnte leider nicht als PDF erstellt werden, "
             f"{pick_address()}."
@@ -2150,14 +2150,14 @@ async def execute_action(action: dict) -> str:
         if pdf_path:
             try:
                 import telegram_bot as _tb
-                import os as _os
                 await _tb.send_user_document(pdf_path, caption="Speiseplan der Woche")
-                try:
-                    _os.remove(pdf_path)
-                except OSError:
-                    pass
             except Exception as _pdf_exc:
                 log.warning("SPEISEPLAN: PDF-Versand fehlgeschlagen: %s", _pdf_exc)
+            finally:
+                try:
+                    os.remove(pdf_path)
+                except OSError:
+                    pass
         # Kurzer TTS-Text (kein vollständiges Vorlesen)
         dates = sorted(S.MEAL_PLAN_WEEK.keys())
         n = len(dates)
@@ -2314,14 +2314,14 @@ async def execute_action(action: dict) -> str:
         if pdf_path:
             try:
                 import telegram_bot as _tb
-                import os as _os
                 await _tb.send_user_document(pdf_path, caption="Speiseplan (aktualisiert)")
-                try:
-                    _os.remove(pdf_path)
-                except OSError:
-                    pass
             except Exception as _pe:
                 log.warning("SPEISEPLAN_PREF: PDF-Versand fehlgeschlagen: %s", _pe)
+            finally:
+                try:
+                    os.remove(pdf_path)
+                except OSError:
+                    pass
         S.PENDING_CARD_HTML = _mp.build_meal_plan_card_html()
         return f"Verstanden — {changes_text}. Neuer Plan ist fertig, {pick_address()}."
 
