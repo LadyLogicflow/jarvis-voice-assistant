@@ -160,7 +160,7 @@ async def _scan_account(
                 except Exception:
                     continue
 
-                from_raw = msg.get("From", "")
+                from_raw = str(msg.get("From", "") or "")
                 if not from_raw:
                     continue
 
@@ -173,7 +173,7 @@ async def _scan_account(
                 if domain in own_domains:
                     continue
 
-                subject = msg.get("Subject", "").strip()
+                subject = str(msg.get("Subject", "") or "").strip()
                 has_unsub = bool(msg.get("List-Unsubscribe"))
 
                 headers.append({
