@@ -45,6 +45,39 @@ log = S.log
 _tasks_completed_lock = asyncio.Lock()
 
 
+def _extract_sender_hint(payload: str) -> str:
+    """Extrahiert Empfaengernamen aus Payload wie 'an Alfred Weissenbacher: ...'.
+
+    Unterstuetzte Patterns (in Reihenfolge):
+    - "an Alfred Weissenbacher:" (Name mit Doppelpunkt)
+    - "an Alfred Weissenbacher" (Name am Ende des Satzes)
+
+    Args:
+        payload: Roher Action-Payload-Text.
+
+    Returns:
+        Erkannter Name oder leerer String wenn kein Pattern passt.
+    """
+    import re as _re
+    # Pattern 1: "an <Vorname Nachname>:" — Doppelpunkt als Trenner
+    m = _re.search(
+        r"an\s+([A-ZÄÖÜ][a-zäöüß]+"
+        r"(?:\s+[A-ZÄÖÜ][a-zäöüß-]+)+)\s*:",
+        payload,
+    )
+    if m:
+        return m.group(1).strip()
+    # Pattern 2: "an <Vorname Nachname>" ohne Doppelpunkt (Ende oder Satzzeichen)
+    m = _re.search(
+        r"an\s+([A-ZÄÖÜ][a-zäöüß]+"
+        r"(?:\s+[A-ZÄÖÜ][a-zäöüß-]+)+)",
+        payload,
+    )
+    if m:
+        return m.group(1).strip()
+    return ""
+
+
 def _format_phone_tts(number: str) -> str:
     """Format a phone number for natural TTS output.
 
@@ -1060,7 +1093,30 @@ async def execute_action(action: dict) -> str:
         # sich auf Donnerstag 14 Uhr").
         active = session_state.get("default").active_mail
         if not active:
-            return f"Keine Mail aktiv, {pick_address()}."
+            sender_hint = _extract_sender_hint(p)
+            if sender_hint:
+                log.info("DRAFT_REPLY: Suche letzte Mail von %r", sender_hint)
+                found = await mail_actions.find_last_mail_from(sender_hint)
+                if found:
+                    active = session_state.MailRef(
+                        account=found["account"],
+                        uid=found["uid"],
+                        sender=found["sender"],
+                        subject=found["subject"],
+                        date=found.get("date", ""),
+                        message_id=found.get("message_id", ""),
+                    )
+                    session_state.set_active_mail("default", active)
+                    log.info(
+                        "DRAFT_REPLY: Mail gefunden uid=%s account=%s",
+                        active.uid, active.account,
+                    )
+            if not active:
+                addr = sender_hint or "diesem Absender"
+                return (
+                    f"Keine Mail von {addr} gefunden, {pick_address()}. "
+                    f"Bitte öffnen Sie die Mail einmal über JARVIS."
+                )
         instruction = p.strip()
         mail_data = await mail_actions.read_mail_body(active.account, active.uid)
         if "error" in mail_data:

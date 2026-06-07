@@ -131,6 +131,146 @@ async def _connect(account: dict):
     return client
 
 
+async def find_last_mail_from(name_or_addr: str) -> dict | None:
+    """Sucht die neueste Mail eines Absenders in allen konfigurierten Konten.
+
+    Durchsucht alle Konten in S.MAIL_MONITOR_ACCOUNTS nach Mails vom
+    angegebenen Absender (Name oder E-Mail-Adresse). Gibt die neueste
+    gefundene Mail zurueck.
+
+    Hinweis: Verwendet regulaeres SEARCH ohne UID SEARCH (Apple/HILO-
+    Kompatibilitaet). Seq-Nummern werden anschliessend via FETCH (UID)
+    in UIDs umgewandelt.
+
+    Args:
+        name_or_addr: Absender-Name oder E-Mail-Adresse (IMAP FROM-Kriterium).
+
+    Returns:
+        Dict mit account, uid, sender, subject, date, message_id — oder None
+        wenn kein Konto einen Treffer liefert.
+    """
+    for acc in S.MAIL_MONITOR_ACCOUNTS:
+        if not acc.get("password"):
+            log.debug("find_last_mail_from: Konto %r hat kein Passwort — uebersprungen",
+                      acc.get("name"))
+            continue
+        client = None
+        try:
+            client = await _connect(acc)
+            # Regulaeres SEARCH ohne CHARSET (charset=None vermeidet den aioimaplib-
+            # Default "utf-8" der "SEARCH CHARSET utf-8 ..." sendet, was Apple/HILO
+            # ablehnt). KEIN uid("search", ...) — nicht unterstuetzt auf Apple/HILO.
+            typ, data = await client.search("FROM", f'"{name_or_addr}"', charset=None)
+            if typ != "OK" or not data or not data[0]:
+                continue
+            raw_val = (data[0].decode() if isinstance(data[0], (bytes, bytearray))
+                       else str(data[0]))
+            seq_nums = [s for s in raw_val.split() if s.isdigit()]
+            if not seq_nums:
+                continue
+            # Letztes Element = neueste Seq-Nummer
+            last_seq = seq_nums[-1]
+            # Seq-Nummer -> UID + ENVELOPE (Header-Felder) via FETCH
+            ftyp, fdata = await client.fetch(last_seq, "(UID ENVELOPE)")
+            if ftyp != "OK" or not fdata:
+                continue
+            uid = None
+            sender = ""
+            subject = ""
+            date = ""
+            message_id = ""
+            for item in fdata:
+                if not isinstance(item, (bytes, bytearray)):
+                    continue
+                txt = item.decode("utf-8", errors="replace")
+                # UID extrahieren
+                m_uid = re.search(r'\bUID\s+(\d+)', txt)
+                if m_uid:
+                    uid = int(m_uid.group(1))
+                # ENVELOPE: (date subject from sender reply-to to ...)
+                # Envelope-Felder via email.header-Dekodierung parsen
+                # Betreff aus ENVELOPE
+                m_subj = re.search(r'ENVELOPE\s*\(\"([^\"]*?)\"', txt)
+                if m_subj:
+                    date = m_subj.group(1)
+                # Envelope-Parsing ist komplex — Body-Header via BODY.PEEK[HEADER.FIELDS]
+                # waere sauberer, aber das verursacht eine zweite Verbindung. Hier
+                # nutzen wir die Seq-Nummer noch einmal fuer einen gezielten Header-Fetch.
+            if uid is None:
+                # Fallback: versuche UID direkt via FETCH BODY.PEEK[HEADER.FIELDS]
+                htyp, hdata = await client.fetch(
+                    last_seq, "(UID BODY.PEEK[HEADER.FIELDS (FROM SUBJECT DATE MESSAGE-ID)])"
+                )
+                if htyp == "OK" and hdata:
+                    for item in hdata:
+                        if not isinstance(item, (bytes, bytearray)):
+                            continue
+                        txt = item.decode("utf-8", errors="replace")
+                        m_uid2 = re.search(r'\bUID\s+(\d+)', txt)
+                        if m_uid2:
+                            uid = int(m_uid2.group(1))
+                if uid is None:
+                    log.warning("find_last_mail_from[%s]: konnte UID nicht aus FETCH lesen",
+                                acc["name"])
+                    continue
+                # Header-Felder parsen
+                for item in hdata:
+                    if not isinstance(item, (bytes, bytearray)):
+                        continue
+                    raw_headers = item
+                    try:
+                        msg = email.message_from_bytes(raw_headers)
+                        sender = (_decode_header(parseaddr(msg.get("From", ""))[0])
+                                  or msg.get("From", ""))
+                        subject = _decode_header(msg.get("Subject", ""))
+                        date = msg.get("Date", "")
+                        message_id = msg.get("Message-ID", "")
+                    except Exception:
+                        pass
+            else:
+                # Hol Header-Felder fuer die gefundene Seq-Nummer
+                htyp, hdata = await client.fetch(
+                    last_seq, "(BODY.PEEK[HEADER.FIELDS (FROM SUBJECT DATE MESSAGE-ID)])"
+                )
+                if htyp == "OK" and hdata:
+                    for item in hdata:
+                        if not isinstance(item, (bytes, bytearray)):
+                            continue
+                        try:
+                            msg = email.message_from_bytes(item)
+                            sender = (_decode_header(parseaddr(msg.get("From", ""))[0])
+                                      or msg.get("From", ""))
+                            subject = _decode_header(msg.get("Subject", ""))
+                            date = msg.get("Date", "")
+                            message_id = msg.get("Message-ID", "")
+                        except Exception:
+                            pass
+                        break
+
+            log.info(
+                "find_last_mail_from: Treffer in Konto %r uid=%s from=%r subject=%r",
+                acc["name"], uid, sender, subject,
+            )
+            return {
+                "account": acc["name"],
+                "uid": uid,
+                "sender": sender,
+                "subject": subject,
+                "date": date,
+                "message_id": message_id,
+            }
+        except Exception as e:
+            log.warning("find_last_mail_from[%s]: %s: %s", acc.get("name"), type(e).__name__, e)
+            continue
+        finally:
+            if client is not None:
+                try:
+                    await client.logout()
+                except Exception:
+                    pass
+    return None
+
+
 async def read_mail_body(account_name: str, uid: int) -> dict:
     """Hol Body + Header der Mail. Gibt ein Dict zurueck mit
     sender/subject/date/text — text ist auf MAX_BODY_CHARS gekuerzt.
