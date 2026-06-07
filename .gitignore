@@ -42,6 +42,9 @@ Mitglieder.csv
 # Speiseplan-Vorlieben (lokal, nie committen)
 .jarvis_meal_prefs.json
 
+# Stammliste / Vorratscheck (Issue #204, lokal, nie committen)
+.jarvis_pantry.json
+
 # OS
 .DS_Store
 Thumbs.db

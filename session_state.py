@@ -118,6 +118,18 @@ class PendingContactEdit:
 
 
 @dataclass
+class PendingInventur:
+    """Gefuehrter Vorratscheck: JARVIS fragt Artikel nacheinander ab.
+
+    Issue #204: Stammliste / Vorratscheck.
+    """
+    items: list  # alle Stammlisten-Artikel in dieser Sitzung (field type erased for JSON compat)
+    current_index: int = 0
+    leer_items: list = field(default_factory=list)
+    fast_leer_items: list = field(default_factory=list)
+
+
+@dataclass
 class SessionState:
     """Alles was eine Session an strukturiertem State haelt. Erweiterbar
     fuer kuenftige Workflows (active_call, pending_appointment, ...)."""
@@ -127,6 +139,8 @@ class SessionState:
     pending_doctolib: Optional[PendingDoctolib] = None
     pending_person: Optional[PendingPersonAction] = None
     pending_contact_edit: Optional[PendingContactEdit] = None
+    # Issue #204: Stammliste / Vorratscheck
+    pending_inventur: Optional[PendingInventur] = None
     recent_mails: list[MailRef] = field(default_factory=list)
     # Issue #118: Emotionale Kalibrierung
     # 0 = normal, 1 = erhoehter Stress, 2 = hoher Stress
@@ -174,6 +188,7 @@ def _serialize(state: SessionState) -> dict:
         "pending_doctolib": asdict(state.pending_doctolib) if state.pending_doctolib else None,
         "pending_person": asdict(state.pending_person) if state.pending_person else None,
         "pending_contact_edit": asdict(state.pending_contact_edit) if state.pending_contact_edit else None,
+        "pending_inventur": asdict(state.pending_inventur) if state.pending_inventur else None,
         "recent_mails": [asdict(m) for m in state.recent_mails],
         "stress_level": state.stress_level,
         "last_message_ts": state.last_message_ts,
@@ -187,6 +202,7 @@ def _deserialize(raw: dict) -> SessionState:
     pdoc = raw.get("pending_doctolib")
     pp = raw.get("pending_person")
     pce = raw.get("pending_contact_edit")
+    pinv = raw.get("pending_inventur")
     rm = raw.get("recent_mails") or []
     return SessionState(
         active_mail=MailRef(**{k: v for k, v in am.items() if k in MailRef.__dataclass_fields__}) if am else None,
@@ -195,6 +211,7 @@ def _deserialize(raw: dict) -> SessionState:
         pending_doctolib=PendingDoctolib(**{k: v for k, v in pdoc.items() if k in PendingDoctolib.__dataclass_fields__}) if pdoc else None,
         pending_person=PendingPersonAction(**{k: v for k, v in pp.items() if k in PendingPersonAction.__dataclass_fields__}) if pp else None,
         pending_contact_edit=PendingContactEdit(**{k: v for k, v in pce.items() if k in PendingContactEdit.__dataclass_fields__}) if pce else None,
+        pending_inventur=PendingInventur(**{k: v for k, v in pinv.items() if k in PendingInventur.__dataclass_fields__}) if pinv else None,
         recent_mails=[MailRef(**{k: v for k, v in m.items() if k in MailRef.__dataclass_fields__}) for m in rm if isinstance(m, dict)],
         stress_level=int(raw.get("stress_level", 0)),
         last_message_ts=float(raw.get("last_message_ts", 0.0)),
@@ -353,6 +370,20 @@ def set_pending_contact_edit(session_id: str, edit: PendingContactEdit) -> None:
 def clear_pending_contact_edit(session_id: str) -> None:
     state = get(session_id)
     state.pending_contact_edit = None
+    _save(session_id)
+
+
+def set_pending_inventur(session_id: str, inv: PendingInventur) -> None:
+    """Setzt oder aktualisiert einen laufenden Vorratscheck."""
+    state = get(session_id)
+    state.pending_inventur = inv
+    _save(session_id)
+
+
+def clear_pending_inventur(session_id: str) -> None:
+    """Beendet den laufenden Vorratscheck."""
+    state = get(session_id)
+    state.pending_inventur = None
     _save(session_id)
 
 
