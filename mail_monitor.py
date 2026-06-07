@@ -159,6 +159,35 @@ async def _learn_from_mail(
                     "mail_monitor[%s] learn: saved mail note for %s (%s)",
                     account, profile.name, sender_email,
                 )
+            else:
+                # Neuer Absender — in Google Contacts suchen und Basisprofil anlegen
+                try:
+                    import contacts as _contacts
+                    gc = await _contacts.find_contact_by_email(sender_email)
+                    if gc is not None:
+                        from persons_db import PersonProfile, upsert as _upsert
+                        new_profile = PersonProfile(
+                            contact_id=gc.id,
+                            name=gc.name or sender,
+                            primary_email=sender_email,
+                            funktion=gc.organization or "",
+                        )
+                        today = _dt.date.today().isoformat()
+                        note_text = f"{today}: Mail empfangen — {subject}"
+                        if body_snippet:
+                            note_text += f" | {body_snippet[:150]}"
+                        new_profile.notes.append(note_text)
+                        new_profile.last_contact = today
+                        _upsert(new_profile)
+                        log.info(
+                            "mail_monitor[%s] learn: neues Profil angelegt fuer %s (%s)",
+                            account, gc.name, sender_email,
+                        )
+                except Exception as _gc_exc:
+                    log.debug(
+                        "mail_monitor[%s] learn: Google Contacts lookup failed: %s: %s",
+                        account, type(_gc_exc).__name__, _gc_exc,
+                    )
         except Exception as exc:
             log.debug(
                 "mail_monitor[%s] learn: persons_db update failed: %s: %s",

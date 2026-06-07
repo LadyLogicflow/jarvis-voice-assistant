@@ -3907,6 +3907,115 @@ async def execute_action(action: dict) -> str:
             log.warning("JARVIS_VERSION git log: %s", _ve)
         return f"Die Versionsinfo ist leider nicht verfügbar, {pick_address()}."
 
+    elif t == "SYNC_MAIL_CONTACTS":
+        # Issue #215: Rückwirkender 30-Tage-Scan — IMAP-Absender gegen Google
+        # Contacts prüfen und fehlende Personen-Profile anlegen.
+        try:
+            import datetime as _dt2
+            import email as _email_mod
+            import email.utils as _eu
+            import contacts as _contacts
+            import persons_db as _pdb
+            from persons_db import PersonProfile
+
+            since_date = (
+                _dt2.date.today() - _dt2.timedelta(days=30)
+            ).strftime("%d-%b-%Y")
+            new_count = 0
+            skip_count = 0
+
+            for acc_cfg in S.MAIL_MONITOR_ACCOUNTS:
+                if not acc_cfg.get("password"):
+                    continue
+                acc_name = acc_cfg.get("name", "")
+                client = None
+                try:
+                    client = await mail_actions._connect(acc_cfg)
+                    # SINCE-Suche — charset=None vermeidet den aioimaplib-Default
+                    # "SEARCH CHARSET utf-8 ..." der auf Apple/HILO abgelehnt wird.
+                    typ, data = await client.search(
+                        "SINCE", since_date, charset=None
+                    )
+                    if typ != "OK" or not data or not data[0]:
+                        continue
+                    raw_val = (
+                        data[0].decode() if isinstance(data[0], (bytes, bytearray))
+                        else str(data[0])
+                    )
+                    seq_nums = [s for s in raw_val.split() if s.isdigit()]
+                    if not seq_nums:
+                        continue
+                    # Nur die letzten 200 Treffer auswerten (ältere ignorieren).
+                    for seq in seq_nums[-200:]:
+                        try:
+                            ftyp, fdata = await client.fetch(
+                                seq, "(BODY.PEEK[HEADER.FIELDS (FROM)])"
+                            )
+                            if ftyp != "OK" or not fdata:
+                                continue
+                            # fdata kann [(b"... FLAGS ...", b"header-bytes"), b")"] sein
+                            raw_hdr = b""
+                            for item in fdata:
+                                if isinstance(item, (list, tuple)) and len(item) >= 2:
+                                    raw_hdr = item[1]
+                                    break
+                                if isinstance(item, (bytes, bytearray)) and b"@" in item:
+                                    raw_hdr = item
+                                    break
+                            if not raw_hdr:
+                                continue
+                            msg_hdr = _email_mod.message_from_bytes(raw_hdr)
+                            from_raw = msg_hdr.get("From", "")
+                            if not from_raw:
+                                continue
+                            _, addr = _eu.parseaddr(from_raw)
+                            addr = addr.lower().strip()
+                            if not addr or "@" not in addr:
+                                continue
+                            # Bereits bekannt?
+                            if _pdb.find_by_email(addr) is not None:
+                                skip_count += 1
+                                continue
+                            # In Google Contacts suchen
+                            gc = await _contacts.find_contact_by_email(addr)
+                            if gc is None:
+                                continue
+                            new_prof = PersonProfile(
+                                contact_id=gc.id,
+                                name=gc.name or addr,
+                                primary_email=addr,
+                                funktion=gc.organization or "",
+                            )
+                            _pdb.upsert(new_prof)
+                            new_count += 1
+                            log.info(
+                                "SYNC_MAIL_CONTACTS: neues Profil angelegt fuer %s (%s)",
+                                gc.name, addr,
+                            )
+                        except Exception:
+                            continue
+                except Exception as _acc_exc:
+                    log.debug(
+                        "SYNC_MAIL_CONTACTS: Konto %s: %s: %s",
+                        acc_name, type(_acc_exc).__name__, _acc_exc,
+                    )
+                    continue
+                finally:
+                    if client is not None:
+                        try:
+                            await client.logout()
+                        except Exception:
+                            pass
+
+            return (
+                f"Synchronisation abgeschlossen. "
+                f"{new_count} neue Profile angelegt, "
+                f"{skip_count} bereits bekannte Absender übersprungen."
+            )
+        except Exception as exc:
+            log.warning("SYNC_MAIL_CONTACTS: %s: %s", type(exc).__name__, exc)
+            return "Synchronisation fehlgeschlagen. Bitte Log prüfen."
+
     return ""
 
 
