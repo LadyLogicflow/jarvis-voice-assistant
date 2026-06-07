@@ -130,6 +130,18 @@ class PendingInventur:
 
 
 @dataclass
+class PendingInboxAnalysis:
+    """Inbox-Analyse-Ergebnis wartet auf Bestaetigung durch Catrin.
+
+    Issue #206: 90-Tage-Scan + automatische Regelvorschlaege.
+    suggestions: Liste der generierten Regelvorschlaege (list[dict]).
+    scan_days: Anzahl der gescannten Tage.
+    """
+    suggestions: list  # list[dict] mit den Vorschlaegen
+    scan_days: int = 90
+
+
+@dataclass
 class SessionState:
     """Alles was eine Session an strukturiertem State haelt. Erweiterbar
     fuer kuenftige Workflows (active_call, pending_appointment, ...)."""
@@ -141,6 +153,8 @@ class SessionState:
     pending_contact_edit: Optional[PendingContactEdit] = None
     # Issue #204: Stammliste / Vorratscheck
     pending_inventur: Optional[PendingInventur] = None
+    # Issue #206: Inbox-Analyse Regelvorschlaege
+    pending_inbox_analysis: Optional[PendingInboxAnalysis] = None
     recent_mails: list[MailRef] = field(default_factory=list)
     # Issue #118: Emotionale Kalibrierung
     # 0 = normal, 1 = erhoehter Stress, 2 = hoher Stress
@@ -189,6 +203,7 @@ def _serialize(state: SessionState) -> dict:
         "pending_person": asdict(state.pending_person) if state.pending_person else None,
         "pending_contact_edit": asdict(state.pending_contact_edit) if state.pending_contact_edit else None,
         "pending_inventur": asdict(state.pending_inventur) if state.pending_inventur else None,
+        "pending_inbox_analysis": asdict(state.pending_inbox_analysis) if state.pending_inbox_analysis else None,
         "recent_mails": [asdict(m) for m in state.recent_mails],
         "stress_level": state.stress_level,
         "last_message_ts": state.last_message_ts,
@@ -203,6 +218,7 @@ def _deserialize(raw: dict) -> SessionState:
     pp = raw.get("pending_person")
     pce = raw.get("pending_contact_edit")
     pinv = raw.get("pending_inventur")
+    pia = raw.get("pending_inbox_analysis")
     rm = raw.get("recent_mails") or []
     return SessionState(
         active_mail=MailRef(**{k: v for k, v in am.items() if k in MailRef.__dataclass_fields__}) if am else None,
@@ -212,6 +228,7 @@ def _deserialize(raw: dict) -> SessionState:
         pending_person=PendingPersonAction(**{k: v for k, v in pp.items() if k in PendingPersonAction.__dataclass_fields__}) if pp else None,
         pending_contact_edit=PendingContactEdit(**{k: v for k, v in pce.items() if k in PendingContactEdit.__dataclass_fields__}) if pce else None,
         pending_inventur=PendingInventur(**{k: v for k, v in pinv.items() if k in PendingInventur.__dataclass_fields__}) if pinv else None,
+        pending_inbox_analysis=PendingInboxAnalysis(**{k: v for k, v in pia.items() if k in PendingInboxAnalysis.__dataclass_fields__}) if pia else None,
         recent_mails=[MailRef(**{k: v for k, v in m.items() if k in MailRef.__dataclass_fields__}) for m in rm if isinstance(m, dict)],
         stress_level=int(raw.get("stress_level", 0)),
         last_message_ts=float(raw.get("last_message_ts", 0.0)),
@@ -384,6 +401,26 @@ def clear_pending_inventur(session_id: str) -> None:
     """Beendet den laufenden Vorratscheck."""
     state = get(session_id)
     state.pending_inventur = None
+    _save(session_id)
+
+
+def set_pending_inbox_analysis(session_id: str, analysis: PendingInboxAnalysis) -> None:
+    """Speichert Inbox-Analyse-Ergebnis im Session-State.
+
+    Issue #206: Regelvorschlaege warten auf Bestaetigung durch Catrin.
+    """
+    state = get(session_id)
+    state.pending_inbox_analysis = analysis
+    _save(session_id)
+
+
+def clear_pending_inbox_analysis(session_id: str) -> None:
+    """Loescht die laufende Inbox-Analyse (nach Accept oder Decline).
+
+    Issue #206.
+    """
+    state = get(session_id)
+    state.pending_inbox_analysis = None
     _save(session_id)
 
 

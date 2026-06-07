@@ -373,6 +373,28 @@ def build_system_prompt() -> str:
             f"\n  Wenn {addr} 'stop'/'abbrechen'/'fertig' sagt -> State leeren (clear_pending_inventur)"
         )
 
+    # Issue #206: Laufende Inbox-Analyse (Regelvorschlaege warten auf Bestaetigung)
+    _pia = _state.pending_inbox_analysis if hasattr(_state, "pending_inbox_analysis") else None
+    if _pia and _pia.suggestions:
+        _pia_count = len(_pia.suggestions)
+        _pia_lines = [
+            f"\nInbox-Analyse: {_pia_count} Regelvorschlaege warten auf Bestaetigung:"
+        ]
+        for _i, _s in enumerate(_pia.suggestions[:10], 1):
+            _pia_lines.append(f"  {_i}. {_s.get('display_text', _s.get('domain', ''))}")
+        if _pia_count > 10:
+            _pia_lines.append(f"  ... und {_pia_count - 10} weitere")
+        _pia_lines.append(
+            f"\n  Wenn {addr} 'alle annehmen'/'uebernehmen'/'ja alle' sagt -> [ACTION:INBOX_ANALYSE_ACCEPT] alle"
+        )
+        _pia_lines.append(
+            f"  Wenn {addr} einzelne Nummern nennt (z.B. '1, 3, 5') -> [ACTION:INBOX_ANALYSE_ACCEPT] 1,3,5"
+        )
+        _pia_lines.append(
+            f"  Wenn {addr} 'abbrechen'/'nein'/'nichts davon' sagt -> [ACTION:INBOX_ANALYSE_DECLINE]"
+        )
+        active_mail_block += "\n".join(_pia_lines)
+
     pending_proactive_block = ""
     if S.PENDING_PROACTIVE:
         _cat = S.PENDING_PROACTIVE.get("category", "eine Meldung")
@@ -624,6 +646,9 @@ Wenn Jarvis proaktiv nach einem Vorhaben fragt ("Uebrigens — Sie wollten noch:
 [ACTION:ANALYZE_ALL_PDFS] - Verarbeitet alle bisher gespeicherten PDFs in jarvis_pdfs/ nach und speichert die Ergebnisse in der Personen-DB. Nutze wenn {addr} sagt "Verarbeit alle PDFs", "Bescheide nachverarbeiten", "PDFs neu einlesen". KEIN Text davor.
 [ACTION:CLEAR_TAX_DATA] mandant - Löscht alle gespeicherten Steuerbescheide und Vorauszahlungen für einen Mandanten (z. B. um falsch extrahierte Daten zu korrigieren). Nutze wenn {addr} sagt "Steuerdaten löschen für X", "falsche Bescheide löschen X", "Bescheide zurücksetzen X". Beispiel: [ACTION:CLEAR_TAX_DATA] Turk
 [ACTION:MANDANTEN_OVERVIEW] - Zeigt alle Mandanten mit gespeicherten Steuerbescheiden oder Vorauszahlungen als Übersichtstabelle (Mandant | Letzter Bescheid | Betrag | Fälligkeit), sortiert nach nächster Fälligkeit. Überfällige Zahlungen werden rot, bald fällige orange markiert. Nutze wenn {addr} sagt "Mandantenübersicht", "Alle Bescheide", "Übersicht Steuerdaten", "Wer hat Bescheide", "Zeig alle Mandanten mit Steuerdaten", "Mandanten Steuerbescheide Übersicht". KEIN Text davor.
+[ACTION:INBOX_ANALYSE] - Analysiert Posteingang der letzten 90 Tage und schlaegt Triage-Regeln vor. Scannt alle IMAP-Konten (nur Header), clustert nach Absender-Domain und laesst Jarvis konkrete Sortierregeln vorschlagen. Nutze wenn {addr} sagt "Analysiere meinen Posteingang", "Zeig Regelvorschlaege", "Was kann automatisch sortiert werden", "Mail-Regeln vorschlagen", "Posteingang analysieren". KEIN Text davor, NUR die Aktion.
+[ACTION:INBOX_ANALYSE_ACCEPT] alle|1,2,3 - Uebernimmt genehmigte Regelvorschlaege aus der laufenden Inbox-Analyse in mail_triage_rules.json. Nutze wenn PendingInboxAnalysis aktiv ist UND {addr} sagt "alle annehmen", "Regel 1 und 3", "uebernehmen", "ja alle", "alle Regeln", "Regeln speichern". Payload: "alle" oder kommagetrennte Nummern. NUR verwenden wenn unter AKTUELLE DATEN eine Inbox-Analyse-Analyse steht. KEIN Text davor.
+[ACTION:INBOX_ANALYSE_DECLINE] - Bricht laufende Inbox-Analyse ab ohne Regeln zu speichern. Nutze wenn PendingInboxAnalysis aktiv ist UND {addr} sagt "abbrechen", "nein", "nichts davon", "keine Regeln", "verwerfen". KEIN Text davor.
 [ACTION:RETRIAGE_INBOX] [konto] - Räumt den Posteingang auf: verschiebt DHL/Hermes/DPD/UPS/Paket-Mails in den DHL-Ordner UND Amazon-Mails in den Amazon-Ordner — immer beide Kategorien auf einmal. Ohne Konto-Angabe werden ALLE konfigurierten Konten durchsucht (HILO + Apple Mail). Nutze wenn {addr} sagt "räum meine DHL-Mails auf", "DHL Mails aufräumen", "räum die DHL-Mails auf", "verschieb die Paket-Mails", "DHL-Mails sortieren", "Paket-Mails aufräumen", "Posteingang aufräumen", "räum meinen Posteingang auf", "Mails aufräumen", "Amazon-Mails sortieren", "räum die Amazon-Mails auf". Ohne spezifisches Konto: Beispiel: [ACTION:RETRIAGE_INBOX] — mit Konto: [ACTION:RETRIAGE_INBOX] HILO
 [ACTION:MAIL_KNOWLEDGE_SEARCH] suchbegriff - Durchsucht das passive E-Mail-Gedaechtnis nach einem Begriff. JARVIS hat alle relevanten eingehenden Mails still gelesen und strukturierte Informationen gespeichert — Absender, Datum, Betreff und Inhalt. Nutze wenn {addr} fragt "Wer hat mir ueber X geschrieben?", "Hat jemand ueber X geschrieben?", "Was wurde mir zu X mitgeteilt?", "Suche in meinen Mails nach X". Antwort: Treffer mit Quellenangabe (Absender, Datum, Betreff). Beispiel: [ACTION:MAIL_KNOWLEDGE_SEARCH] Betriebspruefung
 [ACTION:MAIL_KNOWLEDGE_RECENT] tage - Zeigt die zuletzt gelernten Informationen aus den Postfaechern der letzten N Tage (Standard: 7). Nutze wenn {addr} fragt "Was hat sich zuletzt in meinen Mails getan?", "Was habe ich die letzten Tage erhalten?", "Neueste Mail-Informationen", "Was weisst du aus meinen Mails dieser Woche?". NICHT VERWENDEN wenn {addr} "Mail Zusammenfassung" oder "Mail-Zusammenfassung" sagt — das ist MAIL_LOG (heutige Aktivität). MAIL_KNOWLEDGE_RECENT nur für historische Fragen über mehrere Tage/Wochen. Antwort: Zusammenfassungen der letzten Mails mit Konto und Absender. Beispiel: [ACTION:MAIL_KNOWLEDGE_RECENT] 7

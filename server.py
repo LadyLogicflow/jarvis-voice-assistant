@@ -618,6 +618,7 @@ async def process_message(session_id: str, user_text: str, ws: WebSocket) -> Non
         "CONTACT_EDIT_SEARCH", "CONTACT_EDIT_NEXT", "CONTACT_EDIT_CONFIRM",
         "SPEISEPLAN", "SPEISEPLAN_SHOW", "SPEISEPLAN_PREF",
         "JARVIS_UPDATE",
+        "INBOX_ANALYSE", "INBOX_ANALYSE_ACCEPT", "INBOX_ANALYSE_DECLINE",
     ):
         await append_message(session_id, "assistant", action_result)
         await speak(action_result, ws, display=action_result, card_html=_card_html)
