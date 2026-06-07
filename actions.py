@@ -2902,6 +2902,80 @@ async def execute_action(action: dict) -> str:
         nxt = inv.items[inv.current_index]
         return f"Gut. Haben Sie noch {nxt}?"
 
+    elif t == "INBOX_ANALYSE":
+        # Issue #206: Inbox-Analyse — scannt die letzten 90 Tage, clustert nach Domain,
+        # generiert Regelvorschlaege. Laeuft asynchron im Hintergrund.
+        asyncio.create_task(_run_inbox_analysis())
+        return (
+            "Ich scanne jetzt den Posteingang der letzten 90 Tage, Madam. "
+            "Das dauert etwa 30 bis 60 Sekunden."
+        )
+
+    elif t == "INBOX_ANALYSE_ACCEPT":
+        # Issue #206: Genehmigte Regelvorschlaege in mail_triage_rules.json schreiben.
+        # Payload: "alle" oder "1,3,5" (1-basierte Indizes)
+        import json as _json
+        analysis = session_state.get("default").pending_inbox_analysis
+        if not analysis:
+            return "Keine laufende Inbox-Analyse, Madam."
+        suggestions = analysis.suggestions
+        payload_str = (p or "").strip().lower()
+        if payload_str in ("alle", "all", ""):
+            approved = suggestions
+            count_label = "alle"
+        else:
+            # Indizes parsen: "1,3,5" oder "1 3 5" oder "1-3-5"
+            import re as _re
+            raw_nums = _re.findall(r"\d+", payload_str)
+            indices = [int(n) - 1 for n in raw_nums if 1 <= int(n) <= len(suggestions)]
+            approved = [suggestions[i] for i in indices if i < len(suggestions)]
+            count_label = f"{len(approved)}"
+        if not approved:
+            session_state.clear_pending_inbox_analysis("default")
+            return "Keine gueltigen Indizes angegeben, Madam. Analyse beendet."
+        # In mail_triage_rules.json schreiben
+        rules_path = os.path.join(os.path.dirname(__file__), "mail_triage_rules.json")
+        try:
+            with open(rules_path, encoding="utf-8") as _f:
+                rules_data = _json.load(_f)
+        except Exception:
+            rules_data = {"rules": []}
+        existing_from = {r.get("from_contains", "") for r in rules_data.get("rules", [])}
+        added = 0
+        for s in approved:
+            domain = s.get("domain", "")
+            if not domain:
+                continue
+            from_contains = f"@{domain}"
+            if from_contains in existing_from:
+                continue
+            rule: dict = {
+                "name": f"inbox-analyse: {domain}",
+                "from_contains": from_contains,
+                "action": s.get("action", "mark_read"),
+            }
+            if s.get("action") == "move" and s.get("folder"):
+                rule["folder"] = s["folder"]
+                rule["also_mark_read"] = True
+            rules_data.setdefault("rules", []).append(rule)
+            existing_from.add(from_contains)
+            added += 1
+        try:
+            tmp = rules_path + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as _f:
+                _json.dump(rules_data, _f, ensure_ascii=False, indent=2)
+            os.replace(tmp, rules_path)
+        except (OSError, IOError) as _e:
+            session_state.clear_pending_inbox_analysis("default")
+            return f"Fehler beim Speichern der Regeln: {_e}"
+        session_state.clear_pending_inbox_analysis("default")
+        return f"{added} neue Regel{'n' if added != 1 else ''} angelegt, Madam."
+
+    elif t == "INBOX_ANALYSE_DECLINE":
+        # Issue #206: Inbox-Analyse verwerfen ohne Aenderungen.
+        session_state.clear_pending_inbox_analysis("default")
+        return "Verstanden, keine Aenderungen, Madam."
+
     elif t == "EINKAUF_FREIGEBEN":
         # Issue #125: Einkaufsliste aus dem Wochenplan an Bring! uebergeben.
         # Issue #204: Stammlisten-Artikel mit Status "vorhanden" werden gefiltert.
@@ -3615,3 +3689,46 @@ async def execute_action(action: dict) -> str:
         return f"Die Versionsinfo ist leider nicht verfügbar, {pick_address()}."
 
     return ""
+
+
+async def _run_inbox_analysis() -> None:
+    """Hintergrund-Task fuer INBOX_ANALYSE (Issue #206).
+
+    Scannt alle IMAP-Konten, clustert Absender-Domains, laesst Haiku
+    Regelvorschlaege generieren und speichert das Ergebnis im
+    SessionState 'default'. Anschliessend wird das Ergebnis per
+    Telegram zugestellt, falls TelegramBot verfuegbar ist.
+    """
+    try:
+        from inbox_analyzer import run_analysis as _run
+        suggestions = await _run(days=90)
+    except Exception as _e:
+        log.warning(f"_run_inbox_analysis: Fehler bei run_analysis: "
+                    f"{type(_e).__name__}: {_e}")
+        suggestions = []
+
+    if not suggestions:
+        msg = "Ich habe keine neuen Regelvorschlaege gefunden, Madam."
+        log.info("_run_inbox_analysis: keine Vorschlaege")
+    else:
+        # Vorschlaege in SessionState speichern
+        analysis = session_state.PendingInboxAnalysis(
+            suggestions=suggestions, scan_days=90
+        )
+        session_state.set_pending_inbox_analysis("default", analysis)
+
+        lines = ["Ich habe Ihren Posteingang analysiert. Hier meine Regelvorschlaege:\n"]
+        for i, s in enumerate(suggestions, 1):
+            lines.append(f"{i}. {s.get('display_text', s.get('domain', ''))}")
+        lines.append(
+            '\nSagen Sie "alle annehmen", "Regel 1, 3 annehmen" oder "abbrechen".'
+        )
+        msg = "\n".join(lines)
+
+    # Telegram-Zustellung versuchen
+    try:
+        import telegram_bot as _tg
+        asyncio.create_task(_tg.send_user_text(msg))
+    except Exception as _te:
+        log.warning(f"_run_inbox_analysis: Telegram-Zustellung fehlgeschlagen: "
+                    f"{type(_te).__name__}: {_te}")

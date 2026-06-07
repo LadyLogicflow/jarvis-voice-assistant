@@ -234,6 +234,7 @@ async def _ask_claude(session_id: str, user_text: str) -> tuple[str, str]:
         "SPEISEPLAN", "SPEISEPLAN_SHOW", "SPEISEPLAN_PREF",
         "STAMMLISTE_ADD", "STAMMLISTE_REMOVE", "STAMMLISTE_SHOW",
         "LEER_MELDEN", "FAST_LEER",
+        "INBOX_ANALYSE", "INBOX_ANALYSE_ACCEPT", "INBOX_ANALYSE_DECLINE",
         "INVENTUR", "INVENTUR_JA", "INVENTUR_NEIN", "INVENTUR_FAST_LEER", "INVENTUR_SKIP",
         "EINKAUF_FREIGEBEN",
     ):
