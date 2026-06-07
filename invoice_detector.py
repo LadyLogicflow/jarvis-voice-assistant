@@ -77,31 +77,37 @@ def _extract_pdf_text(pdf_bytes: bytes) -> str:
         import fitz  # PyMuPDF
 
         doc = fitz.open(stream=pdf_bytes, filetype="pdf")
-        if doc.is_encrypted:
-            log.debug("invoice_detector: PDF verschluesselt — ueberspringe")
-            return ""
-        texts: list[str] = []
-        for i in range(min(_MAX_PAGES, doc.page_count)):
-            page = doc[i]
-            t = page.get_text().strip()
-            if len(t) < _MIN_TEXT_CHARS:
-                # Bild-PDF: Seite als Pixmap rendern und per Tesseract OCR lesen
+        try:
+            if doc.is_encrypted:
+                log.debug("invoice_detector: PDF verschluesselt — ueberspringe")
+                return ""
+            texts: list[str] = []
+            for i in range(min(_MAX_PAGES, doc.page_count)):
                 try:
-                    from PIL import Image
-                    import pytesseract
-                    mat = fitz.Matrix(_OCR_DPI / 72, _OCR_DPI / 72)
-                    pix = page.get_pixmap(matrix=mat)
-                    img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
-                    # deu+eng: falls deu-Sprachpaket fehlt, graceful fallback auf eng
+                    page = doc[i]
+                    t = page.get_text().strip()
+                except Exception as page_exc:
+                    log.debug("invoice_detector: Seite %d get_text: %s", i, page_exc)
+                    continue
+                if len(t) < _MIN_TEXT_CHARS:
+                    # Bild-PDF: Seite als Pixmap rendern und per Tesseract OCR lesen
                     try:
-                        t = pytesseract.image_to_string(img, lang="deu+eng")
-                    except pytesseract.TesseractError:
-                        t = pytesseract.image_to_string(img, lang="eng")
-                except Exception as ocr_err:
-                    log.debug("invoice_detector: OCR Seite %d: %s", i, ocr_err)
-            texts.append(t)
-        doc.close()
-        return "\n".join(texts).strip()[:_MAX_PDF_CHARS]
+                        from PIL import Image
+                        import pytesseract
+                        mat = fitz.Matrix(_OCR_DPI / 72, _OCR_DPI / 72)
+                        pix = page.get_pixmap(matrix=mat)
+                        img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+                        # deu+eng: falls deu-Sprachpaket fehlt, graceful fallback auf eng
+                        try:
+                            t = pytesseract.image_to_string(img, lang="deu+eng")
+                        except pytesseract.TesseractError:
+                            t = pytesseract.image_to_string(img, lang="eng")
+                    except Exception as ocr_err:
+                        log.debug("invoice_detector: OCR Seite %d: %s", i, ocr_err)
+                texts.append(t)
+            return "\n".join(texts).strip()[:_MAX_PDF_CHARS]
+        finally:
+            doc.close()
     except Exception as exc:
         log.debug("invoice_detector: fitz-Extraktion: %s: %s", type(exc).__name__, exc)
         return ""
