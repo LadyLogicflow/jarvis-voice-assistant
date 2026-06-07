@@ -39,6 +39,10 @@ _RECIPIENT_ADDRESSES = (
 _MAX_PDF_CHARS = 3000
 # Max. Seiten die ausgelesen werden
 _MAX_PAGES = 3
+# Mindestzeichen pro Seite — unter dieser Schwelle wird OCR als Fallback versucht
+_MIN_TEXT_CHARS = 50
+# Rendering-Aufloesung fuer Pixmap bei Bild-PDFs (DPI)
+_OCR_DPI = 200
 
 _DETECTOR_SYSTEM = (
     "Du bist ein Rechnungspruefer. Antworte AUSSCHLIESSLICH mit JSON.\n"
@@ -53,9 +57,15 @@ _DETECTOR_SYSTEM = (
 def _extract_pdf_text(pdf_bytes: bytes) -> str:
     """Extrahiert den Plaintext aus den ersten _MAX_PAGES Seiten eines PDFs.
 
-    Nutzt PyMuPDF (fitz), das bereits als Abhaengigkeit vorhanden ist.
-    Bei verschluesselten oder bild-basierten PDFs wird ein leerer String
-    zurueckgegeben.
+    Nutzt PyMuPDF (fitz) fuer die Textextraktion. Bei Bild-PDFs (gescannte
+    Dokumente ohne Text-Layer) wird Tesseract-OCR als Fallback eingesetzt,
+    sofern pytesseract und Pillow verfuegbar sind.
+
+    Fallback-Logik pro Seite:
+    - Liefert fitz weniger als _MIN_TEXT_CHARS Zeichen, wird die Seite als
+      Pixmap gerendert und per Tesseract OCR gelesen.
+    - Fehlt das Tesseract-Binary oder schlaegt die OCR fehl, wird der
+      vorhandene (ggf. leere) fitz-Text ohne Absturz verwendet.
 
     Args:
         pdf_bytes: Rohe PDF-Bytes.
@@ -67,26 +77,39 @@ def _extract_pdf_text(pdf_bytes: bytes) -> str:
         import fitz  # PyMuPDF
 
         doc = fitz.open(stream=pdf_bytes, filetype="pdf")
-        if doc.is_encrypted:
-            log.debug("invoice_detector: PDF ist verschluesselt — ueberspringe")
-            return ""
-
-        texts: list[str] = []
-        for i in range(min(_MAX_PAGES, doc.page_count)):
-            try:
-                t = doc[i].get_text() or ""
+        try:
+            if doc.is_encrypted:
+                log.debug("invoice_detector: PDF verschluesselt — ueberspringe")
+                return ""
+            texts: list[str] = []
+            for i in range(min(_MAX_PAGES, doc.page_count)):
+                try:
+                    page = doc[i]
+                    t = page.get_text().strip()
+                except Exception as page_exc:
+                    log.debug("invoice_detector: Seite %d get_text: %s", i, page_exc)
+                    continue
+                if len(t) < _MIN_TEXT_CHARS:
+                    # Bild-PDF: Seite als Pixmap rendern und per Tesseract OCR lesen
+                    try:
+                        from PIL import Image
+                        import pytesseract
+                        mat = fitz.Matrix(_OCR_DPI / 72, _OCR_DPI / 72)
+                        pix = page.get_pixmap(matrix=mat)
+                        img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+                        # deu+eng: falls deu-Sprachpaket fehlt, graceful fallback auf eng
+                        try:
+                            t = pytesseract.image_to_string(img, lang="deu+eng")
+                        except pytesseract.TesseractError:
+                            t = pytesseract.image_to_string(img, lang="eng")
+                    except Exception as ocr_err:
+                        log.debug("invoice_detector: OCR Seite %d: %s", i, ocr_err)
                 texts.append(t)
-            except Exception as page_exc:
-                log.debug(
-                    "invoice_detector: Seite %d konnte nicht extrahiert werden: %s",
-                    i, page_exc,
-                )
-        doc.close()
-        combined = "\n".join(texts).strip()
-        return combined[:_MAX_PDF_CHARS]
+            return "\n".join(texts).strip()[:_MAX_PDF_CHARS]
+        finally:
+            doc.close()
     except Exception as exc:
-        log.debug("invoice_detector: fitz-Extraktion fehlgeschlagen: %s: %s",
-                  type(exc).__name__, exc)
+        log.debug("invoice_detector: fitz-Extraktion: %s: %s", type(exc).__name__, exc)
         return ""
 
 
