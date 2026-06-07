@@ -2641,10 +2641,11 @@ async def execute_action(action: dict) -> str:
             return f"Angebots-Abfrage fehlgeschlagen: {type(e).__name__}"
 
     elif t == "MAIL_FORWARD_PENDING":
-        # Issue #143: Empfaenger fuer Weiterleitung ermitteln und in
+        # Issue #143 / #202: Empfaenger fuer Weiterleitung ermitteln und in
         # S.PENDING_MAIL_FORWARD speichern. Payload kann eine E-Mail-Adresse
-        # oder ein Name sein. Jarvis nennt den gefundenen Kontakt und bittet
-        # um Bestaetigung bevor die Mail tatsaechlich weitergeleitet wird.
+        # oder ein Name sein. Bei einem Namen wird persons_db UND Google
+        # Contacts durchsucht. Bei mehreren Treffern wird iterativ nachgefragt
+        # (ein Kandidat nach dem anderen) statt alle auf einmal aufzulisten.
         import persons_db
         payload_stripped = p.strip() if p else ""
         addr = S.USER_ADDRESS
@@ -2660,35 +2661,66 @@ async def execute_action(action: dict) -> str:
                 f"Weiterleitung vorbereitet: {payload_stripped}. "
                 f"Bitte bestaetigen, {addr}."
             )
-        # Payload ist ein Name — in persons_db suchen
-        matches = persons_db.search_by_name(payload_stripped)
-        if not matches:
-            return (
-                f"Kein Kontakt '{payload_stripped}' gefunden, {addr}. "
-                f"Bitte die E-Mail-Adresse direkt nennen."
-            )
-        if len(matches) == 1:
-            profile = matches[0]
-            if not profile.primary_email:
-                return (
-                    f"Kontakt {profile.name} gefunden, aber keine E-Mail-Adresse "
-                    f"hinterlegt. Bitte die Adresse direkt nennen, {addr}."
-                )
+        # Payload ist ein Name — persons_db UND Google Contacts durchsuchen
+        db_matches = persons_db.search_by_name(payload_stripped)
+        try:
+            import google_contacts_tools as _gct
+            gc_matches = await _gct.find_contacts_by_name(payload_stripped)
+        except Exception:
+            gc_matches = []
+        # Kandidatenliste aufbauen (dedup nach E-Mail)
+        seen_emails: set[str] = set()
+        candidates: list[dict] = []
+        for profile in db_matches:
+            if profile.primary_email:
+                email_lower = profile.primary_email.lower()
+                if email_lower not in seen_emails:
+                    seen_emails.add(email_lower)
+                    candidates.append({
+                        "to_addr": profile.primary_email,
+                        "to_name": profile.name,
+                    })
+        for contact in gc_matches:
+            if contact.emails:
+                email_lower = contact.emails[0].lower()
+                if email_lower not in seen_emails:
+                    seen_emails.add(email_lower)
+                    candidates.append({
+                        "to_addr": contact.emails[0],
+                        "to_name": contact.name,
+                    })
+        if not candidates:
+            return f"Kein Kontakt '{payload_stripped}' gefunden, Madam."
+        if len(candidates) == 1:
+            c = candidates[0]
             S.PENDING_MAIL_FORWARD = {
-                "to_addr": profile.primary_email,
-                "to_name": profile.name,
+                "candidates": candidates,
+                "current_index": 0,
             }
             return (
-                f"Weiterleitung vorbereitet: {profile.name} "
-                f"({profile.primary_email}). Bitte bestaetigen, {addr}."
+                f"Meinen Sie {c['to_name']} ({c['to_addr']}), Madam?"
             )
-        # Mehrere Treffer — Auswahl zurueckgeben
-        lines = [f"Mehrere Kontakte gefunden fuer '{payload_stripped}':"]
-        for i, profile in enumerate(matches, 1):
-            email_info = profile.primary_email or "(keine E-Mail)"
-            lines.append(f"{i}. {profile.name} — {email_info}")
-        lines.append("Bitte nennen Sie die genaue E-Mail-Adresse.")
-        return "\n".join(lines)
+        # Mehrere Treffer — iterativ nachfragen, Kandidat fuer Kandidat
+        S.PENDING_MAIL_FORWARD = {
+            "candidates": candidates,
+            "current_index": 0,
+        }
+        c = candidates[0]
+        return f"Meinen Sie {c['to_name']} ({c['to_addr']}), Madam?"
+
+    elif t == "MAIL_FORWARD_NEXT":
+        # Issue #202: Nutzer hat "nein" gesagt — naechsten Kandidaten vorschlagen.
+        addr = S.USER_ADDRESS
+        if not S.PENDING_MAIL_FORWARD or "candidates" not in S.PENDING_MAIL_FORWARD:
+            return f"Keine laufende Weiterleitungssuche, {addr}."
+        idx = S.PENDING_MAIL_FORWARD.get("current_index", 0) + 1
+        candidates = S.PENDING_MAIL_FORWARD["candidates"]
+        if idx >= len(candidates):
+            S.PENDING_MAIL_FORWARD = {}
+            return "Kein weiterer passender Kontakt gefunden, Madam. Die Weiterleitung wird abgebrochen."
+        S.PENDING_MAIL_FORWARD["current_index"] = idx
+        c = candidates[idx]
+        return f"Gibt es noch {c['to_name']} ({c['to_addr']}), Madam?"
 
     elif t == "PROACTIVE_DELIVER":
         # Issue #148: Liefert die ausstehende proaktive Benachrichtigung aus.
@@ -2712,15 +2744,28 @@ async def execute_action(action: dict) -> str:
         return f"Sehr wohl, ich schicke es Ihnen auf das Telefon, {pick_address()}."
 
     elif t == "MAIL_FORWARD_SEND":
-        # Issue #143: Leitet die aktive Mail an den gespeicherten Empfaenger
-        # weiter. Setzt S.PENDING_MAIL_FORWARD voraus.
+        # Issue #143 / #202: Leitet die aktive Mail an den gespeicherten
+        # Empfaenger weiter. Unterstuetzt sowohl Legacy-Format (to_addr/to_name)
+        # als auch das neue Kandidaten-Format (candidates/current_index).
         if not S.PENDING_MAIL_FORWARD:
             return (
                 "Kein Empfaenger gespeichert. "
                 "Bitte zuerst Empfaenger nennen."
             )
-        to_addr = S.PENDING_MAIL_FORWARD.get("to_addr", "")
-        to_name = S.PENDING_MAIL_FORWARD.get("to_name", to_addr)
+        fwd = S.PENDING_MAIL_FORWARD
+        if "candidates" in fwd:
+            idx = fwd.get("current_index", 0)
+            candidates = fwd.get("candidates", [])
+            if idx < len(candidates):
+                c = candidates[idx]
+                to_addr = c["to_addr"]
+                to_name = c["to_name"]
+            else:
+                S.PENDING_MAIL_FORWARD = {}
+                return "Kein bestaetigter Empfaenger, Madam."
+        else:
+            to_addr = fwd.get("to_addr", "")
+            to_name = fwd.get("to_name", to_addr)
         if not to_addr:
             S.PENDING_MAIL_FORWARD = {}
             return "Gespeicherter Empfaenger hat keine E-Mail-Adresse. Bitte erneut angeben."
