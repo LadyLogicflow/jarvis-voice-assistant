@@ -86,7 +86,7 @@ def _save_sent_state(account_name: str, uid: int) -> None:
 # Passive learning (Issue #102)
 # ---------------------------------------------------------------------------
 
-def _learn_from_mail(
+async def _learn_from_mail(
     account: str,
     uid: int,
     sender: str,
@@ -145,6 +145,15 @@ def _learn_from_mail(
                 if note_text not in profile.notes:
                     profile.notes.append(note_text)
                 profile.last_contact = today
+                # Issue #212: Stichwort-Zusammenfassung der letzten Mail generieren.
+                try:
+                    topic = await persons_db.generate_mail_topic(subject, body_snippet[:300])
+                    profile.last_mail_topic = topic
+                except Exception as _topic_exc:
+                    log.debug(
+                        "mail_monitor[%s] learn: generate_mail_topic failed: %s: %s",
+                        account, type(_topic_exc).__name__, _topic_exc,
+                    )
                 persons_db.upsert(profile)
                 log.debug(
                     "mail_monitor[%s] learn: saved mail note for %s (%s)",
@@ -1582,7 +1591,7 @@ async def _process_new_uids(account: dict, client, uids: list[int]) -> None:
                 # Passive learning (Issue #102): index sender + subject so
                 # future draft replies have better context.
                 try:
-                    _learn_from_mail(name, uid, sender, sender_email, subject, msg)
+                    await _learn_from_mail(name, uid, sender, sender_email, subject, msg)
                 except Exception as e:
                     log.debug(f"mail_monitor[{name}] learn failed: {type(e).__name__}: {e}")
 

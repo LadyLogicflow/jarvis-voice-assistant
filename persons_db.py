@@ -60,6 +60,8 @@ class PersonProfile:
     secondary_emails: list[str] = field(default_factory=list)
     primary_phone: str = ""
     secondary_phones: list[str] = field(default_factory=list)
+    # Issue #212: Stichwort-Zusammenfassung der letzten eingehenden Mail.
+    last_mail_topic: str = ""
     # Issue #109: Steuerbescheide und Vorauszahlungsbescheide fuer diesen Mandanten.
     # Jeder Eintrag ist ein dict wie von analyze_steuerbescheid() zurueckgegeben.
     tax_assessments: list[dict] = field(default_factory=list)
@@ -415,6 +417,51 @@ def save_advance_payment(mandant: str, data: dict) -> None:
     profile.advance_payments.append({k: v for k, v in data.items() if k != "summary"})
     _save()
     log.info("persons_db: Vorauszahlungsbescheid gespeichert fuer %s: %s", mandant, key)
+
+
+async def generate_mail_topic(subject: str, body_snippet: str) -> str:
+    """Generiert 3-5 deutsche Stichworte fuer den Inhalt einer Mail via Haiku.
+
+    Ruft das Haiku-Modell mit Betreff und max. 300 Zeichen Body-Snippet auf.
+    Im Fehlerfall wird der Betreff auf 60 Zeichen gekuerzt als Fallback genutzt.
+
+    Args:
+        subject:      Mail-Betreff.
+        body_snippet: Erster Teil des Mail-Bodys (wird intern auf 300 Zeichen
+                      begrenzt).
+
+    Returns:
+        Kommagetrennte Stichworte als String, max. 60 Zeichen.
+    """
+    import settings as S
+
+    body_cut = (body_snippet or "")[:300].strip()
+    prompt_user = f"Betreff: {subject}\n\nInhalt: {body_cut}" if body_cut else f"Betreff: {subject}"
+
+    try:
+        resp = await S.ai.messages.create(
+            model=S.HAIKU_MODEL,
+            max_tokens=80,
+            system=(
+                "Fasse den Inhalt dieser E-Mail in maximal 5 deutschen Stichworten zusammen "
+                "(kein ganzer Satz, keine Anrede). "
+                "Antworte NUR mit den Stichworten, kommagetrennt."
+            ),
+            messages=[{"role": "user", "content": prompt_user}],
+        )
+        text = ""
+        if resp and resp.content:
+            text = resp.content[0].text.strip()
+        # Auf max. 60 Zeichen kuerzen (sauber am letzten Komma)
+        if len(text) > 60:
+            text = text[:60]
+            last_comma = text.rfind(",")
+            if last_comma > 20:
+                text = text[:last_comma]
+        return text or subject[:60]
+    except Exception as e:
+        log.debug("generate_mail_topic: Haiku-Aufruf fehlgeschlagen: %s: %s", type(e).__name__, e)
+        return subject[:60]
 
 
 def get_tax_assessments(mandant: str) -> list[dict]:

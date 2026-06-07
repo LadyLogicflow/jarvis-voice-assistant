@@ -305,6 +305,7 @@ def _build_person_card_html(
     funktion: str = "",
     anrede: str = "",
     last_contact: str = "",
+    last_mail_topic: str = "",
     open_points: list | None = None,
     notes: list | None = None,
     tax_assessments: list | None = None,
@@ -334,7 +335,13 @@ def _build_person_card_html(
     if anrede:
         rows.append(f'<div class="p-row"><span class="p-lbl">Anrede</span><span>{esc(anrede)}</span></div>')
     if last_contact:
-        rows.append(f'<div class="p-row"><span class="p-lbl">Letzter Kontakt</span><span>{esc(_fmt_date(last_contact))}</span></div>')
+        # Issue #212: Stichwort-Zusammenfassung der letzten Mail nach dem Datum anzeigen.
+        contact_display = esc(_fmt_date(last_contact))
+        if last_mail_topic:
+            contact_display += (
+                f' <span class="p-mail-topic">{esc(last_mail_topic)}</span>'
+            )
+        rows.append(f'<div class="p-row"><span class="p-lbl">Letzter Kontakt</span><span>{contact_display}</span></div>')
     if rows:
         parts.append('<div class="p-card-rows">' + "".join(rows) + "</div>")
 
@@ -1212,6 +1219,161 @@ async def execute_action(action: dict) -> str:
             return "Kein Entwurf zum Verwerfen."
         return f"Vergessen, {pick_address()}."
 
+    elif t == "COMPOSE":
+        # Issue #211: Neue Mail von Grund auf verfassen (kein Reply).
+        # Payload-Format: to=Name_oder_Email | subject=Betreff | body=Stichpunkte | tone=Ton
+        import re as _re
+
+        def _parse_compose_payload(raw: str) -> dict:
+            """Parst 'to=... | subject=... | body=... | tone=...' aus dem Payload.
+
+            Felder koennen in beliebiger Reihenfolge kommen und sind optional
+            (ausser to). Trennzeichen: '|' oder Zeilenumbruch."""
+            result: dict[str, str] = {"to": "", "subject": "", "body": "", "tone": ""}
+            for part in _re.split(r"[|\n]", raw):
+                part = part.strip()
+                if not part:
+                    continue
+                m = _re.match(r"(\w+)\s*=\s*(.*)", part)
+                if m:
+                    key = m.group(1).lower()
+                    val = m.group(2).strip()
+                    if key in result:
+                        result[key] = val
+            return result
+
+        params = _parse_compose_payload(p)
+        to_raw = params["to"].strip()
+        subject = params["subject"].strip()
+        body_hints = params["body"].strip()
+        tone = params["tone"].strip().lower()
+
+        if not to_raw:
+            return (
+                f"Ich brauche einen Empfaenger, {pick_address()}. "
+                f"Zum Beispiel: 'Entwerfe Mail an Thomas Mueller: ...'."
+            )
+
+        # Empfaenger auflösen: direkte E-Mail-Adresse oder Kontaktsuche.
+        to_addr = ""
+        to_display = to_raw
+        if "@" in to_raw:
+            to_addr = to_raw
+        else:
+            try:
+                import google_contacts_tools as _gct
+                contacts = await _gct.find_contacts_by_name(to_raw)
+                if contacts:
+                    c = contacts[0]
+                    to_addr = c.emails[0] if c.emails else ""
+                    to_display = c.name
+                    log.info(
+                        "COMPOSE: Kontakt gefunden: %s -> %s", c.name, to_addr
+                    )
+            except Exception as e:
+                log.warning("COMPOSE: Kontaktsuche fehlgeschlagen: %s", e)
+
+        if not to_addr:
+            return (
+                f"Ich konnte keine E-Mail-Adresse fuer '{to_raw}' finden, "
+                f"{pick_address()}. Bitte geben Sie die Adresse direkt an."
+            )
+
+        # Ton-Tabelle -> LLM-Instruktion
+        _tone_map = {
+            "freundlich":   "warmherzig und persoenlich, per du",
+            "verbindlich":  "klar und verbindlich, mit konkretem Commitment",
+            "beruflich":    "sachlich und professionell, Sie-Form",
+            "professionell": "sachlich und professionell, Sie-Form",
+            "foermlich":    "sehr foermlich — 'Sehr geehrte/r', volle Floskel-Suite",
+            "förmlich":     "sehr foermlich — 'Sehr geehrte/r', volle Floskel-Suite",
+            "familiär":     "ungezwungen, per du, wie an ein Familienmitglied",
+            "familiaer":    "ungezwungen, per du, wie an ein Familienmitglied",
+            "locker":       "ungezwungen und persoenlich",
+        }
+        tone_instruction = _tone_map.get(tone, "")
+        if tone_instruction:
+            tone_block = f"Gewuenschter Ton: {tone_instruction}."
+        else:
+            tone_block = (
+                f"Ton: passe den Stil sinnvoll zum Empfaenger ({to_display}) an — "
+                f"beruflich/foermlich fuer unbekannte Geschaeftskontakte, "
+                f"persoenlicher fuer bekannte Personen."
+            )
+
+        business = _load_business_context()
+        business_block = (
+            f"\n\nGESCHAEFTLICHER KONTEXT:\n{business}\n"
+            if business else ""
+        )
+
+        sys_prompt = (
+            f"Du bist Jarvis, der Butler-Assistent von {S.USER_NAME} "
+            f"({S.USER_ROLE}). Verfasse eine neue E-Mail im Namen von "
+            f"{S.USER_NAME}. {tone_block} "
+            f"Format: passende Anrede, 2-4 Saetze Inhalt, Gruss-Zeile, "
+            f"{S.USER_NAME}. NUR der fertige Mail-Text — KEINE Tags, "
+            f"KEINE Erklaerungen, KEIN Betreff als eigene Zeile.{business_block}"
+        )
+
+        subject_line = subject or f"(Betreff aus Inhalt ableiten)"
+        user_msg = (
+            f"Empfaenger: {to_display} <{to_addr}>\n"
+            f"Betreff: {subject_line}\n"
+            f"Inhalt-Stichpunkte: {body_hints}\n\n"
+            f"Verfasse den vollstaendigen Mail-Text."
+        )
+
+        try:
+            resp = await S.ai.messages.create(
+                model=S.HAIKU_MODEL,
+                max_tokens=600,
+                system=sys_prompt,
+                messages=[{"role": "user", "content": user_msg}],
+            )
+            generated_body = llm_text(resp).strip()
+        except Exception as e:
+            log.warning("COMPOSE: LLM-Aufruf fehlgeschlagen: %s", e)
+            return f"Der Entwurf konnte nicht erstellt werden, {pick_address()}."
+
+        if not generated_body:
+            return f"Der Entwurf konnte nicht erstellt werden, {pick_address()}."
+
+        # Betreff: vom LLM ableiten wenn nicht angegeben.
+        if not subject:
+            try:
+                subj_resp = await S.ai.messages.create(
+                    model=S.HAIKU_MODEL,
+                    max_tokens=60,
+                    system="Leite aus den folgenden Stichpunkten einen praegnanten deutschen E-Mail-Betreff ab. NUR der Betreff, keine weiteren Worte.",
+                    messages=[{"role": "user", "content": body_hints or generated_body[:200]}],
+                )
+                subject = llm_text(subj_resp).strip().strip('"').strip("'")
+            except Exception:
+                subject = "Neue Nachricht"
+
+        # Standard-Konto: erstes MAIL_MONITOR_ACCOUNT.
+        default_account = (
+            S.MAIL_MONITOR_ACCOUNTS[0]["name"]
+            if S.MAIL_MONITOR_ACCOUNTS
+            else "HILO"
+        )
+
+        session_state.set_pending_draft(
+            "default",
+            session_state.PendingDraft(
+                account=default_account,
+                to=to_addr,
+                subject=subject,
+                body=generated_body,
+            ),
+        )
+        return (
+            f"Mein Entwurf (an: {to_display} <{to_addr}>):\n\n"
+            f"{generated_body}\n\n"
+            f"Soll ich das so freigeben?"
+        )
+
     elif t == "PLAN_NOW":
         import planner
         return await planner.plan_now()
@@ -1803,6 +1965,7 @@ async def execute_action(action: dict) -> str:
             funktion=r.get("funktion", ""),
             anrede=r.get("anrede", ""),
             last_contact=r.get("last_contact", ""),
+            last_mail_topic=r.get("last_mail_topic", ""),
             open_points=r.get("open_points", []),
             notes=r.get("notes", []),
             tax_assessments=r.get("tax_assessments", []),
