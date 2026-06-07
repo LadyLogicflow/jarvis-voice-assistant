@@ -915,6 +915,68 @@ def register_mail_alert_handler(fn) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Amazon-Kurz-Zusammenfassung (Issue #205)
+# ---------------------------------------------------------------------------
+
+async def _build_amazon_summary(subject: str, body: str, sender: str) -> str:
+    """Extrahiert Kerninfo aus einer Amazon-Mail und gibt einen deutschen Einzeiler zurück.
+
+    Nutzt Claude Haiku fuer eine kurze Zusammenfassung (max 15 Woerter).
+    Bei LLM-Fehler wird ein regelbasierter Fallback verwendet.
+
+    Args:
+        subject: Betreff der Mail.
+        body:    Reiner Text-Body der Mail (wird auf 300 Zeichen gekuerzt).
+        sender:  Absender-Adresse (nicht verwendet im Prompt, aber fuer Logging).
+
+    Returns:
+        Einzeiliger deutscher Satz der die Amazon-Mail zusammenfasst.
+    """
+    from prompt import pick_address
+    addr = pick_address()
+    subject_l = (subject or "").lower()
+
+    # Einfache Subject-Klassifikation fuer Fallback
+    if any(k in subject_l for k in ("versendet", "dispatched", "unterwegs", "shipped")):
+        category_hint = "Versandbenachrichtigung"
+    elif any(k in subject_l for k in ("bestellbestätigung", "bestellung", "order confirmation")):
+        category_hint = "Bestellbestätigung"
+    elif any(k in subject_l for k in ("rechnung", "invoice")):
+        category_hint = "Rechnung"
+    elif any(k in subject_l for k in ("rücksendung", "rückerstattung", "return", "refund")):
+        category_hint = "Rücksendung/Erstattung"
+    else:
+        category_hint = "Amazon-Mail"
+
+    # Body auf 300 Zeichen kuerzen fuer LLM
+    snippet = (body or "")[:300].strip()
+
+    if not snippet and not subject:
+        return f"{category_hint} archiviert, {addr}."
+
+    try:
+        resp = await S.ai.messages.create(
+            model=S.HAIKU_MODEL,
+            max_tokens=80,
+            system=(
+                "Du bist Jarvis. Antworte mit GENAU EINEM deutschen Satz (max 15 Wörter). "
+                "Fasse zusammen was in dieser Amazon-Mail steht. "
+                f"Spreche die Nutzerin als '{addr}' an. "
+                "Kein Markdown, keine Aufzählungen. Nur der eine Satz."
+            ),
+            messages=[{"role": "user", "content": f"Betreff: {subject}\n\n{snippet}"}],
+        )
+        line = resp.content[0].text.strip() if resp.content else ""
+        # Sicherheitsnetz: wenn LLM-Antwort leer oder zu lang
+        if line and len(line) < 200:
+            return line
+    except Exception as e:
+        log.warning(f"_build_amazon_summary LLM failed: {e}")
+
+    return f"{category_hint} archiviert, {addr}."
+
+
+# ---------------------------------------------------------------------------
 # Per-account IDLE session
 # ---------------------------------------------------------------------------
 async def _process_new_uids(account: dict, client, uids: list[int]) -> None:
@@ -1312,6 +1374,7 @@ async def _process_new_uids(account: dict, client, uids: list[int]) -> None:
                     "mark_read": "als gelesen markiert",
                     "move": f"verschoben nach {triage.get('folder', 'Junk')}",
                     "forward": f"weitergeleitet an {triage.get('to', '?')}",
+                    "move_with_summary": f"Amazon archiviert nach {triage.get('folder', 'Amazon')}",
                 }.get(triage["action"], triage["action"])
                 _al.log_action(
                     "mail_processed",
@@ -1334,6 +1397,23 @@ async def _process_new_uids(account: dict, client, uids: list[int]) -> None:
                             await mail_actions.move_mail(name, uid, triage.get("folder", "Junk"))
                         else:
                             await mail_actions.mark_mail_read(name, uid)
+                elif triage["action"] == "move_with_summary":
+                    # Amazon-Mails: kurze Zusammenfassung ausgeben + still archivieren
+                    folder = triage.get("folder", "Amazon")
+                    body_text = ""
+                    try:
+                        body_data = await mail_actions.read_mail_body(name, uid)
+                        body_text = body_data.get("text", "") or ""
+                    except Exception as _be:
+                        log.debug(f"mail_monitor[{name}] uid={uid}: amazon body fetch failed: {_be}")
+                    summary_line = await _build_amazon_summary(subject, body_text, sender)
+                    if _mail_alert_handler is not None:
+                        try:
+                            await _mail_alert_handler(summary_line)
+                        except Exception as e:
+                            log.warning(f"mail_monitor[{name}] amazon summary alert failed: {e}")
+                    await mail_actions.mark_mail_read(name, uid)
+                    await mail_actions.move_mail(name, uid, folder)
                 # Triage handled it — skip the normal forward/notify path
                 continue
 
