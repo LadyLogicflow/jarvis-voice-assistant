@@ -33,6 +33,7 @@ log = logging.getLogger("jarvis.contacts_google")
 # beiden Scopes generiert und deployed wurde (Re-Auth erforderlich).
 SCOPES = [
     "https://www.googleapis.com/auth/calendar",
+    "https://www.googleapis.com/auth/contacts.readonly",
 ]
 
 TOKEN_PATH = os.path.join(os.path.dirname(__file__), "token.json")
