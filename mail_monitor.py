@@ -46,6 +46,11 @@ _max_seen_sent: dict[str, int] = {}
 # Sent-folder poll interval: 15 minutes. Fresh connect per poll.
 _SENT_POLL_INTERVAL = 15 * 60
 
+# UIDs die bereits als Rechnung an Caterina erkannt und weitergeleitet wurden.
+# Verhindert Doppelweiterleitung bei erneuter Verarbeitung derselben UID.
+# Format: {account_name: {uid, ...}}
+_invoice_forwarded: dict[str, set[int]] = {}
+
 # ---------------------------------------------------------------------------
 # Jarvis-Trigger (Issue #159)
 # Mails with 'jarvis' in subject are processed immediately and moved to trash.
@@ -1062,6 +1067,10 @@ async def _process_new_uids(account: dict, client, uids: list[int]) -> None:
                     )
                 continue
 
+            # msg_full wird ggf. vom HILO-Block gefuellt und im Invoice-Block
+            # wiederverwendet, um doppelte BODY.PEEK[]-Downloads zu vermeiden.
+            _full_msg_cache: email.message.Message | None = None
+
             # Bild-Anhaenge (Issue #177): Nur fuer HILO-Account.
             # Wenn Bild-Anhaenge vorhanden: vollstaendige Mail laden, Bilder
             # per Claude Vision auf Steuerdokumente pruefen, ggf. OCR-PDF senden
@@ -1084,6 +1093,7 @@ async def _process_new_uids(account: dict, client, uids: list[int]) -> None:
                                 byte_items_full.append(bytes(item[1]))
                         if byte_items_full:
                             msg_full = email.message_from_bytes(max(byte_items_full, key=len))
+                            _full_msg_cache = msg_full  # Invoice-Block kann wiederverwenden
                             all_attachments = _extract_attachments(msg_full)
                             import image_tools as _it
                             image_attachments = [
@@ -1101,6 +1111,141 @@ async def _process_new_uids(account: dict, client, uids: list[int]) -> None:
                         "mail_monitor[%s] uid=%s: Bild-Attachment-Check fehlgeschlagen: %s: %s",
                         name, uid, type(_img_exc).__name__, _img_exc,
                     )
+
+            # PDF-Rechnungserkennung (Issue #208): Alle Accounts.
+            # Wenn eine Mail einen PDF-Anhang enthaelt: pruefen ob es eine
+            # Rechnung an Caterina Essberger-Brenscheidt ist. Falls ja:
+            # weiterleiten an getmyinvoices. Normale Triage laeuft danach
+            # weiter — Mail bleibt im Postfach. Keine Doppelweiterleitung.
+            try:
+                # Vorab-Pruefung: multipart-Mails oder direkte application/pdf
+                # koennen PDF-Anhaenge enthalten.
+                _top_ct = (msg.get("Content-Type") or "").lower()
+                _has_pdf_hint = "multipart" in _top_ct or "application/pdf" in _top_ct
+
+                if _has_pdf_hint:
+                    _fwd_key = name
+                    if _fwd_key not in _invoice_forwarded:
+                        _invoice_forwarded[_fwd_key] = set()
+
+                    if uid not in _invoice_forwarded[_fwd_key]:
+                        import invoice_detector as _inv
+
+                        # Vollstaendige Mail nutzen falls vom HILO-Block bereits
+                        # geladen (vermeidet doppelten BODY.PEEK[]-Download).
+                        _inv_msg_full = _full_msg_cache
+                        if _inv_msg_full is None:
+                            try:
+                                typ_inv, data_inv = await client.uid(
+                                    "fetch", str(uid), "BODY.PEEK[]"
+                                )
+                                if typ_inv == "OK" and data_inv:
+                                    _inv_bytes: list[bytes] = []
+                                    for _item in data_inv:
+                                        if isinstance(_item, (bytes, bytearray)):
+                                            _inv_bytes.append(bytes(_item))
+                                        elif (
+                                            isinstance(_item, (list, tuple))
+                                            and len(_item) >= 2
+                                            and isinstance(_item[1], (bytes, bytearray))
+                                        ):
+                                            _inv_bytes.append(bytes(_item[1]))
+                                    if _inv_bytes:
+                                        _inv_msg_full = email.message_from_bytes(
+                                            max(_inv_bytes, key=len)
+                                        )
+                            except Exception as _fe:
+                                log.warning(
+                                    "mail_monitor[%s] uid=%s: Rechnung full-fetch "
+                                    "fehlgeschlagen: %s: %s",
+                                    name, uid, type(_fe).__name__, _fe,
+                                )
+
+                        if _inv_msg_full is not None:
+                            _inv_attachments = _extract_attachments(_inv_msg_full)
+                            _pdf_attachments = [
+                                att for att in _inv_attachments
+                                if (
+                                    att["content_type"] == "application/pdf"
+                                    or att["filename"].lower().endswith(".pdf")
+                                )
+                            ]
+                            for _att in _pdf_attachments:
+                                try:
+                                    _is_inv, _inv_reason = (
+                                        await _inv.detect_invoice_for_catrin(_att["data"])
+                                    )
+                                    log.info(
+                                        "mail_monitor[%s] uid=%s: Rechnungspruefung "
+                                        "%r -> is_match=%s reason=%r",
+                                        name, uid, _att["filename"],
+                                        _is_inv, _inv_reason,
+                                    )
+                                    if _is_inv:
+                                        _fwd_ok = await mail_actions.forward_mail(
+                                            name, uid,
+                                            _inv.INVOICE_FORWARD_TO,
+                                        )
+                                        if _fwd_ok:
+                                            _invoice_forwarded[_fwd_key].add(uid)
+                                            log.info(
+                                                "mail_monitor[%s] uid=%s: Rechnung "
+                                                "von %r weitergeleitet an %s",
+                                                name, uid, sender,
+                                                _inv.INVOICE_FORWARD_TO,
+                                            )
+                                            _inv_notice = (
+                                                f"Rechnung von {sender} an "
+                                                f"getmyinvoices weitergeleitet, Madam."
+                                            )
+                                            if not S.is_quiet_hours():
+                                                try:
+                                                    import telegram_bot as _tgb
+                                                    await _tgb.send_user_text(_inv_notice)
+                                                except Exception as _tge:
+                                                    log.warning(
+                                                        "mail_monitor[%s] uid=%s: "
+                                                        "Telegram-Meldung fehlgeschlagen: "
+                                                        "%s: %s",
+                                                        name, uid,
+                                                        type(_tge).__name__, _tge,
+                                                    )
+                                            if (
+                                                not S.is_mac_quiet_hours()
+                                                and _mail_alert_handler is not None
+                                            ):
+                                                try:
+                                                    await _mail_alert_handler(_inv_notice)
+                                                except Exception as _mae:
+                                                    log.warning(
+                                                        "mail_monitor[%s] uid=%s: "
+                                                        "Mac-Alert fehlgeschlagen: "
+                                                        "%s: %s",
+                                                        name, uid,
+                                                        type(_mae).__name__, _mae,
+                                                    )
+                                        else:
+                                            log.warning(
+                                                "mail_monitor[%s] uid=%s: "
+                                                "Weiterleitung fehlgeschlagen "
+                                                "(forward_mail=False)",
+                                                name, uid,
+                                            )
+                                        # Erste Rechnung gefunden und verarbeitet —
+                                        # restliche PDFs der Mail ueberspringen.
+                                        break
+                                except Exception as _det_exc:
+                                    log.warning(
+                                        "mail_monitor[%s] uid=%s: "
+                                        "detect_invoice_for_catrin fehlgeschlagen: "
+                                        "%s: %s",
+                                        name, uid, type(_det_exc).__name__, _det_exc,
+                                    )
+            except Exception as _inv_outer:
+                log.warning(
+                    "mail_monitor[%s] uid=%s: Rechnungs-Block fehlgeschlagen: %s: %s",
+                    name, uid, type(_inv_outer).__name__, _inv_outer,
+                )
 
             # We only fetch BODY.PEEK[HEADER] (Apple-strict-parser-friendly),
             # so the classifier runs on sender + subject only. Empty body
