@@ -199,6 +199,12 @@ def route(
             {"action": "move", "folder": travel_folder}, account, rules
         )
 
+    amazon_folder = heur.get("amazon_to_amazon_folder", "Amazon")
+    if amazon_folder and any(d in sender_l for d in _AMAZON_FROM_DOMAINS):
+        return _apply_folder_override(
+            {"action": "move_with_summary", "folder": amazon_folder}, account, rules
+        )
+
     # 3) Newsletter heuristic — List-Unsubscribe header alone is definitive;
     #    LLM category is not required (newsletters often misclassified as "info")
     if msg is not None:
