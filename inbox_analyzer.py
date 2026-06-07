@@ -107,35 +107,35 @@ async def _scan_account(
         if getattr(select_resp, "result", None) != "OK":
             raise RuntimeError(f"SELECT {folder!r} fehlgeschlagen")
 
-        # UID SEARCH SINCE <datum> — explizit uid() verwenden damit
-        # echte UIDs geliefert werden, nicht Sequence Numbers.
+        # Reguläres SEARCH (kein UID SEARCH) — Apple- und HILO-IMAP
+        # unterstützen UID nur für FETCH/COPY/STORE, nicht für SEARCH.
         search_resp = await asyncio.wait_for(
-            client.uid("search", f"SINCE {since_str}"), timeout=_IMAP_TIMEOUT
+            client.search(f"SINCE {since_str}"), timeout=_IMAP_TIMEOUT
         )
         if getattr(search_resp, "result", None) != "OK":
             return []
 
-        uids_raw = b" ".join(
+        seq_raw = b" ".join(
             line for line in (search_resp.lines or [])
             if isinstance(line, (bytes, bytearray))
         )
-        uid_list = [u.strip() for u in uids_raw.split() if u.strip()]
-        if not uid_list:
+        seq_list = [s.strip() for s in seq_raw.split() if s.strip()]
+        if not seq_list:
             log.info(f"inbox_analyzer[{name}]: keine Mails seit {since_str}")
             return []
 
-        log.info(f"inbox_analyzer[{name}]: {len(uid_list)} Mails seit {since_str}")
+        log.info(f"inbox_analyzer[{name}]: {len(seq_list)} Mails seit {since_str}")
 
         headers: list[dict] = []
-        # In Batches von 50 fetchen um IMAP-Limits zu respektieren
+        # In Batches von 50 fetchen (Sequence Numbers, kein uid-Prefix)
         batch_size = 50
-        for i in range(0, len(uid_list), batch_size):
-            batch = uid_list[i:i + batch_size]
-            uid_set = b",".join(batch).decode()
+        for i in range(0, len(seq_list), batch_size):
+            batch = seq_list[i:i + batch_size]
+            seq_set = b",".join(batch).decode()
             try:
                 typ, data = await asyncio.wait_for(
-                    client.uid(
-                        "fetch", uid_set,
+                    client.fetch(
+                        seq_set,
                         "(BODY.PEEK[HEADER.FIELDS (FROM SUBJECT DATE LIST-UNSUBSCRIBE)])"
                     ),
                     timeout=_IMAP_TIMEOUT,
