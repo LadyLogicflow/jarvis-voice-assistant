@@ -23,7 +23,17 @@ INVOICE_FORWARD_TO = (
 
 # Erkennungsmerkmale des Rechnungsempfaengers (autorisiert von Caterina)
 _RECIPIENT_NAME = "Caterina Essberger-Brenscheidt"
-_RECIPIENT_ADDRESSES = ("Cranachstr. 60", "Reuschenberger Str. 11")
+# Alle gaengigen Schreibweisen der Adressen (abgekuerzt, ausgeschrieben, mit/ohne ß)
+_RECIPIENT_ADDRESSES = (
+    "cranachstr. 60",
+    "cranachstr.60",
+    "cranachstraße 60",
+    "cranachstrasse 60",
+    "reuschenberger str. 11",
+    "reuschenberger str.11",
+    "reuschenberger straße 11",
+    "reuschenberger strasse 11",
+)
 
 # Max. Zeichen aus dem PDF an den LLM uebergeben (Kostenkontrolle)
 _MAX_PDF_CHARS = 3000
@@ -43,8 +53,9 @@ _DETECTOR_SYSTEM = (
 def _extract_pdf_text(pdf_bytes: bytes) -> str:
     """Extrahiert den Plaintext aus den ersten _MAX_PAGES Seiten eines PDFs.
 
-    Nutzt pypdf (PdfReader). Bei verschluesselten oder bild-basierten PDFs
-    wird ein leerer String zurueckgegeben.
+    Nutzt PyMuPDF (fitz), das bereits als Abhaengigkeit vorhanden ist.
+    Bei verschluesselten oder bild-basierten PDFs wird ein leerer String
+    zurueckgegeben.
 
     Args:
         pdf_bytes: Rohe PDF-Bytes.
@@ -53,30 +64,28 @@ def _extract_pdf_text(pdf_bytes: bytes) -> str:
         Extrahierter Text (bis zu _MAX_PDF_CHARS Zeichen) oder leerer String.
     """
     try:
-        import io
-        from pypdf import PdfReader
+        import fitz  # PyMuPDF
 
-        reader = PdfReader(io.BytesIO(pdf_bytes))
-        if reader.is_encrypted:
+        doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+        if doc.is_encrypted:
             log.debug("invoice_detector: PDF ist verschluesselt — ueberspringe")
             return ""
 
         texts: list[str] = []
-        for i, page in enumerate(reader.pages):
-            if i >= _MAX_PAGES:
-                break
+        for i in range(min(_MAX_PAGES, doc.page_count)):
             try:
-                t = page.extract_text() or ""
+                t = doc[i].get_text() or ""
                 texts.append(t)
             except Exception as page_exc:
                 log.debug(
                     "invoice_detector: Seite %d konnte nicht extrahiert werden: %s",
                     i, page_exc,
                 )
+        doc.close()
         combined = "\n".join(texts).strip()
         return combined[:_MAX_PDF_CHARS]
     except Exception as exc:
-        log.debug("invoice_detector: pypdf-Extraktion fehlgeschlagen: %s: %s",
+        log.debug("invoice_detector: fitz-Extraktion fehlgeschlagen: %s: %s",
                   type(exc).__name__, exc)
         return ""
 
@@ -106,11 +115,10 @@ async def detect_invoice_for_catrin(pdf_bytes: bytes) -> tuple[bool, str]:
         return False, "PDF nicht lesbar (verschluesselt oder Bild-PDF)"
 
     # Schnellpruefung: Wenn kein Erkennungsmerkmal im Text vorkommt,
-    # LLM-Aufruf sparen.
+    # LLM-Aufruf sparen. _RECIPIENT_ADDRESSES sind bereits lowercase.
     text_lower = text.lower()
     name_lower = _RECIPIENT_NAME.lower()
-    addr_lower = [a.lower() for a in _RECIPIENT_ADDRESSES]
-    has_hint = name_lower in text_lower or any(a in text_lower for a in addr_lower)
+    has_hint = name_lower in text_lower or any(a in text_lower for a in _RECIPIENT_ADDRESSES)
     if not has_hint:
         return False, "Kein Empfaenger-Hinweis im PDF-Text gefunden"
 

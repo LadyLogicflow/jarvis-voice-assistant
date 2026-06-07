@@ -50,8 +50,6 @@ sentence-transformers>=3.0.0
 # PDF-Analyse (issue #109) — Textextraktion aus Steuerbescheiden
 pymupdf>=1.24.0
 
-# PDF-Textextraktion fuer Rechnungserkennung (issue #208)
-pypdf>=4.0.0
 
 # Bild-OCR (issue #177) — Bild-Anhaenge als Steuerdokumente erkennen und in PDF umwandeln
 pytesseract>=0.3.10

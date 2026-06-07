@@ -1067,6 +1067,10 @@ async def _process_new_uids(account: dict, client, uids: list[int]) -> None:
                     )
                 continue
 
+            # msg_full wird ggf. vom HILO-Block gefuellt und im Invoice-Block
+            # wiederverwendet, um doppelte BODY.PEEK[]-Downloads zu vermeiden.
+            _full_msg_cache: email.message.Message | None = None
+
             # Bild-Anhaenge (Issue #177): Nur fuer HILO-Account.
             # Wenn Bild-Anhaenge vorhanden: vollstaendige Mail laden, Bilder
             # per Claude Vision auf Steuerdokumente pruefen, ggf. OCR-PDF senden
@@ -1089,6 +1093,7 @@ async def _process_new_uids(account: dict, client, uids: list[int]) -> None:
                                 byte_items_full.append(bytes(item[1]))
                         if byte_items_full:
                             msg_full = email.message_from_bytes(max(byte_items_full, key=len))
+                            _full_msg_cache = msg_full  # Invoice-Block kann wiederverwenden
                             all_attachments = _extract_attachments(msg_full)
                             import image_tools as _it
                             image_attachments = [
@@ -1113,11 +1118,10 @@ async def _process_new_uids(account: dict, client, uids: list[int]) -> None:
             # weiterleiten an getmyinvoices. Normale Triage laeuft danach
             # weiter — Mail bleibt im Postfach. Keine Doppelweiterleitung.
             try:
-                # Billige Vorab-Pruefung: nur multipart-Mails koennen PDF-Anhaenge
-                # enthalten. msg wurde nur mit BODY.PEEK[HEADER] geladen, daher
-                # pruefen wir den top-level Content-Type-Header.
+                # Vorab-Pruefung: multipart-Mails oder direkte application/pdf
+                # koennen PDF-Anhaenge enthalten.
                 _top_ct = (msg.get("Content-Type") or "").lower()
-                _has_pdf_hint = "multipart" in _top_ct
+                _has_pdf_hint = "multipart" in _top_ct or "application/pdf" in _top_ct
 
                 if _has_pdf_hint:
                     _fwd_key = name
@@ -1127,33 +1131,35 @@ async def _process_new_uids(account: dict, client, uids: list[int]) -> None:
                     if uid not in _invoice_forwarded[_fwd_key]:
                         import invoice_detector as _inv
 
-                        # Vollstaendige Mail laden (nur wenn noch nicht geladen).
-                        _inv_msg_full = None
-                        try:
-                            typ_inv, data_inv = await client.uid(
-                                "fetch", str(uid), "BODY.PEEK[]"
-                            )
-                            if typ_inv == "OK" and data_inv:
-                                _inv_bytes: list[bytes] = []
-                                for _item in data_inv:
-                                    if isinstance(_item, (bytes, bytearray)):
-                                        _inv_bytes.append(bytes(_item))
-                                    elif (
-                                        isinstance(_item, (list, tuple))
-                                        and len(_item) >= 2
-                                        and isinstance(_item[1], (bytes, bytearray))
-                                    ):
-                                        _inv_bytes.append(bytes(_item[1]))
-                                if _inv_bytes:
-                                    _inv_msg_full = email.message_from_bytes(
-                                        max(_inv_bytes, key=len)
-                                    )
-                        except Exception as _fe:
-                            log.warning(
-                                "mail_monitor[%s] uid=%s: Rechnung full-fetch "
-                                "fehlgeschlagen: %s: %s",
-                                name, uid, type(_fe).__name__, _fe,
-                            )
+                        # Vollstaendige Mail nutzen falls vom HILO-Block bereits
+                        # geladen (vermeidet doppelten BODY.PEEK[]-Download).
+                        _inv_msg_full = _full_msg_cache
+                        if _inv_msg_full is None:
+                            try:
+                                typ_inv, data_inv = await client.uid(
+                                    "fetch", str(uid), "BODY.PEEK[]"
+                                )
+                                if typ_inv == "OK" and data_inv:
+                                    _inv_bytes: list[bytes] = []
+                                    for _item in data_inv:
+                                        if isinstance(_item, (bytes, bytearray)):
+                                            _inv_bytes.append(bytes(_item))
+                                        elif (
+                                            isinstance(_item, (list, tuple))
+                                            and len(_item) >= 2
+                                            and isinstance(_item[1], (bytes, bytearray))
+                                        ):
+                                            _inv_bytes.append(bytes(_item[1]))
+                                    if _inv_bytes:
+                                        _inv_msg_full = email.message_from_bytes(
+                                            max(_inv_bytes, key=len)
+                                        )
+                            except Exception as _fe:
+                                log.warning(
+                                    "mail_monitor[%s] uid=%s: Rechnung full-fetch "
+                                    "fehlgeschlagen: %s: %s",
+                                    name, uid, type(_fe).__name__, _fe,
+                                )
 
                         if _inv_msg_full is not None:
                             _inv_attachments = _extract_attachments(_inv_msg_full)
