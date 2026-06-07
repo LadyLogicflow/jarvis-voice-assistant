@@ -819,4 +819,11 @@ if __name__ == "__main__":
         port=S.SERVER_PORT,
         ssl_certfile=S.SERVER_SSL_CERT or None,
         ssl_keyfile=S.SERVER_SSL_KEY or None,
+        # Disable uvicorn's own logging configuration (Issue #207).
+        # Without this, uvicorn.run() calls logging.config.dictConfig() which
+        # adds a second StreamHandler to the root logger — every log record
+        # then propagates through two handlers and appears twice.  We already
+        # configure logging in settings.py (RotatingFileHandler + StreamHandler)
+        # so uvicorn must not touch the logging setup.
+        log_config=None,
     )

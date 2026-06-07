@@ -51,7 +51,6 @@ _log_handlers = [
     logging.handlers.RotatingFileHandler(
         _LOG_PATH, maxBytes=10 * 1024 * 1024, backupCount=3, encoding="utf-8"
     ),
-    logging.StreamHandler(),
 ]
 for _h in _log_handlers:
     _h.setFormatter(logging.Formatter(_LOG_FMT))

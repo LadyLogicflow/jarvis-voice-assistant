@@ -374,6 +374,10 @@ async def _document_handler(update, context) -> None:
 # the bot is up. Other modules (mail_monitor) use it via send_user_text.
 _app = None
 
+# Singleton guard (Issue #207): prevents a second coroutine from starting a
+# parallel bot instance if telegram_bot_main() were ever scheduled twice.
+_bot_running: bool = False
+
 
 _TELEGRAM_MAX_LEN = 4096
 
@@ -465,10 +469,14 @@ async def send_user_document(filepath: str, caption: str = "") -> bool:
 async def telegram_bot_main() -> None:
     """Long-running task: starts the Telegram bot loop. Spawned by
     server.lifespan when TELEGRAM_BOT_TOKEN is configured."""
-    global _app
+    global _app, _bot_running
     if not S.TELEGRAM_BOT_TOKEN:
         log.info("Telegram bot disabled (no TELEGRAM_BOT_TOKEN in env)")
         return
+    if _bot_running:
+        log.warning("telegram_bot_main: already running — skipping duplicate start (Issue #207)")
+        return
+    _bot_running = True
     try:
         from telegram import Update
         from telegram.ext import (
@@ -478,6 +486,7 @@ async def telegram_bot_main() -> None:
         )
     except ImportError:
         log.warning("python-telegram-bot not installed — Telegram bot disabled")
+        _bot_running = False
         return
 
     log.info(
@@ -502,3 +511,4 @@ async def telegram_bot_main() -> None:
         await _app.stop()
         await _app.shutdown()
         _app = None
+        _bot_running = False
