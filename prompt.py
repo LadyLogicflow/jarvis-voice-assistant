@@ -309,12 +309,26 @@ def build_system_prompt() -> str:
         )
     if S.PENDING_MAIL_FORWARD:
         _fwd = S.PENDING_MAIL_FORWARD
-        active_mail_block += (
-            f"\nPending-Weiterleitung (vorbereitet durch MAIL_FORWARD_PENDING):"
-            f"\n  An: {_sanitize(_fwd.get('to_name', ''))} ({_sanitize(_fwd.get('to_addr', ''))})"
-            f"\n  Wenn {addr} \"ja\" / \"weiterleiten\" / \"mach das\" sagt -> [ACTION:MAIL_FORWARD_SEND]"
-            f"\n  Wenn {addr} \"nein\" / \"abbrechen\" / \"lass es\" sagt -> nichts tun, Weiterleitung verwerfen"
-        )
+        if "candidates" in _fwd:
+            _idx = _fwd.get("current_index", 0)
+            _cands = _fwd["candidates"]
+            if _idx < len(_cands):
+                _c = _cands[_idx]
+                active_mail_block += (
+                    f"\nPending-Weiterleitung (Kandidat {_idx+1}/{len(_cands)}):"
+                    f"\n  Frage: Meinen Sie {_sanitize(_c['to_name'])} ({_sanitize(_c['to_addr'])})?"
+                    f"\n  Wenn {addr} 'ja'/'genau'/'richtig' sagt -> [ACTION:MAIL_FORWARD_SEND]"
+                    f"\n  Wenn {addr} 'nein'/'nicht der'/'falscher' sagt -> [ACTION:MAIL_FORWARD_NEXT]"
+                    f"\n  Wenn {addr} 'abbrechen'/'stop' sagt -> State leeren, abbrechen"
+                )
+        else:
+            # Legacy-Format: single-candidate mit to_addr/to_name
+            active_mail_block += (
+                f"\nPending-Weiterleitung (vorbereitet durch MAIL_FORWARD_PENDING):"
+                f"\n  An: {_sanitize(_fwd.get('to_name', ''))} ({_sanitize(_fwd.get('to_addr', ''))})"
+                f"\n  Wenn {addr} \"ja\" / \"weiterleiten\" / \"mach das\" sagt -> [ACTION:MAIL_FORWARD_SEND]"
+                f"\n  Wenn {addr} \"nein\" / \"abbrechen\" / \"lass es\" sagt -> nichts tun, Weiterleitung verwerfen"
+            )
 
     pending_proactive_block = ""
     if S.PENDING_PROACTIVE:
@@ -501,6 +515,7 @@ AKTIONEN - Schreibe die passende Aktion ans ENDE deiner Antwort. Der Text VOR de
 [ACTION:MAIL_TO_TASK] - Erstellt aus der aktuellen Mail eine Todoist-Aufgabe im Eingang (Inbox), markiert die Mail anschliessend als gelesen. Nutze wenn {addr} sagt "Aufgabe daraus", "Aufgabe", "ja, Aufgabe" oder zustimmt nachdem Du eine Aufgabe vorgeschlagen hast. KEIN Text davor, NUR die Aktion.
 [ACTION:MAIL_FORWARD_PENDING] name_oder_email - Sucht den Kontakt in der Personen-DB und bereitet die Weiterleitung der aktiven Mail vor. Jarvis nennt den gefundenen Kontakt mit E-Mail-Adresse und bittet um Bestätigung. Payload kann ein Name sein ("Sandra") oder direkt eine E-Mail-Adresse. Nutze wenn {addr} sagt "leite die Mail an ... weiter", "weiterleiten an ...", "forward an ...". Beispiel: [ACTION:MAIL_FORWARD_PENDING] Sandra
 [ACTION:MAIL_FORWARD_SEND] - Leitet die aktive Mail an den vorbereiteten Empfänger (gespeichert durch MAIL_FORWARD_PENDING) tatsaechlich weiter. Nur verwenden wenn {addr} die Weiterleitung bestätigt hat ("Ja", "Ja, weiterleiten", "Mach das"). KEIN Text davor, NUR die Aktion.
+[ACTION:MAIL_FORWARD_NEXT] - Verwirft den aktuellen Weiterleitungs-Kandidaten und fragt nach dem nächsten Treffer. Nutze wenn {addr} "nein", "nicht der", "falscher" sagt während eine Weiterleitung mit Kandidatenliste aktiv ist. KEIN Text davor, NUR die Aktion.
 [ACTION:DRAFT_REPLY] [optionale anweisung] - Erstellt einen Antwort-Entwurf zur aktuellen Mail. Anweisung ist OPTIONAL: ohne Anweisung schlaegt Jarvis proaktiv eine sinnvolle Antwort vor (nutzt dabei den geschaeftlichen Kontext aus business_context.md, falls die Mail einen darin beschriebenen Sachverhalt anspricht). Mit Anweisung beruecksichtigt er den von {addr} mitgeteilten Inhalt. Jarvis liest den Entwurf vor und fragt nach Freigabe. KEIN Text davor, NUR die Aktion.
 [ACTION:DRAFT_REVISE] aenderung - Überarbeitet den aktiven Pending-Entwurf gemäß Aenderungs-Anweisung. Beispiele: "etwas hoeflicher", "kuerzer", "die Anrede weglassen", "Frist auf 15. Mai aendern". KEIN Text davor, NUR die Aktion.
 [ACTION:DRAFT_APPROVE] - Legt den aktiven Pending-Entwurf im Drafts-Ordner ab und beendet den Mail-Workflow. {addr} sendet manuell aus Apple Mail. Nutze wenn {addr} sagt "freigeben", "passt", "so okay", "ja senden". KEIN Text davor.
