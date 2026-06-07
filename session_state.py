@@ -102,6 +102,22 @@ class PendingPersonAction:
 
 
 @dataclass
+class PendingContactEdit:
+    """Mehrstufige Kontaktverwaltung per Sprache.
+
+    action: 'delete' | 'rename' | 'email' | 'phone' | 'create'
+    candidates: Liste von {name, email, resource_name} Dicts
+    new_value: neuer Wert (neuer Name / neue E-Mail / neue Telefonnummer)
+    delete_confirmed: True wenn erste Bestaetigung fuer Loeschen bereits erfolgt
+    """
+    action: str
+    candidates: list = field(default_factory=list)
+    current_index: int = 0
+    new_value: str = ""
+    delete_confirmed: bool = False
+
+
+@dataclass
 class SessionState:
     """Alles was eine Session an strukturiertem State haelt. Erweiterbar
     fuer kuenftige Workflows (active_call, pending_appointment, ...)."""
@@ -110,6 +126,7 @@ class SessionState:
     pending_calendar: Optional[PendingCalendar] = None
     pending_doctolib: Optional[PendingDoctolib] = None
     pending_person: Optional[PendingPersonAction] = None
+    pending_contact_edit: Optional[PendingContactEdit] = None
     recent_mails: list[MailRef] = field(default_factory=list)
     # Issue #118: Emotionale Kalibrierung
     # 0 = normal, 1 = erhoehter Stress, 2 = hoher Stress
@@ -156,6 +173,7 @@ def _serialize(state: SessionState) -> dict:
         "pending_calendar": asdict(state.pending_calendar) if state.pending_calendar else None,
         "pending_doctolib": asdict(state.pending_doctolib) if state.pending_doctolib else None,
         "pending_person": asdict(state.pending_person) if state.pending_person else None,
+        "pending_contact_edit": asdict(state.pending_contact_edit) if state.pending_contact_edit else None,
         "recent_mails": [asdict(m) for m in state.recent_mails],
         "stress_level": state.stress_level,
         "last_message_ts": state.last_message_ts,
@@ -168,6 +186,7 @@ def _deserialize(raw: dict) -> SessionState:
     pc = raw.get("pending_calendar")
     pdoc = raw.get("pending_doctolib")
     pp = raw.get("pending_person")
+    pce = raw.get("pending_contact_edit")
     rm = raw.get("recent_mails") or []
     return SessionState(
         active_mail=MailRef(**{k: v for k, v in am.items() if k in MailRef.__dataclass_fields__}) if am else None,
@@ -175,6 +194,7 @@ def _deserialize(raw: dict) -> SessionState:
         pending_calendar=PendingCalendar(**{k: v for k, v in pc.items() if k in PendingCalendar.__dataclass_fields__}) if pc else None,
         pending_doctolib=PendingDoctolib(**{k: v for k, v in pdoc.items() if k in PendingDoctolib.__dataclass_fields__}) if pdoc else None,
         pending_person=PendingPersonAction(**{k: v for k, v in pp.items() if k in PendingPersonAction.__dataclass_fields__}) if pp else None,
+        pending_contact_edit=PendingContactEdit(**{k: v for k, v in pce.items() if k in PendingContactEdit.__dataclass_fields__}) if pce else None,
         recent_mails=[MailRef(**{k: v for k, v in m.items() if k in MailRef.__dataclass_fields__}) for m in rm if isinstance(m, dict)],
         stress_level=int(raw.get("stress_level", 0)),
         last_message_ts=float(raw.get("last_message_ts", 0.0)),
@@ -321,6 +341,18 @@ def set_pending_person(session_id: str, action: PendingPersonAction) -> None:
 def clear_pending_person(session_id: str) -> None:
     state = get(session_id)
     state.pending_person = None
+    _save(session_id)
+
+
+def set_pending_contact_edit(session_id: str, edit: PendingContactEdit) -> None:
+    state = get(session_id)
+    state.pending_contact_edit = edit
+    _save(session_id)
+
+
+def clear_pending_contact_edit(session_id: str) -> None:
+    state = get(session_id)
+    state.pending_contact_edit = None
     _save(session_id)
 
 

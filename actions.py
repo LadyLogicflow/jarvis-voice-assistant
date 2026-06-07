@@ -2201,6 +2201,179 @@ async def execute_action(action: dict) -> str:
             log.warning(f"CONTACT_NOTE: notes_db.add failed: {type(e).__name__}: {e}")
             return f"Notiz konnte nicht gespeichert werden: {type(e).__name__}"
 
+    elif t == "CONTACT_EDIT_SEARCH":
+        # Issue #203: Kontaktverwaltung per Sprache — Suche und Vorbereitung.
+        # Payload-Format: "action:name" oder "action:name:new_value"
+        # action: delete / rename / email / phone / create
+        import google_contacts_tools as _gct
+        import persons_db as _pdb
+
+        parts_ces = (p or "").split(":", 2)
+        action_ces = parts_ces[0].strip().lower() if parts_ces else ""
+        name_query_ces = parts_ces[1].strip() if len(parts_ces) > 1 else ""
+        new_value_ces = parts_ces[2].strip() if len(parts_ces) > 2 else ""
+
+        if not action_ces or not name_query_ces:
+            return f"Bitte nennen Sie die Aktion und den Kontaktnamen, Madam."
+
+        # Sonderfall: create benoetigt keine Suche
+        if action_ces == "create":
+            edit_ces = session_state.PendingContactEdit(action="create", new_value=p or "")
+            session_state.set_pending_contact_edit("default", edit_ces)
+            return f"Neuer Kontakt: {name_query_ces}. Anlegen, Madam?"
+
+        # Suche in Google Contacts + persons_db
+        try:
+            gc_contacts_ces = await _gct.find_contacts_by_name(name_query_ces)
+        except Exception:
+            gc_contacts_ces = []
+        db_profiles_ces = _pdb.search_by_name(name_query_ces)
+
+        # Deduplizierte Kandidatenliste aufbauen
+        seen_emails_ces: set[str] = set()
+        candidates_ces: list[dict] = []
+        for c_ces in gc_contacts_ces:
+            email_ces = c_ces.emails[0] if c_ces.emails else ""
+            key_ces = email_ces.lower() if email_ces else c_ces.id
+            if key_ces not in seen_emails_ces:
+                seen_emails_ces.add(key_ces)
+                candidates_ces.append({"name": c_ces.name, "email": email_ces, "resource_name": c_ces.id})
+        for prof_ces in db_profiles_ces:
+            email_ces = prof_ces.primary_email or ""
+            key_ces = email_ces.lower() if email_ces else prof_ces.contact_id
+            if key_ces not in seen_emails_ces:
+                seen_emails_ces.add(key_ces)
+                candidates_ces.append({"name": prof_ces.name, "email": email_ces, "resource_name": ""})
+
+        if not candidates_ces:
+            return f"Kein Kontakt '{name_query_ces}' gefunden, Madam."
+
+        edit_ces = session_state.PendingContactEdit(
+            action=action_ces,
+            candidates=candidates_ces,
+            current_index=0,
+            new_value=new_value_ces,
+        )
+        session_state.set_pending_contact_edit("default", edit_ces)
+
+        first_ces = candidates_ces[0]
+        email_hint_ces = f" ({first_ces['email']})" if first_ces["email"] else ""
+        return f"Meinen Sie {first_ces['name']}{email_hint_ces}, Madam?"
+
+    elif t == "CONTACT_EDIT_NEXT":
+        # Issue #203: Naechsten Kandidaten in der Kontaktsuche vorschlagen.
+        state_cen = session_state.get("default")
+        edit_cen = state_cen.pending_contact_edit
+        if not edit_cen:
+            return f"Keine laufende Kontaktbearbeitung, Madam."
+        idx_cen = edit_cen.current_index + 1
+        if idx_cen >= len(edit_cen.candidates):
+            session_state.clear_pending_contact_edit("default")
+            return f"Kein weiterer passender Kontakt gefunden, Madam. Die Aktion wird abgebrochen."
+        edit_cen.current_index = idx_cen
+        session_state.set_pending_contact_edit("default", edit_cen)
+        c_cen = edit_cen.candidates[idx_cen]
+        email_hint_cen = f" ({c_cen['email']})" if c_cen["email"] else ""
+        return f"Gibt es noch {c_cen['name']}{email_hint_cen}, Madam?"
+
+    elif t == "CONTACT_EDIT_CONFIRM":
+        # Issue #203: Bestaetigung der Kontaktaktion — Ausfuehren.
+        import google_contacts_tools as _gct_cec
+        import persons_db as _pdb_cec
+        state_cec = session_state.get("default")
+        edit_cec = state_cec.pending_contact_edit
+        if not edit_cec:
+            return f"Keine laufende Kontaktbearbeitung, Madam."
+
+        action_cec = edit_cec.action
+
+        # CREATE-Sonderfall
+        if action_cec == "create":
+            raw_cec = edit_cec.new_value  # Original-Payload
+            raw_parts_cec = raw_cec.split(":", 3)
+            name_cec = raw_parts_cec[1].strip() if len(raw_parts_cec) > 1 else raw_parts_cec[0].strip()
+            email_cec = raw_parts_cec[2].strip() if len(raw_parts_cec) > 2 else ""
+            phone_cec = raw_parts_cec[3].strip() if len(raw_parts_cec) > 3 else ""
+            phones_cec = [phone_cec] if phone_cec else []
+            rn_cec = await _gct_cec.create_contact(name_cec, email_cec, phones_cec)
+            session_state.clear_pending_contact_edit("default")
+            if rn_cec:
+                return f"Kontakt {name_cec} wurde angelegt, Madam."
+            return f"Anlegen fehlgeschlagen, Madam."
+
+        if not edit_cec.candidates:
+            session_state.clear_pending_contact_edit("default")
+            return f"Kein Kandidat vorhanden, Madam."
+
+        c_cec = edit_cec.candidates[edit_cec.current_index]
+        resource_name_cec = c_cec.get("resource_name", "")
+        name_cec = c_cec.get("name", "")
+
+        if action_cec == "delete":
+            if not edit_cec.delete_confirmed:
+                # Erste Bestaetigung: nochmals nachfragen mit Warnung
+                edit_cec.delete_confirmed = True
+                session_state.set_pending_contact_edit("default", edit_cec)
+                return (
+                    f"{name_cec} wird dauerhaft geloescht, Madam. "
+                    f"Sind Sie absolut sicher? Dies kann nicht rueckgaengig gemacht werden."
+                )
+            # Zweite Bestaetigung: tatsaechlich loeschen
+            ok_cec = False
+            if resource_name_cec:
+                ok_cec = await _gct_cec.delete_contact(resource_name_cec)
+            # Auch aus persons_db entfernen
+            db_matches_cec = _pdb_cec.search_by_name(name_cec)
+            for prof_cec in db_matches_cec:
+                _pdb_cec.delete(prof_cec.contact_id)
+            session_state.clear_pending_contact_edit("default")
+            if ok_cec:
+                return f"Kontakt {name_cec} wurde geloescht, Madam."
+            return f"Loeschen in Google Contacts fehlgeschlagen, Madam."
+
+        elif action_cec == "rename":
+            new_name_cec = edit_cec.new_value
+            if not new_name_cec:
+                session_state.clear_pending_contact_edit("default")
+                return f"Kein neuer Name angegeben, Madam."
+            ok_cec = False
+            if resource_name_cec:
+                ok_cec = await _gct_cec.rename_contact(resource_name_cec, new_name_cec)
+            session_state.clear_pending_contact_edit("default")
+            if ok_cec:
+                return f"{name_cec} wurde in {new_name_cec} umbenannt, Madam."
+            return f"Umbenennen fehlgeschlagen, Madam."
+
+        elif action_cec == "email":
+            new_email_cec = edit_cec.new_value
+            old_email_cec = c_cec.get("email", "")
+            if not new_email_cec:
+                session_state.clear_pending_contact_edit("default")
+                return f"Keine neue E-Mail-Adresse angegeben, Madam."
+            ok_cec = False
+            if resource_name_cec:
+                ok_cec = await _gct_cec.update_contact_email(resource_name_cec, old_email_cec, new_email_cec)
+            session_state.clear_pending_contact_edit("default")
+            if ok_cec:
+                return f"E-Mail von {name_cec} wurde auf {new_email_cec} geaendert, Madam."
+            return f"E-Mail-Aenderung fehlgeschlagen, Madam."
+
+        elif action_cec == "phone":
+            new_phone_cec = edit_cec.new_value
+            if not new_phone_cec:
+                session_state.clear_pending_contact_edit("default")
+                return f"Keine Telefonnummer angegeben, Madam."
+            ok_cec = False
+            if resource_name_cec:
+                ok_cec = await _gct_cec.update_contact_phone(resource_name_cec, new_phone_cec)
+            session_state.clear_pending_contact_edit("default")
+            if ok_cec:
+                return f"Telefonnummer von {name_cec} wurde aktualisiert, Madam."
+            return f"Telefon-Aenderung fehlgeschlagen, Madam."
+
+        session_state.clear_pending_contact_edit("default")
+        return f"Unbekannte Aktion '{action_cec}', Madam."
+
     elif t == "BRING_ADD":
         # Issue #123: Artikel zur Bring!-Einkaufsliste hinzufuegen.
         # Payload: "Artikel1,Artikel2,..." (kommagetrennt)

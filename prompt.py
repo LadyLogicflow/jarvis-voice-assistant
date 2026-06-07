@@ -329,6 +329,34 @@ def build_system_prompt() -> str:
                 f"\n  Wenn {addr} \"ja\" / \"weiterleiten\" / \"mach das\" sagt -> [ACTION:MAIL_FORWARD_SEND]"
                 f"\n  Wenn {addr} \"nein\" / \"abbrechen\" / \"lass es\" sagt -> nichts tun, Weiterleitung verwerfen"
             )
+    _pce = _state.pending_contact_edit if hasattr(_state, "pending_contact_edit") else None
+    if _pce:
+        _pce_idx = _pce.current_index
+        _pce_cands = _pce.candidates
+        if _pce.action == "create":
+            active_mail_block += (
+                f"\nPending-Kontakt-Anlegen: {_sanitize(_pce.new_value)}"
+                f"\n  Wenn {addr} 'ja'/'anlegen' sagt -> [ACTION:CONTACT_EDIT_CONFIRM]"
+                f"\n  Wenn {addr} 'nein'/'abbrechen' sagt -> State leeren"
+            )
+        elif _pce_cands and _pce_idx < len(_pce_cands):
+            _pce_c = _pce_cands[_pce_idx]
+            _pce_action_labels = {
+                "delete": "loeschen",
+                "rename": "umbenennen",
+                "email": "E-Mail aendern",
+                "phone": "Telefon aendern",
+            }
+            _pce_label = _pce_action_labels.get(_pce.action, _pce.action)
+            _pce_extra = f" -> {_sanitize(_pce.new_value)}" if _pce.new_value else ""
+            active_mail_block += (
+                f"\nPending-Kontaktverwaltung ({_pce_label},"
+                f" Kandidat {_pce_idx + 1}/{len(_pce_cands)}):"
+                f" {_sanitize(_pce_c['name'])} ({_sanitize(_pce_c.get('email', ''))}){_pce_extra}"
+                f"\n  Wenn {addr} 'ja'/'richtig'/'genau' sagt -> [ACTION:CONTACT_EDIT_CONFIRM]"
+                f"\n  Wenn {addr} 'nein'/'falsch'/'nicht der' sagt -> [ACTION:CONTACT_EDIT_NEXT]"
+                f"\n  Wenn {addr} 'abbrechen'/'stop' sagt -> State leeren, abbrechen"
+            )
 
     pending_proactive_block = ""
     if S.PENDING_PROACTIVE:
@@ -516,6 +544,9 @@ AKTIONEN - Schreibe die passende Aktion ans ENDE deiner Antwort. Der Text VOR de
 [ACTION:MAIL_FORWARD_PENDING] name_oder_email - Sucht den Kontakt in der Personen-DB und bereitet die Weiterleitung der aktiven Mail vor. Jarvis nennt den gefundenen Kontakt mit E-Mail-Adresse und bittet um Bestätigung. Payload kann ein Name sein ("Sandra") oder direkt eine E-Mail-Adresse. Nutze wenn {addr} sagt "leite die Mail an ... weiter", "weiterleiten an ...", "forward an ...". Beispiel: [ACTION:MAIL_FORWARD_PENDING] Sandra
 [ACTION:MAIL_FORWARD_SEND] - Leitet die aktive Mail an den vorbereiteten Empfänger (gespeichert durch MAIL_FORWARD_PENDING) tatsaechlich weiter. Nur verwenden wenn {addr} die Weiterleitung bestätigt hat ("Ja", "Ja, weiterleiten", "Mach das"). KEIN Text davor, NUR die Aktion.
 [ACTION:MAIL_FORWARD_NEXT] - Verwirft den aktuellen Weiterleitungs-Kandidaten und fragt nach dem nächsten Treffer. Nutze wenn {addr} "nein", "nicht der", "falscher" sagt während eine Weiterleitung mit Kandidatenliste aktiv ist. KEIN Text davor, NUR die Aktion.
+[ACTION:CONTACT_EDIT_SEARCH] action:name[:new_value] - Sucht Kontakt für Bearbeitung. action: delete/rename/email/phone/create. Beispiele: [ACTION:CONTACT_EDIT_SEARCH] delete:Thomas Huber | [ACTION:CONTACT_EDIT_SEARCH] rename:Thomas Huber:Thomas H. Müller | [ACTION:CONTACT_EDIT_SEARCH] email:Sandra:neue@mail.de | [ACTION:CONTACT_EDIT_SEARCH] phone:Sandra:0211 123 | [ACTION:CONTACT_EDIT_SEARCH] create:Neuer Name:email@test.de:0211123. Trigger: "Kontakt löschen", "Kontakt umbenennen", "E-Mail ändern für", "Telefon ändern für", "neuen Kontakt anlegen".
+[ACTION:CONTACT_EDIT_NEXT] - Nächster Kandidat bei Kontaktsuche. Nutze wenn {addr} 'nein'/'nicht der' sagt während Kontaktverwaltung aktiv ist. KEIN Text davor, NUR die Aktion.
+[ACTION:CONTACT_EDIT_CONFIRM] - Führt die bestätigte Kontaktaktion aus. Nutze wenn {addr} 'ja'/'genau'/'richtig' sagt während Kontaktverwaltung aktiv ist. Bei Löschen: fragt nochmal nach (zweistufige Bestätigung). KEIN Text davor, NUR die Aktion.
 [ACTION:DRAFT_REPLY] [optionale anweisung] - Erstellt einen Antwort-Entwurf zur aktuellen Mail. Anweisung ist OPTIONAL: ohne Anweisung schlaegt Jarvis proaktiv eine sinnvolle Antwort vor (nutzt dabei den geschaeftlichen Kontext aus business_context.md, falls die Mail einen darin beschriebenen Sachverhalt anspricht). Mit Anweisung beruecksichtigt er den von {addr} mitgeteilten Inhalt. Jarvis liest den Entwurf vor und fragt nach Freigabe. KEIN Text davor, NUR die Aktion.
 [ACTION:DRAFT_REVISE] aenderung - Überarbeitet den aktiven Pending-Entwurf gemäß Aenderungs-Anweisung. Beispiele: "etwas hoeflicher", "kuerzer", "die Anrede weglassen", "Frist auf 15. Mai aendern". KEIN Text davor, NUR die Aktion.
 [ACTION:DRAFT_APPROVE] - Legt den aktiven Pending-Entwurf im Drafts-Ordner ab und beendet den Mail-Workflow. {addr} sendet manuell aus Apple Mail. Nutze wenn {addr} sagt "freigeben", "passt", "so okay", "ja senden". KEIN Text davor.

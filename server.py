@@ -607,6 +607,7 @@ async def process_message(session_id: str, user_text: str, ws: WebSocket) -> Non
         "PLAN_NOW", "IMPORT_MAIL_HISTORY",
         "PROACTIVE_DELIVER", "PROACTIVE_DECLINE",
         "MAIL_FORWARD_PENDING", "MAIL_FORWARD_SEND", "MAIL_FORWARD_NEXT",
+        "CONTACT_EDIT_SEARCH", "CONTACT_EDIT_NEXT", "CONTACT_EDIT_CONFIRM",
         "SPEISEPLAN", "SPEISEPLAN_SHOW", "SPEISEPLAN_PREF",
         "JARVIS_UPDATE",
     ):

@@ -230,6 +230,7 @@ async def _ask_claude(session_id: str, user_text: str) -> tuple[str, str]:
         "WEEKLY_OUTLOOK", "CONTACTS_INFO",
         "PLAN_NOW", "WEATHER", "IMPORT_MAIL_HISTORY",
         "MAIL_FORWARD_PENDING", "MAIL_FORWARD_SEND", "MAIL_FORWARD_NEXT",
+        "CONTACT_EDIT_SEARCH", "CONTACT_EDIT_NEXT", "CONTACT_EDIT_CONFIRM",
         "SPEISEPLAN", "SPEISEPLAN_SHOW", "SPEISEPLAN_PREF",
     ):
         return action_result, ""

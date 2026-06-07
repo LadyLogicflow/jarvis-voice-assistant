@@ -500,3 +500,79 @@ def _create_contact_sync(
         name, resource_name
     )
     return resource_name
+
+
+async def delete_contact(resource_name: str) -> bool:
+    """Loescht einen Google-Kontakt dauerhaft.
+
+    Args:
+        resource_name: People-API resourceName (z.B. 'people/c12345').
+
+    Returns:
+        True bei Erfolg, False bei Fehler.
+    """
+    if not resource_name:
+        return False
+    loop = asyncio.get_running_loop()
+    try:
+        await loop.run_in_executor(None, _delete_contact_sync, resource_name)
+        _invalidate_cache()
+        return True
+    except Exception as e:
+        log.warning("google_contacts.delete_contact failed: %s: %s", type(e).__name__, e)
+        return False
+
+
+def _delete_contact_sync(resource_name: str) -> None:
+    service = _get_service()
+    service.people().deleteContact(resourceName=resource_name).execute()
+    log.info("google_contacts: deleted %s", resource_name)
+
+
+async def rename_contact(resource_name: str, new_name: str) -> bool:
+    """Benennt einen Google-Kontakt um.
+
+    Args:
+        resource_name: People-API resourceName (z.B. 'people/c12345').
+        new_name: Neuer vollstaendiger Name.
+
+    Returns:
+        True bei Erfolg, False bei Fehler.
+    """
+    if not resource_name or not new_name:
+        return False
+    loop = asyncio.get_running_loop()
+    try:
+        result = await loop.run_in_executor(None, _rename_contact_sync, resource_name, new_name)
+        if result:
+            _invalidate_cache()
+        return result
+    except Exception as e:
+        log.warning("google_contacts.rename_contact failed: %s: %s", type(e).__name__, e)
+        return False
+
+
+def _rename_contact_sync(resource_name: str, new_name: str) -> bool:
+    service = _get_service()
+    person = service.people().get(
+        resourceName=resource_name,
+        personFields="names,emailAddresses,phoneNumbers,metadata",
+    ).execute()
+    parts = new_name.strip().split(" ", 1)
+    given = parts[0]
+    family = parts[1] if len(parts) > 1 else ""
+    names = person.get("names", [{}])
+    if names:
+        names[0]["givenName"] = given
+        names[0]["familyName"] = family
+        names[0]["displayName"] = new_name
+    else:
+        names = [{"givenName": given, "familyName": family, "displayName": new_name}]
+    person["names"] = names
+    service.people().updateContact(
+        resourceName=resource_name,
+        updatePersonFields="names",
+        body=person,
+    ).execute()
+    log.info("google_contacts: renamed %s to %r", resource_name, new_name)
+    return True
