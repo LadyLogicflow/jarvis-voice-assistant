@@ -436,6 +436,7 @@ def _build_person_card_telegram(
     funktion: str = "",
     anrede: str = "",
     last_contact: str = "",
+    last_mail_topic: str = "",
     open_points: list | None = None,
     notes: list | None = None,
     tax_assessments: list | None = None,
