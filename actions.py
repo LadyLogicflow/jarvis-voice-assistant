@@ -2719,8 +2719,192 @@ async def execute_action(action: dict) -> str:
         S.PENDING_CARD_HTML = _mp.build_meal_plan_card_html()
         return f"Verstanden — {changes_text}. Neuer Plan ist fertig, {pick_address()}."
 
+    elif t == "STAMMLISTE_ADD":
+        # Issue #204: Artikel zur Stammliste hinzufuegen.
+        import pantry as _pantry
+        items = [i.strip() for i in (p or "").split(",") if i.strip()]
+        if not items:
+            return f"Bitte nennen Sie die Artikel, Madam."
+        for item in items:
+            _pantry.add_item(item)
+        names = ", ".join(items)
+        return f"{names} zur Stammliste hinzugefuegt, Madam."
+
+    elif t == "STAMMLISTE_REMOVE":
+        # Issue #204: Artikel aus der Stammliste entfernen.
+        import pantry as _pantry
+        item = (p or "").strip()
+        if not item:
+            return f"Bitte nennen Sie den Artikel, Madam."
+        ok = _pantry.remove_item(item)
+        if ok:
+            return f"{item} aus der Stammliste entfernt, Madam."
+        return f"Ich habe {item} nicht in der Stammliste gefunden, Madam."
+
+    elif t == "STAMMLISTE_SHOW":
+        # Issue #204: Stammliste anzeigen.
+        import pantry as _pantry
+        grouped = _pantry.get_grouped()
+        if not grouped:
+            return f"Die Stammliste ist leer, Madam."
+        lines = ["<b>Stammliste</b>"]
+        status_icons = {"vorhanden": "&#10003;", "fast_leer": "&#9888;", "leer": "&#10007;"}
+        status_colors = {
+            "vorhanden": "#2ecc71",
+            "fast_leer": "#e67e22",
+            "leer": "#e74c3c",
+        }
+        for cat, items in grouped.items():
+            lines.append(f"<br><b>{cat}</b>")
+            for name, status in items:
+                icon = status_icons.get(status, "?")
+                color = status_colors.get(status, "")
+                lines.append(f'<span style="color:{color}">{icon} {name}</span>')
+        return "<br>".join(lines)
+
+    elif t == "LEER_MELDEN":
+        # Issue #204: Artikel als leer markieren und sofort auf Bring! setzen.
+        import pantry as _pantry
+        items = [i.strip() for i in (p or "").split(",") if i.strip()]
+        if not items:
+            return f"Bitte nennen Sie den Artikel, Madam."
+        found = []
+        for item in items:
+            if _pantry.set_status(item, "leer"):
+                found.append(item)
+            else:
+                # Nicht in Stammliste — trotzdem aufnehmen und als leer markieren
+                _pantry.add_item(item, "leer")
+                found.append(item)
+        # Sofort auf Bring! setzen
+        if found and S.BRING_EMAIL and S.BRING_PASSWORD:
+            try:
+                import bring_tools as _bt
+                await _bt.bring_add_items(found)
+            except Exception as _e:
+                log.warning(f"LEER_MELDEN Bring! failed: {_e}")
+        names = ", ".join(found)
+        return f"{names} als leer markiert und auf die Bring!-Liste gesetzt, Madam."
+
+    elif t == "FAST_LEER":
+        # Issue #204: Artikel als fast leer markieren (kommt beim naechsten Donnerstag).
+        import pantry as _pantry
+        items = [i.strip() for i in (p or "").split(",") if i.strip()]
+        if not items:
+            return f"Bitte nennen Sie den Artikel, Madam."
+        for item in items:
+            if not _pantry.set_status(item, "fast_leer"):
+                _pantry.add_item(item, "fast_leer")
+        names = ", ".join(items)
+        return (
+            f"{names} als fast leer markiert, Madam. "
+            f"Kommt beim naechsten Einkauf auf die Liste."
+        )
+
+    elif t == "INVENTUR":
+        # Issue #204: Gefuehrten Vorratscheck starten.
+        import pantry as _pantry
+        all_items = list(_pantry.get_all().keys())
+        if not all_items:
+            return (
+                f"Die Stammliste ist leer, Madam. "
+                f"Fuegen Sie zuerst Artikel hinzu."
+            )
+        inv = session_state.PendingInventur(items=all_items, current_index=0)
+        session_state.set_pending_inventur("default", inv)
+        first = all_items[0]
+        return f"Starten wir die Inventur, Madam. Haben Sie noch {first}?"
+
+    elif t == "INVENTUR_JA":
+        # Issue #204: Aktuellen Artikel als vorhanden bestaetigen.
+        import pantry as _pantry
+        inv = session_state.get("default").pending_inventur
+        if not inv:
+            return f"Keine laufende Inventur, Madam."
+        current = inv.items[inv.current_index]
+        _pantry.set_status(current, "vorhanden")
+        inv.current_index += 1
+        if inv.current_index >= len(inv.items):
+            session_state.clear_pending_inventur("default")
+            return f"Inventur abgeschlossen, Madam. Alles vorhanden."
+        session_state.set_pending_inventur("default", inv)
+        nxt = inv.items[inv.current_index]
+        return f"Gut. Haben Sie noch {nxt}?"
+
+    elif t == "INVENTUR_NEIN":
+        # Issue #204: Aktuellen Artikel als leer markieren.
+        import pantry as _pantry
+        inv = session_state.get("default").pending_inventur
+        if not inv:
+            return f"Keine laufende Inventur, Madam."
+        current = inv.items[inv.current_index]
+        _pantry.set_status(current, "leer")
+        inv.leer_items.append(current)
+        inv.current_index += 1
+        if inv.current_index >= len(inv.items):
+            leer = inv.leer_items + inv.fast_leer_items
+            session_state.clear_pending_inventur("default")
+            if leer and S.BRING_EMAIL and S.BRING_PASSWORD:
+                try:
+                    import bring_tools as _bt
+                    await _bt.bring_add_items(leer)
+                except Exception as _e:
+                    log.warning(f"INVENTUR_NEIN Bring! failed: {_e}")
+                names = ", ".join(leer)
+                return (
+                    f"Inventur fertig, Madam. "
+                    f"Diese Artikel wurden auf Bring! gesetzt: {names}."
+                )
+            return f"Inventur abgeschlossen, Madam. Alles vorhanden."
+        session_state.set_pending_inventur("default", inv)
+        nxt = inv.items[inv.current_index]
+        return f"Notiert. Haben Sie noch {nxt}?"
+
+    elif t == "INVENTUR_FAST_LEER":
+        # Issue #204: Aktuellen Artikel als fast leer markieren.
+        import pantry as _pantry
+        inv = session_state.get("default").pending_inventur
+        if not inv:
+            return f"Keine laufende Inventur, Madam."
+        current = inv.items[inv.current_index]
+        _pantry.set_status(current, "fast_leer")
+        inv.fast_leer_items.append(current)
+        inv.current_index += 1
+        if inv.current_index >= len(inv.items):
+            leer = inv.leer_items + inv.fast_leer_items
+            session_state.clear_pending_inventur("default")
+            if leer and S.BRING_EMAIL and S.BRING_PASSWORD:
+                try:
+                    import bring_tools as _bt
+                    await _bt.bring_add_items(leer)
+                except Exception as _e:
+                    log.warning(f"INVENTUR_FAST_LEER Bring! failed: {_e}")
+                names = ", ".join(leer)
+                return f"Inventur fertig, Madam. Diese Artikel auf Bring!: {names}."
+            return f"Inventur abgeschlossen, Madam."
+        session_state.set_pending_inventur("default", inv)
+        nxt = inv.items[inv.current_index]
+        return f"Notiert. Haben Sie noch {nxt}?"
+
+    elif t == "INVENTUR_SKIP":
+        # Issue #204: Aktuellen Artikel in der Inventur ueberspringen.
+        inv = session_state.get("default").pending_inventur
+        if not inv:
+            return f"Keine laufende Inventur, Madam."
+        inv.current_index += 1
+        if inv.current_index >= len(inv.items):
+            leer = inv.leer_items + inv.fast_leer_items
+            session_state.clear_pending_inventur("default")
+            if leer:
+                return f"Inventur fertig, Madam. Fehlende Artikel: {', '.join(leer)}."
+            return f"Inventur abgeschlossen, Madam."
+        session_state.set_pending_inventur("default", inv)
+        nxt = inv.items[inv.current_index]
+        return f"Gut. Haben Sie noch {nxt}?"
+
     elif t == "EINKAUF_FREIGEBEN":
         # Issue #125: Einkaufsliste aus dem Wochenplan an Bring! uebergeben.
+        # Issue #204: Stammlisten-Artikel mit Status "vorhanden" werden gefiltert.
         import meal_plan as _mp
         if not S.MEAL_PLAN_WEEK:
             return (
@@ -2737,15 +2921,39 @@ async def execute_action(action: dict) -> str:
             return f"Keine Zutaten im Plan gefunden, {pick_address()}."
         try:
             import bring_tools
-            count = await bring_tools.bring_add_items(ingredients)
+            import pantry as _pantry_mod
+            # Filter: Zutaten die in der Stammliste als "vorhanden" stehen,
+            # muessen nicht eingekauft werden.
+            to_buy: list[str] = []
+            skipped: list[str] = []
+            for ingredient in ingredients:
+                status = _pantry_mod.get_status(ingredient)
+                if status == "vorhanden":
+                    skipped.append(ingredient)
+                    continue
+                to_buy.append(ingredient)
+                # Nach dem Kauf Stammlisten-Status zuruecksetzen (leer/fast_leer -> vorhanden)
+                if status in ("leer", "fast_leer"):
+                    _pantry_mod.set_status(ingredient, "vorhanden")
+            if not to_buy:
+                skipped_txt = f" ({len(skipped)} Stammartikel bereits vorhanden)" if skipped else ""
+                return (
+                    f"Alle Zutaten sind bereits vorraeting{skipped_txt}, {pick_address()}. "
+                    f"Keine Eintraege auf Bring! noetig."
+                )
+            count = await bring_tools.bring_add_items(to_buy)
             if count == 0:
                 return (
                     f"Die Zutaten konnten nicht zur Einkaufsliste hinzugefuegt werden, "
                     f"{pick_address()}. Bitte Bring!-Zugangsdaten pruefen."
                 )
+            skipped_hint = (
+                f" ({len(skipped)} Stammartikel gefiltert, die bereits vorraeting sind)"
+                if skipped else ""
+            )
             return (
-                f"{count} Zutaten wurden auf die Bring!-Einkaufsliste uebertragen, "
-                f"{pick_address()}. Viel Spass beim Einkaufen."
+                f"{count} Zutaten wurden auf die Bring!-Einkaufsliste uebertragen"
+                f"{skipped_hint}, {pick_address()}. Viel Spass beim Einkaufen."
             )
         except Exception as e:
             log.warning(f"EINKAUF_FREIGEBEN: {type(e).__name__}: {e}")

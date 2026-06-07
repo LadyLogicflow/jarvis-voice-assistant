@@ -358,6 +358,21 @@ def build_system_prompt() -> str:
                 f"\n  Wenn {addr} 'abbrechen'/'stop' sagt -> State leeren, abbrechen"
             )
 
+    # Issue #204: Laufende Inventur (Vorratscheck)
+    _inv = _state.pending_inventur if hasattr(_state, "pending_inventur") else None
+    if _inv and _inv.current_index < len(_inv.items):
+        _inv_current = _inv.items[_inv.current_index]
+        _inv_remaining = len(_inv.items) - _inv.current_index
+        active_mail_block += (
+            f"\nLaufende Inventur ({_inv_remaining} Artikel verbleibend):"
+            f"\n  Aktuelle Frage: Haben Sie noch {_inv_current}?"
+            f"\n  Wenn {addr} 'ja'/'vorhanden'/'noch da' sagt -> [ACTION:INVENTUR_JA]"
+            f"\n  Wenn {addr} 'nein'/'leer'/'aufgebraucht'/'aus' sagt -> [ACTION:INVENTUR_NEIN]"
+            f"\n  Wenn {addr} 'fast leer'/'fast aufgebraucht'/'fast weg' sagt -> [ACTION:INVENTUR_FAST_LEER]"
+            f"\n  Wenn {addr} 'weiter'/'ueberspringen'/'egal' sagt -> [ACTION:INVENTUR_SKIP]"
+            f"\n  Wenn {addr} 'stop'/'abbrechen'/'fertig' sagt -> State leeren (clear_pending_inventur)"
+        )
+
     pending_proactive_block = ""
     if S.PENDING_PROACTIVE:
         _cat = S.PENDING_PROACTIVE.get("category", "eine Meldung")
@@ -589,7 +604,17 @@ Wenn Jarvis proaktiv nach einem Vorhaben fragt ("Uebrigens — Sie wollten noch:
 [ACTION:SPEISEPLAN] Wünsche - Erstellt einen NEUEN Speisenplan. Nutze diese Aktion nur wenn {addr} explizit einen neuen Plan erstellen will: "Erstell einen Speiseplan", "Neuer Speiseplan", "Plan für die Woche", "Plane die Woche", oder einen bestimmten Zeitraum nennt ("ab Samstag bis nächsten Freitag", "nächste Woche"). WICHTIG: Bevor du diese Aktion ausloeust, frage IMMER zuerst nach Wünschen — warte auf die Antwort. Payload-Format: Bei benutzerdefiniertem Zeitraum IMMER daterange:YYYY-MM-DD:YYYY-MM-DD vorne anhaengen, Datum aus dem aktuellen Datum im Context berechnen. Mehrere Felder mit | trennen. Beispiele: [ACTION:SPEISEPLAN] kein Fleisch --- [ACTION:SPEISEPLAN] daterange:2026-06-07:2026-06-13|kein Fisch --- [ACTION:SPEISEPLAN] daterange:2026-06-07:2026-06-13
 [ACTION:SPEISEPLAN_SWAP] Wochentag|Neues Gericht - Tauscht ein einzelnes Gericht im aktuellen Plan. Neues Rezept wird automatisch generiert. Nutze wenn {addr} sagt "Tausch Montag gegen ...", "Montag lieber Pasta", "Ersetze Dienstag durch ...". Beispiel: [ACTION:SPEISEPLAN_SWAP] Montag|Pasta mit Gemüse
 [ACTION:SPEISEPLAN_PREF] Vorlieben - Speichert dauerhafte Speiseplan-Vorlieben und erstellt SOFORT einen neuen Plan. Nutze wenn {addr} ein Lebensmittel, eine Zutat oder ein Gericht dauerhaft ausschliessen will, z.B. "keine Suppe", "keine Erbsen", "kein Schweinefleisch", "nie wieder Spinat", "kein Fleisch", "kein Salat" — ODER Fisch-Regeln aendert ("Fisch nur als Lachs", "kein Fisch mehr", "nur Lachs Forellen und Dorado"). WICHTIG: Nur verwenden wenn KEIN konkreter Personenname in der Aussage vorkommt. Wenn ein Name erwähnt wird ("Yvonne mag keine Suppe"), ist es eine Kontakt-Notiz — dann [ACTION:CONTACT_NOTE] nutzen. Payload-Format (Pipe für mehrere): avoid:Zutat | fish:Art1,Art2 | fish_weekly:false. Beispiele: [ACTION:SPEISEPLAN_PREF] avoid:Suppe --- [ACTION:SPEISEPLAN_PREF] avoid:Erbsen --- [ACTION:SPEISEPLAN_PREF] fish:Lachs,Forellen,Dorado --- [ACTION:SPEISEPLAN_PREF] avoid:Spinat|fish:Lachs,Forellen
-[ACTION:EINKAUF_FREIGEBEN] - Überträgt alle Zutaten des Wochenplans auf die Bring!-Einkaufsliste für die Rewe-Lieferung. Nutze wenn {addr} sagt "Einkaufsliste freigeben", "Zutaten zu Bring hinzufuegen", "Einkauf bestellen", "Bring!-Liste fuellen". KEIN Text davor, NUR die Aktion.
+[ACTION:EINKAUF_FREIGEBEN] - Überträgt alle Zutaten des Wochenplans auf die Bring!-Einkaufsliste für die Rewe-Lieferung. Zutaten die bereits in der Stammliste als "vorhanden" markiert sind, werden automatisch gefiltert. Nutze wenn {addr} sagt "Einkaufsliste freigeben", "Zutaten zu Bring hinzufuegen", "Einkauf bestellen", "Bring!-Liste fuellen". KEIN Text davor, NUR die Aktion.
+[ACTION:STAMMLISTE_ADD] Artikel1,Artikel2 - Fuegt Artikel zur Stammliste (dauerhaft vorraeting) hinzu. Trigger: "zur Stammliste", "immer vorhanden", "Stammliste ergaenzen", "hab ich immer da". Mehrere Artikel per Komma trennen. Beispiel: [ACTION:STAMMLISTE_ADD] Salz,Pfeffer
+[ACTION:STAMMLISTE_REMOVE] Artikel - Entfernt Artikel aus der Stammliste. Trigger: "aus Stammliste entfernen", "nicht mehr auf Stammliste", "Stammliste kuerzen". Beispiel: [ACTION:STAMMLISTE_REMOVE] Salz
+[ACTION:STAMMLISTE_SHOW] - Zeigt die komplette Stammliste mit Status (vorhanden/fast leer/leer). Trigger: "Stammliste", "Was ist vorraeting?", "Zeig Vorraete", "Vorratsueberblick", "Was haben wir noch?". KEIN Text davor, NUR die Aktion.
+[ACTION:LEER_MELDEN] Artikel1,Artikel2 - Markiert Artikel als leer und setzt sie sofort auf die Bring!-Einkaufsliste. Trigger: "[X] ist leer", "[X] aufgebraucht", "[X] aus", "[X] weg", "kein [X] mehr". Beispiel: [ACTION:LEER_MELDEN] Milch
+[ACTION:FAST_LEER] Artikel1,Artikel2 - Markiert Artikel als fast leer (kommen beim naechsten Donnerstags-Check auf Bring!). Trigger: "[X] ist fast leer", "[X] geht zu Ende", "[X] wird knapp", "fast kein [X] mehr". Beispiel: [ACTION:FAST_LEER] Butter,Joghurt
+[ACTION:INVENTUR] - Startet einen gefuehrten Vorratscheck: JARVIS fragt jeden Stammlisten-Artikel einzeln durch. Trigger: "Inventur", "Vorratscheck", "Was fehlt?", "lass uns checken was fehlt", "Schrank durchgehen". KEIN Text davor, NUR die Aktion.
+[ACTION:INVENTUR_JA] - Bestätigt dass der aktuelle Inventur-Artikel vorhanden ist. NUR verwenden wenn eine Inventur laeuft (siehe "Laufende Inventur" unter AKTUELLE DATEN).
+[ACTION:INVENTUR_NEIN] - Markiert den aktuellen Inventur-Artikel als leer. NUR verwenden wenn eine Inventur laeuft.
+[ACTION:INVENTUR_FAST_LEER] - Markiert den aktuellen Inventur-Artikel als fast leer. NUR verwenden wenn eine Inventur laeuft.
+[ACTION:INVENTUR_SKIP] - Ueberspringt den aktuellen Artikel in der Inventur. NUR verwenden wenn eine Inventur laeuft.
 [ACTION:REZEPT_HEUTE] - Gibt das Rezept des heutigen Abendessens erneut aus (Zutaten + Zubereitung + Kochzeit). Nutze wenn {addr} sagt "Rezept heute", "Was kochen wir heute?", "Heutiges Rezept", "Was gibt es heute". KEIN Text davor, NUR die Aktion.
 [ACTION:PROACTIVE_DELIVER] - Liefert die ausstehende proaktive Benachrichtigung aus (siehe "Ausstehende Benachrichtigung" unter AKTUELLE DATEN). Nur verwenden wenn eine solche Benachrichtigung vorliegt. KEIN Text davor, NUR die Aktion.
 [ACTION:PROACTIVE_DECLINE] - Schickt die ausstehende proaktive Benachrichtigung stattdessen auf Telegram. Jarvis bestätigt kurz. Nur verwenden wenn {addr} ablehnt. KEIN Text davor, NUR die Aktion.

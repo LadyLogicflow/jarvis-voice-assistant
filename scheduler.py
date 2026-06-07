@@ -1531,6 +1531,32 @@ async def meal_plan_scheduler() -> None:
                         log.info("meal_plan_scheduler: Plan gesendet")
                     else:
                         log.warning("meal_plan_scheduler: Plan-Generierung lieferte leeres Ergebnis")
+
+                    # Issue #204: Donnerstags-Vorratscheck — fast_leer und leer
+                    # Artikel auf Bring! setzen und Catrin benachrichtigen.
+                    try:
+                        import pantry as _pantry
+                        import bring_tools as _bt
+                        fast_leer = _pantry.get_items_by_status("fast_leer")
+                        leer = _pantry.get_items_by_status("leer")
+                        low = leer + fast_leer
+                        if low:
+                            names = ", ".join(low)
+                            if S.BRING_EMAIL and S.BRING_PASSWORD:
+                                await _bt.bring_add_items(low)
+                            hint = (
+                                f"Vorratscheck: Diese Stammzutaten sollten nachgekauft werden: "
+                                f"{names}"
+                            )
+                            if _proactive_handler:
+                                await _proactive_handler(hint)
+                            else:
+                                await telegram_bot.send_user_text(hint)
+                            log.info(
+                                f"meal_plan_scheduler: Vorratscheck — {len(low)} Artikel gemeldet"
+                            )
+                    except Exception as _pe:
+                        log.warning(f"meal_plan_scheduler: Vorratscheck failed: {_pe}")
                 except BaseException as e:
                     # BaseException (not just Exception) catches CancelledError so
                     # the flag is never left stuck True after task cancellation.
