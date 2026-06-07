@@ -1112,6 +1112,142 @@ async def evening_brief_scheduler() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Kalender-Vorab-Alert (Issue #201): alle 5 Minuten pruefen ob ein Termin
+# in ~30 Minuten beginnt. Einmalige Meldung pro Termin per Termin-ID.
+# ---------------------------------------------------------------------------
+
+_alerted_event_ids: set[str] = set()
+_CALENDAR_ALERT_LOOKAHEAD = 35  # Minuten: Termin wird ab jetzt+35 min erkannt
+_CALENDAR_ALERT_WINDOW = 25     # Minuten: und bis jetzt+25 min (30 min +/- 5)
+
+
+async def calendar_alert_scheduler() -> None:
+    """Long-running task: alle 5 Minuten Google Calendar nach Terminen
+    in ~30 Minuten abfragen. Sendet eine einmalige Sprach-Erinnerung pro Termin.
+    Stille: ausserhalb 07-21 Uhr und an Mac-Quiet-Hours.
+    """
+    global _alerted_event_ids
+    log.info("calendar_alert_scheduler: gestartet (alle 5 Minuten)")
+    while True:
+        try:
+            if not S.is_mac_quiet_hours() and _proactive_handler is not None:
+                now = datetime.datetime.now(datetime.timezone.utc)
+                window_start = now + datetime.timedelta(minutes=_CALENDAR_ALERT_WINDOW)
+                window_end = now + datetime.timedelta(minutes=_CALENDAR_ALERT_LOOKAHEAD)
+
+                import google_calendar_tools as _gcal
+                events = await _gcal.get_events_raw(window_start, window_end)
+
+                for event in events:
+                    event_id = event.get("id", "")
+                    if not event_id or event_id in _alerted_event_ids:
+                        continue
+                    summary = event.get("summary", "Termin ohne Bezeichnung")
+                    start_info = event.get("start", {})
+                    start_str = start_info.get("dateTime", start_info.get("date", ""))
+                    time_label = ""
+                    if "T" in start_str:
+                        # Extract HH:MM directly from RFC3339 (positions 11-16)
+                        try:
+                            time_label = f" um {start_str[11:16]} Uhr"
+                        except Exception:
+                            pass
+                    _alerted_event_ids.add(event_id)
+                    addr = pick_address()
+                    msg = (
+                        f"{addr}, in etwa 30 Minuten{time_label}: {summary}. "
+                        f"Ich wollte Sie rechtzeitig darauf hinweisen."
+                    )
+                    log.info(f"calendar_alert_scheduler: {summary!r} in ~30 min")
+                    try:
+                        await _proactive_handler(msg)
+                    except Exception as e:
+                        log.warning(
+                            f"calendar_alert_scheduler: handler failed: "
+                            f"{type(e).__name__}: {e}"
+                        )
+                # Clean up old IDs older than ~2h to prevent unbounded growth
+                if len(_alerted_event_ids) > 200:
+                    _alerted_event_ids = set(list(_alerted_event_ids)[-100:])
+        except Exception as e:
+            log.warning(
+                f"calendar_alert_scheduler loop error: {type(e).__name__}: {e}"
+            )
+        await asyncio.sleep(5 * 60)
+
+
+# ---------------------------------------------------------------------------
+# Pause-Erinnerung (Issue #201): stündlich Mo-Fr 09-18 Uhr, aber nur wenn
+# JARVIS in der letzten Stunde genutzt wurde (nicht im Idle aufdringlich).
+# ---------------------------------------------------------------------------
+
+_PAUSE_REMINDER_MESSAGES = [
+    "Eine kurze Pause wäre angemessen, {addr}. Ihr Rücken und Ihre Augen werden es Ihnen danken.",
+    "{addr}, Sie arbeiten nun seit einer Stunde. Ein Glas Wasser und zwei Minuten Abstand vom Bildschirm täten gut.",
+    "Ich erlaube mir den Hinweis, {addr}: eine kurze Bewegungspause steigert die Konzentration erheblich.",
+    "Es ist Zeit für eine kleine Auszeit, {addr}. Stehen Sie kurz auf — ich halte die Stellung.",
+    "{addr}, Ihr stündlicher Butler-Reminder: Wasser trinken, kurz strecken, dann weiter.",
+]
+
+_pause_last_reminder_hhmm: str = ""
+
+
+async def pause_reminder_scheduler() -> None:
+    """Long-running task: stündliche Pause-Erinnerung Mo-Fr 09-18 Uhr.
+
+    Feuert einmal pro Stunde zur vollen Stunde (09:00, 10:00, ... 18:00).
+    Nur wenn JARVIS in der aktuellen Stunde genutzt wurde — kein Aufwecken
+    aus dem Idle. Stille: Wochenende, Mac-Quiet-Hours.
+    """
+    global _pause_last_reminder_hhmm
+    _WORK_START = 9
+    _WORK_END = 18
+    import random as _random
+
+    # Beim Start: aktuelle Stunde als bereits getriggert markieren
+    _now_init = datetime.datetime.now()
+    _pause_last_reminder_hhmm = _now_init.strftime("%H:00")
+
+    log.info("pause_reminder_scheduler: gestartet (stündlich Mo-Fr 09-18 Uhr)")
+    while True:
+        try:
+            now = datetime.datetime.now()
+            # Nur Mo-Fr
+            if now.weekday() < 5 and not S.is_mac_quiet_hours():
+                if _WORK_START <= now.hour < _WORK_END:
+                    current_slot = now.strftime("%H:00")
+                    if current_slot != _pause_last_reminder_hhmm and _proactive_handler is not None:
+                        # Nur senden wenn JARVIS in der letzten Stunde genutzt wurde
+                        from conversation import conversations
+                        used_recently = bool(conversations) or S.TASKS_COMPLETED_TODAY > 0
+                        if used_recently:
+                            _pause_last_reminder_hhmm = current_slot
+                            addr = pick_address()
+                            template = _random.choice(_PAUSE_REMINDER_MESSAGES)
+                            msg = template.format(addr=addr)
+                            log.info(f"pause_reminder_scheduler: {current_slot} — {msg[:60]!r}")
+                            try:
+                                await _proactive_handler(msg)
+                            except Exception as e:
+                                log.warning(
+                                    f"pause_reminder_scheduler: handler failed: "
+                                    f"{type(e).__name__}: {e}"
+                                )
+                        else:
+                            # Slot merken aber nichts senden
+                            _pause_last_reminder_hhmm = current_slot
+                            log.info(
+                                f"pause_reminder_scheduler: {current_slot} — JARVIS nicht genutzt, "
+                                "kein Push"
+                            )
+        except Exception as e:
+            log.warning(
+                f"pause_reminder_scheduler loop error: {type(e).__name__}: {e}"
+            )
+        await asyncio.sleep(60)
+
+
+# ---------------------------------------------------------------------------
 # Abend-Zusammenfassung (Issue #164): taeglich 20:30 — was hat JARVIS heute
 # gelernt? Quellen: Mail-Intelligence, Google Calendar, Todoist.
 # ---------------------------------------------------------------------------
