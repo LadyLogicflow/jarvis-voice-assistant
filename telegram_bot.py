@@ -486,6 +486,7 @@ async def telegram_bot_main() -> None:
         )
     except ImportError:
         log.warning("python-telegram-bot not installed — Telegram bot disabled")
+        _bot_running = False
         return
 
     log.info(
