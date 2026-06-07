@@ -305,6 +305,7 @@ def _build_person_card_html(
     funktion: str = "",
     anrede: str = "",
     last_contact: str = "",
+    last_mail_topic: str = "",
     open_points: list | None = None,
     notes: list | None = None,
     tax_assessments: list | None = None,
@@ -334,7 +335,13 @@ def _build_person_card_html(
     if anrede:
         rows.append(f'<div class="p-row"><span class="p-lbl">Anrede</span><span>{esc(anrede)}</span></div>')
     if last_contact:
-        rows.append(f'<div class="p-row"><span class="p-lbl">Letzter Kontakt</span><span>{esc(_fmt_date(last_contact))}</span></div>')
+        # Issue #212: Stichwort-Zusammenfassung der letzten Mail nach dem Datum anzeigen.
+        contact_display = esc(_fmt_date(last_contact))
+        if last_mail_topic:
+            contact_display += (
+                f' <span class="p-mail-topic">{esc(last_mail_topic)}</span>'
+            )
+        rows.append(f'<div class="p-row"><span class="p-lbl">Letzter Kontakt</span><span>{contact_display}</span></div>')
     if rows:
         parts.append('<div class="p-card-rows">' + "".join(rows) + "</div>")
 
@@ -1958,6 +1965,7 @@ async def execute_action(action: dict) -> str:
             funktion=r.get("funktion", ""),
             anrede=r.get("anrede", ""),
             last_contact=r.get("last_contact", ""),
+            last_mail_topic=r.get("last_mail_topic", ""),
             open_points=r.get("open_points", []),
             notes=r.get("notes", []),
             tax_assessments=r.get("tax_assessments", []),
