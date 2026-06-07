@@ -2960,10 +2960,14 @@ async def execute_action(action: dict) -> str:
             rules_data.setdefault("rules", []).append(rule)
             existing_from.add(from_contains)
             added += 1
-        tmp = rules_path + ".tmp"
-        with open(tmp, "w", encoding="utf-8") as _f:
-            _json.dump(rules_data, _f, ensure_ascii=False, indent=2)
-        os.replace(tmp, rules_path)
+        try:
+            tmp = rules_path + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as _f:
+                _json.dump(rules_data, _f, ensure_ascii=False, indent=2)
+            os.replace(tmp, rules_path)
+        except (OSError, IOError) as _e:
+            session_state.clear_pending_inbox_analysis("default")
+            return f"Fehler beim Speichern der Regeln: {_e}"
         session_state.clear_pending_inbox_analysis("default")
         return f"{added} neue Regel{'n' if added != 1 else ''} angelegt, Madam."
 

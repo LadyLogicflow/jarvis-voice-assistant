@@ -13,7 +13,6 @@ import email as _email_module
 import json
 import os
 from email.utils import parseaddr
-from typing import Optional
 
 import settings as S
 
@@ -108,9 +107,10 @@ async def _scan_account(
         if getattr(select_resp, "result", None) != "OK":
             raise RuntimeError(f"SELECT {folder!r} fehlgeschlagen")
 
-        # SEARCH SINCE <datum>
+        # UID SEARCH SINCE <datum> — explizit uid() verwenden damit
+        # echte UIDs geliefert werden, nicht Sequence Numbers.
         search_resp = await asyncio.wait_for(
-            client.search(f"SINCE {since_str}"), timeout=_IMAP_TIMEOUT
+            client.uid("search", f"SINCE {since_str}"), timeout=_IMAP_TIMEOUT
         )
         if getattr(search_resp, "result", None) != "OK":
             return []
@@ -341,7 +341,7 @@ async def generate_suggestions(
 
     suggestions: list[dict] = []
     try:
-        resp = S.ai.messages.create(
+        resp = await S.ai.messages.create(
             model=S.HAIKU_MODEL if hasattr(S, "HAIKU_MODEL") else "claude-haiku-4-5",
             max_tokens=2048,
             system=system_prompt,
