@@ -1,0 +1,35 @@
+{
+  "rules": [
+    {
+      "name": "ELSTER-Portal",
+      "from_contains": "elster.de",
+      "action": "move",
+      "folder": "INBOX.Elster",
+      "also_mark_read": true
+    }
+  ],
+  "werbung_action": "move",
+  "werbung_folder": "INBOX.Gelesen_automatisch",
+  "account_folder_map": {
+    "Apple": {
+      "INBOX.Spam": "Junk",
+      "INBOX.Elster": "INBOX.Elster",
+      "INBOX.Gelesen_automatisch": "Gelesen_automatisch",
+      "DHL": "DHL",
+      "Amazon": "Amazon"
+    },
+    "HILO": {
+      "INBOX.Spam": "Spam",
+      "INBOX.Elster": "INBOX.Elster",
+      "INBOX.Gelesen_automatisch": "INBOX.Werbung",
+      "DHL": "INBOX.Erledigt",
+      "Amazon": "INBOX.Erledigt"
+    }
+  },
+  "heuristics": {
+    "bounce_to_junk": true,
+    "bounce_folder": "INBOX.Spam",
+    "newsletter_to_werbung_folder": "INBOX.Gelesen_automatisch",
+    "amazon_to_amazon_folder": "Amazon"
+  }
+}
