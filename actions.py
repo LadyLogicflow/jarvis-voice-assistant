@@ -1532,7 +1532,7 @@ async def execute_action(action: dict) -> str:
                         },
                     )
                 except Exception as e:
-                    log.debug("IMPORT_MAIL_HISTORY: index_text failed: %s", e)
+                    log.warning("IMPORT_MAIL_HISTORY: index_text failed: %s", e)
 
         except Exception as e:
             log.warning("IMPORT_MAIL_HISTORY error: %s", e)
@@ -3996,7 +3996,7 @@ async def execute_action(action: dict) -> str:
                         except Exception:
                             continue
                 except Exception as _acc_exc:
-                    log.debug(
+                    log.warning(
                         "SYNC_MAIL_CONTACTS: Konto %s: %s: %s",
                         acc_name, type(_acc_exc).__name__, _acc_exc,
                     )

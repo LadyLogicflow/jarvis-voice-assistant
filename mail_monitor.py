@@ -184,12 +184,12 @@ async def _learn_from_mail(
                             account, gc.name, sender_email,
                         )
                 except Exception as _gc_exc:
-                    log.debug(
+                    log.warning(
                         "mail_monitor[%s] learn: Google Contacts lookup failed: %s: %s",
                         account, type(_gc_exc).__name__, _gc_exc,
                     )
         except Exception as exc:
-            log.debug(
+            log.warning(
                 "mail_monitor[%s] learn: persons_db update failed: %s: %s",
                 account, type(exc).__name__, exc,
             )

@@ -20,6 +20,7 @@ import asyncio
 import contextlib
 import os
 import subprocess
+import sys
 import time
 from contextlib import asynccontextmanager
 
@@ -273,12 +274,14 @@ app = FastAPI(lifespan=_lifespan)
 # ---------------------------------------------------------------------------
 def _hide_chrome() -> None:
     script = 'tell application "System Events" to set visible of process "Google Chrome" to false'
-    subprocess.Popen(["osascript", "-e", script])
+    if sys.platform == "darwin":
+        subprocess.Popen(["osascript", "-e", script])
 
 
 def _show_chrome() -> None:
     script = 'tell application "Google Chrome" to activate'
-    subprocess.Popen(["osascript", "-e", script])
+    if sys.platform == "darwin":
+        subprocess.Popen(["osascript", "-e", script])
 
 
 def require_jarvis_token(x_jarvis_token: str | None = Header(default=None)) -> None:

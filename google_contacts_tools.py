@@ -249,6 +249,13 @@ def _fetch_all_contacts_sync() -> list[Contact]:
 # Lese-Operationen
 # ---------------------------------------------------------------------------
 
+def _norm_name(s: str) -> str:
+    """Lowercase + ß→ss + Diakritika-Strip fuer Namensvergleiche."""
+    import unicodedata as _uc
+    s = s.lower().replace("ß", "ss").replace("ä", "ae").replace("ö", "oe").replace("ü", "ue")
+    return _uc.normalize("NFD", s).encode("ascii", "ignore").decode("ascii")
+
+
 async def find_contacts_by_name(query: str) -> list[Contact]:
     """Substring-Match (case-insensitive) auf Name und Organisation.
 
@@ -260,11 +267,11 @@ async def find_contacts_by_name(query: str) -> list[Contact]:
     """
     if not query:
         return []
-    q = query.lower().strip()
+    q = _norm_name(query)
     all_contacts = await read_all_contacts()
     return [
         c for c in all_contacts
-        if q in c.name.lower() or q in c.organization.lower()
+        if q in _norm_name(c.name) or q in _norm_name(c.organization)
     ]
 
 
