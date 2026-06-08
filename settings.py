@@ -381,3 +381,13 @@ PENDING_TELEGRAM_TEXT: str = ""
 # Optionaler parse_mode fuer PENDING_TELEGRAM_TEXT ("HTML", "MarkdownV2" oder "").
 # Wird zusammen mit PENDING_TELEGRAM_TEXT gesetzt und geleert.
 PENDING_TELEGRAM_PARSE_MODE: str = ""
+
+# Mail-Suche und Weiterleitung (Issue #223). Zwischenspeicher fuer den
+# MAIL_FIND_AND_FORWARD-Workflow wenn mehrere Kandidaten gefunden wurden.
+# Struktur: {
+#   "candidates": [{"account": str, "uid": int, "subject": str, "sender": str, "date": str}],
+#   "to_addr": str,
+#   "to_name": str,
+# }
+# Geleert nach MAIL_FIND_CONFIRM, MAIL_FIND_CANCEL oder Fehler.
+PENDING_MAIL_FIND: dict = {}

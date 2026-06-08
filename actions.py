@@ -4028,6 +4028,243 @@ async def execute_action(action: dict) -> str:
             f"Ich melde mich per Telegram wenn er abgeschlossen ist."
         )
 
+    elif t == "MAIL_FIND_AND_FORWARD":
+        # Issue #223: Mail nach Absender + Datum suchen und weiterleiten.
+        # Payload-Format: sender_hint|recipient_hint|date_hint
+        # Beispiel: mueller@kanzlei.de|getmyinvoices@app.de|heute
+        import email as _email_mod
+        import persons_db as _pdb_find
+        addr = S.USER_ADDRESS
+
+        parts = [x.strip() for x in p.split("|")]
+        if len(parts) < 2:
+            return (
+                f"Bitte Absender und Empfaenger angeben, {addr}. "
+                f"Beispiel: mueller@kanzlei.de|xyz@mail.de|heute"
+            )
+        sender_hint = parts[0]
+        recipient_hint = parts[1]
+        date_hint = parts[2].lower() if len(parts) > 2 else "heute"
+
+        # Datum bestimmen
+        today = datetime.date.today()
+        before_date: datetime.date | None = None  # nur fuer "gestern" gesetzt
+        if date_hint in ("gestern", "yesterday"):
+            since_date = today - datetime.timedelta(days=1)
+            before_date = today  # Issue #223 fix: BEFORE heute, damit heute nicht mit reinkommt
+        elif date_hint in ("diese woche", "this week"):
+            since_date = today - datetime.timedelta(days=today.weekday())
+        else:
+            # "heute", "today", "heute morgen" oder unbekannt -> heute
+            since_date = today
+        since_imap = since_date.strftime("%d-%b-%Y")
+        before_imap = before_date.strftime("%d-%b-%Y") if before_date else None
+
+        # Empfaenger aufloesen
+        if "@" in recipient_hint:
+            to_addr = recipient_hint
+            to_name = recipient_hint
+        else:
+            # Persons-DB + Google Contacts durchsuchen (gleiche Logik wie MAIL_FORWARD_PENDING)
+            _db_matches = _pdb_find.search_by_name(recipient_hint)
+            try:
+                import google_contacts_tools as _gct_find
+                _gc_matches = await _gct_find.find_contacts_by_name(recipient_hint)
+            except Exception:
+                _gc_matches = []
+            _seen_emails: set[str] = set()
+            _recip_candidates: list[dict] = []
+            for _prof in _db_matches:
+                if _prof.primary_email:
+                    _el = _prof.primary_email.lower()
+                    if _el not in _seen_emails:
+                        _seen_emails.add(_el)
+                        _recip_candidates.append({
+                            "to_addr": _prof.primary_email,
+                            "to_name": _prof.name,
+                        })
+            for _c in _gc_matches:
+                if _c.emails:
+                    _el = _c.emails[0].lower()
+                    if _el not in _seen_emails:
+                        _seen_emails.add(_el)
+                        _recip_candidates.append({
+                            "to_addr": _c.emails[0],
+                            "to_name": _c.name,
+                        })
+            if not _recip_candidates:
+                return f"Kein Kontakt '{recipient_hint}' gefunden, {addr}."
+            if len(_recip_candidates) > 1:
+                # Mehrere Treffer — Ambiguität vermeiden, User nach E-Mail-Adresse fragen
+                _options = ", ".join(
+                    f"{c['to_name']} ({c['to_addr']})" for c in _recip_candidates[:4]
+                )
+                return (
+                    f"Mehrere Kontakte mit dem Namen '{recipient_hint}' gefunden: {_options}. "
+                    f"Bitte die E-Mail-Adresse direkt angeben, {addr}."
+                )
+            to_addr = _recip_candidates[0]["to_addr"]
+            to_name = _recip_candidates[0]["to_name"]
+
+        # IMAP-Suche: alle konfigurierten Konten
+        candidates: list[dict] = []
+        for _acc_cfg in S.MAIL_MONITOR_ACCOUNTS:
+            if not _acc_cfg.get("password"):
+                continue
+            _acc_name = _acc_cfg.get("name", "")
+            _client = None
+            try:
+                _client = await mail_actions._connect(_acc_cfg)
+                # SINCE + FROM kombiniert (+ BEFORE fuer "gestern")
+                _search_args = ["SINCE", since_imap]
+                if before_imap:
+                    _search_args += ["BEFORE", before_imap]
+                _search_args += ["FROM", f'"{sender_hint}"']
+                _typ, _data = await _client.search(*_search_args, charset=None)
+                if _typ != "OK" or not _data or not _data[0]:
+                    continue
+                _raw = (
+                    _data[0].decode() if isinstance(_data[0], (bytes, bytearray))
+                    else str(_data[0])
+                )
+                _seq_nums = [s for s in _raw.split() if s.isdigit()]
+                if not _seq_nums:
+                    continue
+                # Maximal die 4 neuesten
+                for _seq in _seq_nums[-4:]:
+                    try:
+                        _htyp, _hdata = await _client.fetch(
+                            _seq,
+                            "(UID BODY.PEEK[HEADER.FIELDS (FROM SUBJECT DATE MESSAGE-ID)])",
+                        )
+                        if _htyp != "OK" or not _hdata:
+                            continue
+                        _uid: int | None = None
+                        _subj = ""
+                        _sender_str = ""
+                        _date_str = ""
+                        for _item in _hdata:
+                            if not isinstance(_item, (bytes, bytearray)):
+                                continue
+                            import re as _re_find
+                            _m_uid = _re_find.search(r'\bUID\s+(\d+)', _item.decode("utf-8", errors="replace"))
+                            if _m_uid:
+                                _uid = int(_m_uid.group(1))
+                            try:
+                                _msg = _email_mod.message_from_bytes(_item)
+                                from email.utils import parseaddr as _parseaddr_find
+                                _sender_str = (
+                                    mail_actions._decode_header(
+                                        _parseaddr_find(_msg.get("From", ""))[0]
+                                    ) or _msg.get("From", "")
+                                )
+                                _subj = mail_actions._decode_header(_msg.get("Subject", ""))
+                                _date_str = _msg.get("Date", "")
+                            except Exception:
+                                pass
+                        if _uid is not None:
+                            candidates.append({
+                                "account": _acc_name,
+                                "uid": _uid,
+                                "subject": _subj,
+                                "sender": _sender_str,
+                                "date": _date_str,
+                            })
+                    except Exception as _item_exc:
+                        log.warning(
+                            "MAIL_FIND_AND_FORWARD[%s] seq=%s: %s: %s",
+                            _acc_name, _seq, type(_item_exc).__name__, _item_exc,
+                        )
+            except Exception as _acc_exc:
+                log.warning(
+                    "MAIL_FIND_AND_FORWARD[%s]: %s: %s",
+                    _acc_name, type(_acc_exc).__name__, _acc_exc,
+                )
+            finally:
+                if _client is not None:
+                    try:
+                        await _client.logout()
+                    except Exception:
+                        pass
+
+        if not candidates:
+            return (
+                f"Keine Mail von '{sender_hint}' seit {since_date.strftime('%d.%m.%Y')} "
+                f"gefunden, {addr}."
+            )
+
+        if len(candidates) == 1:
+            # Direkt weiterleiten
+            _cand = candidates[0]
+            _ok = await mail_actions.forward_mail(
+                _cand["account"], _cand["uid"], to_addr
+            )
+            _subj_short = _cand["subject"] or "(kein Betreff)"
+            if _ok:
+                await mail_actions.mark_mail_read(_cand["account"], _cand["uid"])
+                return (
+                    f"Mail von {_cand['sender'] or sender_hint} "
+                    f"({_subj_short}) weitergeleitet an {to_name} ({to_addr}), {addr}."
+                )
+            return (
+                f"Weiterleitung von '{_subj_short}' an {to_name} fehlgeschlagen — "
+                f"bitte SMTP-Konfiguration pruefen."
+            )
+
+        # Mehrere Kandidaten — Auswahl anfordern (max 4 neueste)
+        candidates = candidates[-4:]
+        S.PENDING_MAIL_FIND = {
+            "candidates": candidates,
+            "to_addr": to_addr,
+            "to_name": to_name,
+        }
+        lines = [
+            f"Ich habe {len(candidates)} Mail(s) von '{sender_hint}' gefunden. "
+            f"Meinen Sie:"
+        ]
+        for _i, _cand in enumerate(candidates, 1):
+            _d = _cand.get("date", "")[:16]
+            lines.append(f"{_i}. {_cand['subject'] or '(kein Betreff)'} ({_d})")
+        lines.append("Bitte Nummer nennen.")
+        return "\n".join(lines)
+
+    elif t == "MAIL_FIND_CONFIRM":
+        # Issue #223: Bestaetigt eine der gefundenen Mails zur Weiterleitung.
+        addr = S.USER_ADDRESS
+        if not S.PENDING_MAIL_FIND:
+            return f"Keine laufende Mail-Suche, {addr}."
+        try:
+            idx = int(p.strip()) - 1
+        except (ValueError, TypeError):
+            # State absichtlich behalten — User kann nochmal eine Zahl nennen
+            return f"Bitte eine Zahl zwischen 1 und {len(S.PENDING_MAIL_FIND.get('candidates', []))} nennen, {addr}."
+        candidates = S.PENDING_MAIL_FIND.get("candidates", [])
+        if idx < 0 or idx >= len(candidates):
+            S.PENDING_MAIL_FIND = {}
+            return f"Ungueltige Auswahl. Suche abgebrochen, {addr}."
+        _cand = candidates[idx]
+        to_addr = S.PENDING_MAIL_FIND.get("to_addr", "")
+        to_name = S.PENDING_MAIL_FIND.get("to_name", to_addr)
+        S.PENDING_MAIL_FIND = {}
+        if not to_addr:
+            return f"Kein Empfaenger gespeichert. Bitte Suche wiederholen, {addr}."
+        _ok = await mail_actions.forward_mail(_cand["account"], _cand["uid"], to_addr)
+        _subj_short = _cand["subject"] or "(kein Betreff)"
+        if _ok:
+            await mail_actions.mark_mail_read(_cand["account"], _cand["uid"])
+            return (
+                f"Mail ({_subj_short}) weitergeleitet an {to_name} ({to_addr}), {addr}."
+            )
+        return (
+            f"Weiterleitung von '{_subj_short}' an {to_name} fehlgeschlagen — "
+            f"bitte SMTP-Konfiguration pruefen."
+        )
+
+    elif t == "MAIL_FIND_CANCEL":
+        # Issue #223: Bricht die laufende Mail-Suche ab.
+        S.PENDING_MAIL_FIND = {}
+        return f"Abgebrochen, {pick_address()}."
+
     return ""
 
 
