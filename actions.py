@@ -4048,14 +4048,17 @@ async def execute_action(action: dict) -> str:
 
         # Datum bestimmen
         today = datetime.date.today()
+        before_date: datetime.date | None = None  # nur fuer "gestern" gesetzt
         if date_hint in ("gestern", "yesterday"):
             since_date = today - datetime.timedelta(days=1)
+            before_date = today  # Issue #223 fix: BEFORE heute, damit heute nicht mit reinkommt
         elif date_hint in ("diese woche", "this week"):
             since_date = today - datetime.timedelta(days=today.weekday())
         else:
             # "heute", "today", "heute morgen" oder unbekannt -> heute
             since_date = today
         since_imap = since_date.strftime("%d-%b-%Y")
+        before_imap = before_date.strftime("%d-%b-%Y") if before_date else None
 
         # Empfaenger aufloesen
         if "@" in recipient_hint:
@@ -4091,7 +4094,15 @@ async def execute_action(action: dict) -> str:
                         })
             if not _recip_candidates:
                 return f"Kein Kontakt '{recipient_hint}' gefunden, {addr}."
-            # Ersten Treffer verwenden (kein iterativer Dialog hier)
+            if len(_recip_candidates) > 1:
+                # Mehrere Treffer — Ambiguität vermeiden, User nach E-Mail-Adresse fragen
+                _options = ", ".join(
+                    f"{c['to_name']} ({c['to_addr']})" for c in _recip_candidates[:4]
+                )
+                return (
+                    f"Mehrere Kontakte mit dem Namen '{recipient_hint}' gefunden: {_options}. "
+                    f"Bitte die E-Mail-Adresse direkt angeben, {addr}."
+                )
             to_addr = _recip_candidates[0]["to_addr"]
             to_name = _recip_candidates[0]["to_name"]
 
@@ -4104,11 +4115,12 @@ async def execute_action(action: dict) -> str:
             _client = None
             try:
                 _client = await mail_actions._connect(_acc_cfg)
-                # SINCE + FROM kombiniert
-                _typ, _data = await _client.search(
-                    "SINCE", since_imap, "FROM", f'"{sender_hint}"',
-                    charset=None,
-                )
+                # SINCE + FROM kombiniert (+ BEFORE fuer "gestern")
+                _search_args = ["SINCE", since_imap]
+                if before_imap:
+                    _search_args += ["BEFORE", before_imap]
+                _search_args += ["FROM", f'"{sender_hint}"']
+                _typ, _data = await _client.search(*_search_args, charset=None)
                 if _typ != "OK" or not _data or not _data[0]:
                     continue
                 _raw = (
@@ -4187,9 +4199,9 @@ async def execute_action(action: dict) -> str:
             _ok = await mail_actions.forward_mail(
                 _cand["account"], _cand["uid"], to_addr
             )
-            await mail_actions.mark_mail_read(_cand["account"], _cand["uid"])
             _subj_short = _cand["subject"] or "(kein Betreff)"
             if _ok:
+                await mail_actions.mark_mail_read(_cand["account"], _cand["uid"])
                 return (
                     f"Mail von {_cand['sender'] or sender_hint} "
                     f"({_subj_short}) weitergeleitet an {to_name} ({to_addr}), {addr}."
@@ -4224,6 +4236,7 @@ async def execute_action(action: dict) -> str:
         try:
             idx = int(p.strip()) - 1
         except (ValueError, TypeError):
+            # State absichtlich behalten — User kann nochmal eine Zahl nennen
             return f"Bitte eine Zahl zwischen 1 und {len(S.PENDING_MAIL_FIND.get('candidates', []))} nennen, {addr}."
         candidates = S.PENDING_MAIL_FIND.get("candidates", [])
         if idx < 0 or idx >= len(candidates):
@@ -4236,9 +4249,9 @@ async def execute_action(action: dict) -> str:
         if not to_addr:
             return f"Kein Empfaenger gespeichert. Bitte Suche wiederholen, {addr}."
         _ok = await mail_actions.forward_mail(_cand["account"], _cand["uid"], to_addr)
-        await mail_actions.mark_mail_read(_cand["account"], _cand["uid"])
         _subj_short = _cand["subject"] or "(kein Betreff)"
         if _ok:
+            await mail_actions.mark_mail_read(_cand["account"], _cand["uid"])
             return (
                 f"Mail ({_subj_short}) weitergeleitet an {to_name} ({to_addr}), {addr}."
             )
