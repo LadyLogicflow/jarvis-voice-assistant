@@ -347,6 +347,15 @@ TRASH_FOLDER_GUESSES = (
     "[Gmail]/Trash",
 )
 
+SENT_FOLDER_GUESSES = (
+    "Sent Messages",       # iCloud
+    "Sent",
+    "Gesendete Elemente",
+    "Gesendete E-Mails",
+    "INBOX.Sent",
+    "[Gmail]/Sent Mail",
+)
+
 
 def build_reply_message(
     from_addr: str,
@@ -712,6 +721,50 @@ async def delete_mail(account_name: str, uid: int) -> tuple[bool, str]:
                 pass
 
 
+async def _append_to_sent(account_name: str, acc: dict, msg_bytes: bytes) -> None:
+    """Append a forwarded message to the Sent folder for audit trail.
+
+    Tries SENT_FOLDER_GUESSES in order. Failures are logged but never
+    propagated — audit trail is best-effort.
+    """
+    import aioimaplib
+    preferred = acc.get("sent_folder", "Sent Messages")
+    candidates = [preferred] + [f for f in SENT_FOLDER_GUESSES if f != preferred]
+
+    client = None
+    try:
+        cls = aioimaplib.IMAP4_SSL if acc["ssl"] else aioimaplib.IMAP4
+        client = cls(host=acc["host"], port=acc["port"], timeout=30)
+        await asyncio.wait_for(client.wait_hello_from_server(), timeout=30)
+        resp = await asyncio.wait_for(
+            client.login(acc["user"], acc["password"]), timeout=30
+        )
+        if getattr(resp, "result", None) != "OK":
+            log.warning("_append_to_sent[%s]: Login fehlgeschlagen", account_name)
+            return
+        for folder in candidates:
+            try:
+                r = await client.append(msg_bytes, mailbox=folder)
+                result = getattr(r, "result", None) or (
+                    r[0] if isinstance(r, tuple) and r else None
+                )
+                if result == "OK":
+                    log.info("_append_to_sent[%s]: Mail in %r abgelegt", account_name, folder)
+                    return
+            except Exception:
+                continue
+        log.warning("_append_to_sent[%s]: kein Sent-Ordner gefunden (probiert: %s)",
+                    account_name, candidates)
+    except Exception as e:
+        log.warning("_append_to_sent[%s]: %s: %s", account_name, type(e).__name__, e)
+    finally:
+        if client is not None:
+            try:
+                await client.logout()
+            except Exception:
+                pass
+
+
 async def forward_mail(account_name: str, uid: int, to_addr: str) -> bool:
     """Forward a mail (with all attachments) to a different address by
     fetching the original RFC822, wrapping in a forward header, and
@@ -774,17 +827,37 @@ async def forward_mail(account_name: str, uid: int, to_addr: str) -> bool:
 
     smtp_host = acc.get("smtp_host") or acc["host"]
     smtp_port = int(acc.get("smtp_port") or 587)
+    if not acc.get("smtp_host"):
+        log.warning(
+            "forward_mail[%s]: smtp_host nicht in config.json konfiguriert — "
+            "verwende IMAP-Host %r als Fallback (möglicherweise falscher Host)",
+            account_name, smtp_host,
+        )
     log.info(f"forward_mail[{account_name}] SMTP {smtp_host}:{smtp_port} uid={uid} -> {to_addr}")
+    fwd_bytes = fwd.as_bytes()
     try:
         loop = asyncio.get_running_loop()
-        def _send():
+        failed: dict = {}
+
+        def _send() -> None:
             ssl_context = ssl.create_default_context()
             with smtplib.SMTP(smtp_host, smtp_port, timeout=30) as s:
                 s.starttls(context=ssl_context)
                 s.login(acc["user"], acc["password"])
-                s.send_message(fwd)
+                result = s.send_message(fwd)
+                if result:
+                    failed.update(result)
+
         await loop.run_in_executor(None, _send)
+        if failed:
+            log.warning(
+                "forward_mail[%s] uid=%s: SMTP abgelehnte Empfänger: %s",
+                account_name, uid, failed,
+            )
+            return False
         log.info(f"forward_mail[{account_name}] uid={uid} -> {to_addr} OK")
+        # Best-effort: append to Sent folder so there is an audit trail.
+        asyncio.create_task(_append_to_sent(account_name, acc, fwd_bytes))
         return True
     except Exception as e:
         log.warning(f"forward_mail[{account_name}] SMTP {smtp_host}:{smtp_port} failed: "
