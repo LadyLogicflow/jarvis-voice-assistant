@@ -186,7 +186,6 @@ async def _lifespan(_app):  # type: ignore[no-untyped-def]  # AsyncGenerator
     session_state.load_all()
     # Issue #224: Erstelle mail_triage_rules.json mit sinnvollen Defaults
     # falls die Datei noch nicht existiert.
-    import json as _json_startup
     _triage_rules_path = os.path.join(os.path.dirname(__file__), "mail_triage_rules.json")
     if not os.path.exists(_triage_rules_path):
         _default_rules = {
@@ -196,10 +195,11 @@ async def _lifespan(_app):  # type: ignore[no-untyped-def]  # AsyncGenerator
         }
         try:
             with open(_triage_rules_path, "w", encoding="utf-8") as _f:
-                _json_startup.dump(_default_rules, _f, indent=2, ensure_ascii=False)
+                _json.dump(_default_rules, _f, indent=2, ensure_ascii=False)
             log.info("STARTUP: mail_triage_rules.json mit Defaults angelegt: %s", _default_rules)
         except Exception as _e:
             log.warning("STARTUP: mail_triage_rules.json konnte nicht angelegt werden: %s", _e)
+    log.info("STARTUP: Werbung-Auto-Move aktiv — IMAP-Ordner 'Werbung' muss auf allen Konten existieren.")
     import meal_plan as _mp
     _mp.load_meal_plan()
     scheduler.register_proactive_handler(_broadcast_proactive)
