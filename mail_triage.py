@@ -216,10 +216,10 @@ def route(
 
     # 4) Generic werbung action from the rules file
     if category == "werbung":
-        action = rules.get("werbung_action")
+        action = rules.get("werbung_action", "move")  # default: move (Issue #224)
         if action == "move":
             return _apply_folder_override(
-                {"action": "move", "folder": rules.get("werbung_folder", "Junk")},
+                {"action": "move", "folder": rules.get("werbung_folder", "Werbung")},
                 account, rules,
             )
         if action == "mark_read":

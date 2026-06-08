@@ -184,6 +184,22 @@ async def _lifespan(_app):  # type: ignore[no-untyped-def]  # AsyncGenerator
             log.error("STARTUP: PyMuPDF-Auto-Install Fehler: %s", _e)
     await refresh_data()
     session_state.load_all()
+    # Issue #224: Erstelle mail_triage_rules.json mit sinnvollen Defaults
+    # falls die Datei noch nicht existiert.
+    import json as _json_startup
+    _triage_rules_path = os.path.join(os.path.dirname(__file__), "mail_triage_rules.json")
+    if not os.path.exists(_triage_rules_path):
+        _default_rules = {
+            "werbung_action": "move",
+            "werbung_folder": "Werbung",
+            "newsletter_to_werbung_folder": "Werbung"
+        }
+        try:
+            with open(_triage_rules_path, "w", encoding="utf-8") as _f:
+                _json_startup.dump(_default_rules, _f, indent=2, ensure_ascii=False)
+            log.info("STARTUP: mail_triage_rules.json mit Defaults angelegt: %s", _default_rules)
+        except Exception as _e:
+            log.warning("STARTUP: mail_triage_rules.json konnte nicht angelegt werden: %s", _e)
     import meal_plan as _mp
     _mp.load_meal_plan()
     scheduler.register_proactive_handler(_broadcast_proactive)
