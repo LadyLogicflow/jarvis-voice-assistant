@@ -65,6 +65,7 @@ from scheduler import (
 )
 from mail_monitor import mail_monitor_main, register_mail_alert_handler
 import mail_intelligence
+from appointment_briefing import appointment_briefing_scheduler
 import health_tools
 import planner
 import session_state
@@ -204,6 +205,7 @@ async def _lifespan(_app):  # type: ignore[no-untyped-def]  # AsyncGenerator
     task_evening_summary = asyncio.create_task(evening_summary_scheduler())
     task_calendar_alert = asyncio.create_task(calendar_alert_scheduler())
     task_pause_reminder = asyncio.create_task(pause_reminder_scheduler())
+    task_appointment_briefing = asyncio.create_task(appointment_briefing_scheduler())
     log.info(f"Steuerrecht-Scheduler gestartet (taeglich um {S.MORNING_HOUR}:00 Uhr)")
     log.info(f"Abschluss-Ritual aktiv (taeglich um {S.EVENING_HOUR}:00 Uhr)")
     log.info(f"Proaktive Briefs aktiv: {S.PROACTIVE_BRIEFS_TIMES}")
@@ -215,6 +217,7 @@ async def _lifespan(_app):  # type: ignore[no-untyped-def]  # AsyncGenerator
     log.info("Abendzusammenfassung aktiv (taeglich 20:30 Uhr)")
     log.info("Kalender-Vorab-Alert aktiv (alle 5 Minuten, ~30 min vor Termin)")
     log.info("Pause-Erinnerung aktiv (stündlich Mo-Fr 09-18 Uhr)")
+    log.info("Termin-Briefing aktiv (alle 5 Minuten, 13-17 min vor Termin)")
     # Bring!-Monitor (Issue #123): nur starten wenn Zugangsdaten konfiguriert
     task_bring: asyncio.Task | None = None
     if S.BRING_EMAIL and S.BRING_PASSWORD:
@@ -250,7 +253,8 @@ async def _lifespan(_app):  # type: ignore[no-untyped-def]  # AsyncGenerator
                            task_telegram, task_mail, task_weekly, task_memory,
                            task_planner, task_meal_plan, task_meal_reminder,
                            task_birthday_draft, task_evening_summary,
-                           task_calendar_alert, task_pause_reminder]
+                           task_calendar_alert, task_pause_reminder,
+                           task_appointment_briefing]
         if task_bring is not None:
             tasks_to_cancel.append(task_bring)
         if task_mail_intelligence is not None:
