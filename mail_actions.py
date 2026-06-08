@@ -820,10 +820,31 @@ async def forward_mail(account_name: str, uid: int, to_addr: str) -> bool:
         f"Subject: {orig_subj}\n"
     )
     fwd.attach(MIMEText(fwd_body, "plain", "utf-8"))
-    # Attach the original as message/rfc822 — Apple Mail / Outlook
-    # render this as a forwarded mail with all attachments preserved.
-    from email.mime.message import MIMEMessage
-    fwd.attach(MIMEMessage(original))
+    # Issue #225: PDFs und Anhaenge direkt anhaengen statt als message/rfc822
+    # einzuwickeln — getmyinvoices erkennt nur direkte Anhaenge, keinen Wrapper.
+    from email.mime.base import MIMEBase
+    from email import encoders as _enc
+    for _part in original.walk():
+        if _part.is_multipart():
+            continue
+        _ct = _part.get_content_type()
+        _filename = _part.get_filename()
+        _payload = _part.get_payload(decode=True)
+        if not _payload:
+            continue
+        # Nur Anhaenge — inline text/plain und text/html ohne Dateinamen ueberspringen
+        if _ct in ("text/plain", "text/html") and not _filename:
+            continue
+        _maintype, _subtype = (_ct.split("/", 1) if "/" in _ct
+                               else (_ct, "octet-stream"))
+        _att = MIMEBase(_maintype, _subtype)
+        _att.set_payload(_payload)
+        _enc.encode_base64(_att)
+        if _filename:
+            _att.add_header("Content-Disposition", "attachment", filename=_filename)
+        else:
+            _att.add_header("Content-Disposition", "attachment")
+        fwd.attach(_att)
 
     smtp_host = acc.get("smtp_host") or acc["host"]
     smtp_port = int(acc.get("smtp_port") or 587)
