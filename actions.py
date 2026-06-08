@@ -4017,6 +4017,17 @@ async def execute_action(action: dict) -> str:
             log.warning("SYNC_MAIL_CONTACTS: %s: %s", type(exc).__name__, exc)
             return "Synchronisation fehlgeschlagen. Bitte Log prüfen."
 
+    elif t == "SCAN_INVOICES_RETRO":
+        # Issue #221: Rückwirkender Rechnungs-Scan.
+        # Durchsucht alle IMAP-Konten ab einem Datum nach PDF-Anhängen,
+        # prüft per invoice_detector ob sie Rechnungen an Catrin sind,
+        # und leitet sie ggf. an getmyinvoices weiter.
+        asyncio.create_task(_run_scan_invoices_retro(p))
+        return (
+            f"Rechnungs-Scan gestartet, {pick_address()}. "
+            f"Ich melde mich per Telegram wenn er abgeschlossen ist."
+        )
+
     return ""
 
 
@@ -4061,3 +4072,183 @@ async def _run_inbox_analysis() -> None:
     except Exception as _te:
         log.warning(f"_run_inbox_analysis: Telegram-Zustellung fehlgeschlagen: "
                     f"{type(_te).__name__}: {_te}")
+
+
+async def _run_scan_invoices_retro(since_str: str = "") -> None:
+    """Hintergrund-Task für SCAN_INVOICES_RETRO (Issue #221).
+
+    Durchsucht alle IMAP-Konten ab `since_str` (IMAP-Format DD-Mon-YYYY,
+    z.B. '01-May-2026') nach PDF-Anhängen, prüft per invoice_detector ob
+    es Rechnungen an Caterina Essberger-Brenscheidt sind, und leitet sie
+    an getmyinvoices weiter. Bereits weitergeleitete UIDs werden übersprungen.
+    Fortschritt und Abschluss werden per Telegram gemeldet.
+    """
+    import email as _email_mod
+    import invoice_detector as _inv
+    import telegram_bot as _tgb
+    from mail_monitor import _invoice_forwarded, _extract_attachments
+
+    # Datum parsen: aus Payload "seit 01.05.2026" / "2026-05-01" / leer
+    since_imap = "01-May-2026"  # Vorgabe laut Issue
+    if since_str:
+        import re as _re
+        # DD.MM.YYYY
+        m = _re.search(r"(\d{1,2})\.(\d{1,2})\.(\d{4})", since_str)
+        if m:
+            _months = ["Jan","Feb","Mar","Apr","May","Jun",
+                       "Jul","Aug","Sep","Oct","Nov","Dec"]
+            try:
+                d, mo, y = int(m.group(1)), int(m.group(2)), m.group(3)
+                since_imap = f"{d:02d}-{_months[mo-1]}-{y}"
+            except (ValueError, IndexError):
+                pass
+        else:
+            # YYYY-MM-DD
+            m2 = _re.search(r"(\d{4})-(\d{2})-(\d{2})", since_str)
+            if m2:
+                _months = ["Jan","Feb","Mar","Apr","May","Jun",
+                           "Jul","Aug","Sep","Oct","Nov","Dec"]
+                try:
+                    y, mo, d = m2.group(1), int(m2.group(2)), int(m2.group(3))
+                    since_imap = f"{d:02d}-{_months[mo-1]}-{y}"
+                except (ValueError, IndexError):
+                    pass
+
+    log.info("SCAN_INVOICES_RETRO: Starte Scan ab %s", since_imap)
+    total_checked = 0
+    total_forwarded = 0
+    total_skipped = 0
+
+    for acc_cfg in S.MAIL_MONITOR_ACCOUNTS:
+        if not acc_cfg.get("password"):
+            continue
+        acc_name = acc_cfg.get("name", "")
+        if acc_name not in _invoice_forwarded:
+            _invoice_forwarded[acc_name] = set()
+        already_fwd = _invoice_forwarded[acc_name]
+
+        client = None
+        try:
+            client = await mail_actions._connect(acc_cfg)
+            typ, data = await client.search(
+                "SINCE", since_imap, charset=None
+            )
+            if typ != "OK" or not data or not data[0]:
+                log.info("SCAN_INVOICES_RETRO[%s]: keine Mails gefunden", acc_name)
+                continue
+            raw_val = (data[0].decode() if isinstance(data[0], (bytes, bytearray))
+                       else str(data[0]))
+            seq_nums = [s for s in raw_val.split() if s.isdigit()]
+            if not seq_nums:
+                continue
+
+            log.info("SCAN_INVOICES_RETRO[%s]: %d Mails seit %s",
+                     acc_name, len(seq_nums), since_imap)
+
+            # Max 500 Mails pro Account
+            for i, seq in enumerate(seq_nums[-500:]):
+                # Fortschrittsmeldung alle 25 Mails
+                if i > 0 and i % 25 == 0:
+                    try:
+                        await _tgb.send_user_text(
+                            f"Scan {acc_name}: {i}/{min(len(seq_nums), 500)} geprüft, "
+                            f"{total_forwarded} Rechnungen weitergeleitet..."
+                        )
+                    except Exception:
+                        pass
+
+                try:
+                    # Header-Only-Check: multipart-Mails könnten PDFs haben
+                    htyp, hdata = await client.fetch(seq, "(UID BODY.PEEK[HEADER])")
+                    if htyp != "OK" or not hdata:
+                        continue
+                    uid = None
+                    has_pdf_hint = False
+                    for item in hdata:
+                        if isinstance(item, (bytes, bytearray)):
+                            txt = item.decode("utf-8", errors="replace")
+                            import re as _re2
+                            m_uid = _re2.search(r'\bUID\s+(\d+)', txt)
+                            if m_uid:
+                                uid = int(m_uid.group(1))
+                            ct = txt.lower()
+                            if "multipart" in ct or "application/pdf" in ct:
+                                has_pdf_hint = True
+
+                    if uid is None or not has_pdf_hint:
+                        total_checked += 1
+                        continue
+                    if uid in already_fwd:
+                        total_skipped += 1
+                        total_checked += 1
+                        continue
+
+                    # Vollständige Mail für PDF-Extraktion laden
+                    ftyp, fdata = await client.uid("fetch", str(uid), "BODY.PEEK[]")
+                    if ftyp != "OK" or not fdata:
+                        total_checked += 1
+                        continue
+                    byte_items = []
+                    for item in fdata:
+                        if isinstance(item, (bytes, bytearray)):
+                            byte_items.append(bytes(item))
+                        elif (isinstance(item, (list, tuple)) and len(item) >= 2
+                              and isinstance(item[1], (bytes, bytearray))):
+                            byte_items.append(bytes(item[1]))
+                    if not byte_items:
+                        total_checked += 1
+                        continue
+                    msg_full = _email_mod.message_from_bytes(max(byte_items, key=len))
+                    attachments = _extract_attachments(msg_full)
+                    pdf_atts = [a for a in attachments
+                                if a["content_type"] == "application/pdf"
+                                or a["filename"].lower().endswith(".pdf")]
+
+                    for att in pdf_atts:
+                        try:
+                            is_inv, reason = await _inv.detect_invoice_for_catrin(att["data"])
+                            log.info("SCAN_INVOICES_RETRO[%s] uid=%s %r -> %s %r",
+                                     acc_name, uid, att["filename"], is_inv, reason)
+                            if is_inv:
+                                fwd_ok = await mail_actions.forward_mail(
+                                    acc_name, uid, _inv.INVOICE_FORWARD_TO
+                                )
+                                if fwd_ok:
+                                    already_fwd.add(uid)
+                                    await mail_actions.mark_mail_read(acc_name, uid)
+                                    total_forwarded += 1
+                                    log.info("SCAN_INVOICES_RETRO[%s] uid=%s weitergeleitet",
+                                             acc_name, uid)
+                                else:
+                                    log.warning("SCAN_INVOICES_RETRO[%s] uid=%s forward_mail=False",
+                                                acc_name, uid)
+                                break
+                        except Exception as _de:
+                            log.warning("SCAN_INVOICES_RETRO[%s] uid=%s detect: %s: %s",
+                                        acc_name, uid, type(_de).__name__, _de)
+                    total_checked += 1
+                except Exception as _se:
+                    log.warning("SCAN_INVOICES_RETRO[%s] seq=%s: %s: %s",
+                                acc_name, seq, type(_se).__name__, _se)
+                    total_checked += 1
+        except Exception as _ae:
+            log.warning("SCAN_INVOICES_RETRO[%s]: %s: %s",
+                        acc_name, type(_ae).__name__, _ae)
+        finally:
+            if client is not None:
+                try:
+                    await client.logout()
+                except Exception:
+                    pass
+
+    summary = (
+        f"Rechnungs-Scan abgeschlossen, {pick_address()}. "
+        f"{total_checked} Mails geprüft, "
+        f"{total_forwarded} Rechnung(en) weitergeleitet, "
+        f"{total_skipped} bereits bekannte übersprungen."
+    )
+    log.info("SCAN_INVOICES_RETRO: %s", summary)
+    try:
+        await _tgb.send_user_text(summary)
+    except Exception as _te:
+        log.warning("SCAN_INVOICES_RETRO: Telegram-Abschlussmeldung fehlgeschlagen: %s", _te)
