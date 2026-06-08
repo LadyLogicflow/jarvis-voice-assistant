@@ -1232,6 +1232,17 @@ async def _process_new_uids(account: dict, client, uids: list[int]) -> None:
                                                 name, uid, sender,
                                                 _inv.INVOICE_FORWARD_TO,
                                             )
+                                            # Als gelesen markieren (Issue #219)
+                                            try:
+                                                await mail_actions.mark_mail_read(name, uid)
+                                            except Exception as _mr_exc:
+                                                log.warning(
+                                                    "mail_monitor[%s] uid=%s: "
+                                                    "mark_read nach Forward fehlgeschlagen: "
+                                                    "%s: %s",
+                                                    name, uid,
+                                                    type(_mr_exc).__name__, _mr_exc,
+                                                )
                                             _inv_notice = (
                                                 f"Rechnung von {sender} an "
                                                 f"getmyinvoices weitergeleitet, Madam."
@@ -1284,6 +1295,11 @@ async def _process_new_uids(account: dict, client, uids: list[int]) -> None:
                     "mail_monitor[%s] uid=%s: Rechnungs-Block fehlgeschlagen: %s: %s",
                     name, uid, type(_inv_outer).__name__, _inv_outer,
                 )
+
+            # Issue #219: Weitergeleitete Rechnungen nicht nochmal durch die
+            # normale Triage/Klassifikation schicken — Mail ist bereits erledigt.
+            if uid in _invoice_forwarded.get(name, set()):
+                continue
 
             # We only fetch BODY.PEEK[HEADER] (Apple-strict-parser-friendly),
             # so the classifier runs on sender + subject only. Empty body
