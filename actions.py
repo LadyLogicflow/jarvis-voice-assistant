@@ -4367,41 +4367,42 @@ async def _run_scan_invoices_retro(since_str: str = "") -> None:
         client = None
         try:
             client = await mail_actions._connect(acc_cfg)
-            # UID SEARCH statt SEARCH: UIDs sind stabil, Sequenznummern nicht.
-            # Concurrent Werbung-Moves verschieben Sequenznummern und führen
-            # dazu dass Mails übersprungen oder falsch zugeordnet werden.
-            typ, data = await client.uid(
-                "search", "SINCE", since_imap
-            )
+            # aioimaplib unterstützt uid("search") NICHT (nur COPY/FETCH/STORE/EXPUNGE).
+            # Daher: search() → Sequenznummern, dann sofort fetch(seq, "(UID ...)")
+            # → UID aus der Antwort lesen, alle weiteren Operationen per uid("fetch"/"store").
+            typ, data = await client.search("SINCE", since_imap, charset=None)
             if typ != "OK" or not data or not data[0]:
                 log.info("SCAN_INVOICES_RETRO[%s]: keine Mails gefunden", acc_name)
                 continue
             raw_val = (data[0].decode() if isinstance(data[0], (bytes, bytearray))
                        else str(data[0]))
-            uid_list = [int(s) for s in raw_val.split() if s.isdigit()]
-            if not uid_list:
+            seq_list = [s for s in raw_val.split() if s.isdigit()]
+            if not seq_list:
                 continue
 
             log.info("SCAN_INVOICES_RETRO[%s]: %d Mails seit %s",
-                     acc_name, len(uid_list), since_imap)
+                     acc_name, len(seq_list), since_imap)
 
+            import re as _re_uid
             # Max 500 Mails pro Account
-            for i, uid in enumerate(uid_list[-500:]):
+            for i, seq in enumerate(seq_list[-500:]):
                 # Fortschrittsmeldung alle 25 Mails
                 if i > 0 and i % 25 == 0:
                     try:
                         await _tgb.send_user_text(
-                            f"Scan {acc_name}: {i}/{min(len(uid_list), 500)} geprüft, "
+                            f"Scan {acc_name}: {i}/{min(len(seq_list), 500)} geprüft, "
                             f"{total_forwarded} Rechnungen weitergeleitet..."
                         )
                     except Exception:
                         pass
 
+                uid: int | None = None
                 try:
-                    # Header-Only-Check: multipart-Mails könnten PDFs haben.
-                    # Verwende UID FETCH — stabil gegenüber concurrent Moves.
-                    htyp, hdata = await client.uid("fetch", str(uid), "BODY.PEEK[HEADER]")
+                    # Sequenznummer → UID + Header in einem Schritt.
+                    # UID steckt im FETCH-Envelope: "NNN FETCH (UID XXXXX ...)"
+                    htyp, hdata = await client.fetch(seq, "(UID BODY.PEEK[HEADER])")
                     if htyp != "OK" or not hdata:
+                        total_checked += 1
                         continue
                     has_pdf_hint = False
                     for item in hdata:
@@ -4412,10 +4413,18 @@ async def _run_scan_invoices_retro(since_str: str = "") -> None:
                               and isinstance(item[1], (bytes, bytearray))):
                             txt = item[1].decode("utf-8", errors="replace")
                         if txt:
+                            m_uid = _re_uid.search(r'\bUID\s+(\d+)', txt)
+                            if m_uid:
+                                uid = int(m_uid.group(1))
                             ct = txt.lower()
                             if "multipart" in ct or "application/pdf" in ct:
                                 has_pdf_hint = True
 
+                    if uid is None:
+                        log.warning("SCAN_INVOICES_RETRO[%s] seq=%s: UID nicht parsebar",
+                                    acc_name, seq)
+                        total_checked += 1
+                        continue
                     if not has_pdf_hint:
                         total_checked += 1
                         continue
@@ -4424,7 +4433,7 @@ async def _run_scan_invoices_retro(since_str: str = "") -> None:
                         total_checked += 1
                         continue
 
-                    # Vollständige Mail für PDF-Extraktion laden
+                    # Vollständige Mail per UID — stabil gegenüber concurrent Moves
                     ftyp, fdata = await client.uid("fetch", str(uid), "BODY.PEEK[]")
                     if ftyp != "OK" or not fdata:
                         total_checked += 1
@@ -4469,8 +4478,8 @@ async def _run_scan_invoices_retro(since_str: str = "") -> None:
                                         acc_name, uid, type(_de).__name__, _de)
                     total_checked += 1
                 except Exception as _se:
-                    log.warning("SCAN_INVOICES_RETRO[%s] seq=%s: %s: %s",
-                                acc_name, seq, type(_se).__name__, _se)
+                    log.warning("SCAN_INVOICES_RETRO[%s] seq=%s uid=%s: %s: %s",
+                                acc_name, seq, uid, type(_se).__name__, _se)
                     total_checked += 1
         except Exception as _ae:
             log.warning("SCAN_INVOICES_RETRO[%s]: %s: %s",
