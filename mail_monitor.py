@@ -1695,7 +1695,9 @@ async def _process_new_uids(account: dict, client, uids: list[int]) -> None:
                         )
                 # Triage handled it — increment daily stats counter and skip
                 # the normal forward/notify path (Issue #231).
-                if category in _daily_mail_stats:
+                if triage["action"] == "einkauf":
+                    _daily_mail_stats["einkauf"] += 1
+                elif category in _daily_mail_stats:
                     _daily_mail_stats[category] += 1
                 continue
 
