@@ -23,6 +23,8 @@ INVOICE_FORWARD_TO = (
 
 # Erkennungsmerkmale des Rechnungsempfaengers (autorisiert von Caterina)
 _RECIPIENT_NAME = "Caterina Essberger-Brenscheidt"
+# Kurzform: Nachname allein reicht als Vorfilter-Treffer (Issue #226)
+_RECIPIENT_NAME_SHORT = "essberger-brenscheidt"
 # Alle gaengigen Schreibweisen der Adressen (abgekuerzt, ausgeschrieben, mit/ohne ß)
 _RECIPIENT_ADDRESSES = (
     "cranachstr. 60",
@@ -141,7 +143,11 @@ async def detect_invoice_for_catrin(pdf_bytes: bytes) -> tuple[bool, str]:
     # LLM-Aufruf sparen. _RECIPIENT_ADDRESSES sind bereits lowercase.
     text_lower = text.lower()
     name_lower = _RECIPIENT_NAME.lower()
-    has_hint = name_lower in text_lower or any(a in text_lower for a in _RECIPIENT_ADDRESSES)
+    has_hint = (
+        name_lower in text_lower
+        or _RECIPIENT_NAME_SHORT in text_lower
+        or any(a in text_lower for a in _RECIPIENT_ADDRESSES)
+    )
     if not has_hint:
         return False, "Kein Empfaenger-Hinweis im PDF-Text gefunden"
 
@@ -150,7 +156,7 @@ async def detect_invoice_for_catrin(pdf_bytes: bytes) -> tuple[bool, str]:
     try:
         resp = await S.ai.messages.create(
             model=S.HAIKU_MODEL,
-            max_tokens=80,
+            max_tokens=150,
             system=_DETECTOR_SYSTEM,
             messages=[{"role": "user", "content": user_msg}],
         )
