@@ -586,7 +586,12 @@ def format_calendar_when(ics_dt: str) -> str:
 async def move_mail(account_name: str, uid: int, target_folder: str) -> bool:
     """Move a UID to a different folder via IMAP UID MOVE (RFC 6851).
     Falls back to UID COPY + UID STORE +FLAGS \\Deleted + EXPUNGE on
-    servers without MOVE. Returns True on success.
+    servers without MOVE. Returns True on success, False on any error.
+
+    NEVER raises — callers can rely on the bool return value.  A False
+    return (or a logged WARNING) usually means the target folder does not
+    exist on the server.  Check spam_folder / dhl_folder in config.json
+    and compare against the STARTUP folder-validation log (Issue #232).
 
     Apple iCloud supports UID MOVE so the fallback is rarely hit."""
     acc = _account_by_name(account_name)
@@ -601,15 +606,16 @@ async def move_mail(account_name: str, uid: int, target_folder: str) -> bool:
             if typ == "OK":
                 log.info(f"move_mail[{account_name}] uid={uid} -> {target_folder!r}")
                 return True
-            log.info(f"move_mail[{account_name}] uid={uid} MOVE returned {typ}, "
-                     f"trying COPY+DELETE fallback")
+            log.warning(f"move_mail[{account_name}] uid={uid} MOVE returned {typ} "
+                        f"fuer Ordner {target_folder!r} — versuche COPY+DELETE-Fallback")
         except Exception as e:
             log.info(f"move_mail[{account_name}] MOVE not supported ({e}), "
                      f"trying COPY+DELETE fallback")
         # Fallback: COPY + STORE \\Deleted + EXPUNGE
         typ, data = await client.uid("copy", str(uid), target_folder)
         if typ != "OK":
-            log.warning(f"move_mail[{account_name}] uid={uid} COPY failed: typ={typ}")
+            log.warning(f"move_mail[{account_name}] uid={uid} COPY nach {target_folder!r} "
+                        f"fehlgeschlagen: typ={typ} — Ordner existiert moeglicherweise nicht")
             return False
         await client.uid("store", str(uid), "+FLAGS", "(\\Deleted)")
         await client.expunge()

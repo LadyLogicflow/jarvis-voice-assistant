@@ -52,9 +52,11 @@ from scheduler import (
     calendar_alert_scheduler,
     evening_brief_scheduler,
     evening_summary_scheduler,
+    mail_evening_summary_scheduler,
     meal_plan_reminder_scheduler,
     meal_plan_scheduler,
     memory_reindex_scheduler,
+    midnight_reset_scheduler,
     morning_brief_scheduler,
     pause_reminder_scheduler,
     proactive_briefs_scheduler,
@@ -156,6 +158,63 @@ async def _extract_and_save_promises(user_text: str) -> None:
         log.warning(f"_extract_and_save_promises failed: {type(e).__name__}: {e}")
 
 
+async def _validate_imap_spam_folders() -> None:
+    """Startup check (Issue #232): verify that each account's spam_folder
+    actually exists on the IMAP server.  Runs 5 seconds after startup so
+    the mail-monitor has time to initialise first.  Non-blocking: a failed
+    connection only produces a WARNING, it never aborts startup."""
+    await asyncio.sleep(5)
+    import re as _re
+    import aioimaplib  # same lib used by mail_actions
+
+    for acc in S.MAIL_MONITOR_ACCOUNTS:
+        name = acc.get("name", "?")
+        spam_folder = acc.get("spam_folder", "")
+        if not spam_folder:
+            continue
+        host = acc.get("host", "")
+        port = int(acc.get("port", 993))
+        ssl = bool(acc.get("ssl", True))
+        user = acc.get("user", "")
+        password = acc.get("password", "")
+        if not (host and user and password):
+            log.debug("STARTUP[%s]: Zugangsdaten unvollstaendig — Ordner-Check uebersprungen", name)
+            continue
+        client = None
+        try:
+            if ssl:
+                client = aioimaplib.IMAP4_SSL(host=host, port=port)
+            else:
+                client = aioimaplib.IMAP4(host=host, port=port)
+            await client.wait_hello_from_server()
+            await client.login(user, password)
+            typ, lines = await client.list('""', '"*"')
+            available: list[str] = []
+            if typ == "OK":
+                for line in lines:
+                    raw = line.decode("utf-8", errors="replace") if isinstance(line, (bytes, bytearray)) else str(line)
+                    m = _re.search(r'(?:"[^"]*"|\S+)\s+(?:"[^"]*"|\S+)\s+"?([^"\r\n]+?)"?\s*$', raw)
+                    if m:
+                        available.append(m.group(1).strip())
+            if spam_folder in available:
+                log.info("STARTUP[%s]: spam_folder=%r gefunden — OK", name, spam_folder)
+            else:
+                log.warning(
+                    "STARTUP[%s]: spam_folder=%r nicht gefunden. "
+                    "Verfuegbare Ordner: %s",
+                    name, spam_folder, ", ".join(available) if available else "(keine)",
+                )
+        except Exception as _e:
+            log.warning("STARTUP[%s]: IMAP-Verbindung fuer Ordner-Check fehlgeschlagen: %s: %s",
+                        name, type(_e).__name__, _e)
+        finally:
+            if client is not None:
+                try:
+                    await client.logout()
+                except Exception:
+                    pass
+
+
 @asynccontextmanager
 async def _lifespan(_app):  # type: ignore[no-untyped-def]  # AsyncGenerator
     """Startup: prime weather/tasks + spawn the morning-brief task and
@@ -200,6 +259,9 @@ async def _lifespan(_app):  # type: ignore[no-untyped-def]  # AsyncGenerator
         except Exception as _e:
             log.warning("STARTUP: mail_triage_rules.json konnte nicht angelegt werden: %s", _e)
     log.info("STARTUP: Werbung-Auto-Move aktiv — IMAP-Ordner 'Werbung' muss auf allen Konten existieren.")
+    # Issue #232: Spam-Ordner-Validierung 5s nach Startup (non-blocking)
+    if S.MAIL_MONITOR_ACCOUNTS:
+        asyncio.create_task(_validate_imap_spam_folders())
     import meal_plan as _mp
     _mp.load_meal_plan()
     scheduler.register_proactive_handler(_broadcast_proactive)
@@ -222,6 +284,8 @@ async def _lifespan(_app):  # type: ignore[no-untyped-def]  # AsyncGenerator
     task_calendar_alert = asyncio.create_task(calendar_alert_scheduler())
     task_pause_reminder = asyncio.create_task(pause_reminder_scheduler())
     task_appointment_briefing = asyncio.create_task(appointment_briefing_scheduler())
+    task_mail_evening_summary = asyncio.create_task(mail_evening_summary_scheduler())
+    task_midnight_reset = asyncio.create_task(midnight_reset_scheduler())
     log.info(f"Steuerrecht-Scheduler gestartet (taeglich um {S.MORNING_HOUR}:00 Uhr)")
     log.info(f"Abschluss-Ritual aktiv (taeglich um {S.EVENING_HOUR}:00 Uhr)")
     log.info(f"Proaktive Briefs aktiv: {S.PROACTIVE_BRIEFS_TIMES}")
@@ -234,6 +298,11 @@ async def _lifespan(_app):  # type: ignore[no-untyped-def]  # AsyncGenerator
     log.info("Kalender-Vorab-Alert aktiv (alle 5 Minuten, ~30 min vor Termin)")
     log.info("Pause-Erinnerung aktiv (stündlich Mo-Fr 09-18 Uhr)")
     log.info("Termin-Briefing aktiv (alle 5 Minuten, 13-17 min vor Termin)")
+    log.info(
+        "Mail-Abend-Zusammenfassung aktiv (täglich %02d:00 Uhr, Telegram, Issue #231)",
+        S.MAIL_SUMMARY_HOUR,
+    )
+    log.info("Mitternachts-Reset aktiv (täglich 00:00 Uhr)")
     # Bring!-Monitor (Issue #123): nur starten wenn Zugangsdaten konfiguriert
     task_bring: asyncio.Task | None = None
     if S.BRING_EMAIL and S.BRING_PASSWORD:

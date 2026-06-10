@@ -91,6 +91,8 @@ CITY = config.get("city", "Neuss")
 TASKS_FILE = config.get("obsidian_inbox_path", "")
 MORNING_HOUR = config.get("morning_hour", 7)
 EVENING_HOUR = config.get("evening_hour", 18)
+# Stunde für die tägliche Mail-Zusammenfassung per Telegram (Issue #231).
+MAIL_SUMMARY_HOUR: int = int(config.get("mail_summary_hour", 20))
 
 SERVER_PORT = int(config.get("server_port", 8340))
 SERVER_HOST = config.get("server_host", "0.0.0.0")
@@ -172,6 +174,15 @@ MAIL_INTELLIGENCE_INTERVAL: int = int(config.get("mail_intelligence_interval", 1
 # port/ssl/folder. The password for account "FOO" is read from the env
 # var IMAP_PASSWORD_FOO (uppercased name with non-alnum -> underscore).
 def _normalize_account(raw: dict) -> dict:
+    """Normalize a single mail_monitor_accounts entry from config.json.
+
+    spam_folder default is intentionally "Werbung" (top-level).  Servers
+    that use INBOX-prefixed folders (e.g. HILO: "INBOX.Werbung") MUST set
+    the per-account spam_folder in config.json explicitly.  If the folder
+    is wrong the move will fail silently; the startup IMAP folder validation
+    (Issue #232) will log a WARNING with the available folders so operators
+    can fix the config without guessing.
+    """
     name = raw.get("name", "default")
     env_key = "IMAP_PASSWORD_" + "".join(
         c.upper() if c.isalnum() else "_" for c in name
@@ -201,6 +212,7 @@ def _normalize_account(raw: dict) -> dict:
         "smtp_host": raw.get("smtp_host", _default_smtp),
         "smtp_port": int(raw.get("smtp_port", 587)),
         "dhl_folder": raw.get("dhl_folder", ""),   # Zielordner fuer Paket-Mails (leer = global fallback)
+        "einkauf_folder": raw.get("einkauf_folder", "INBOX.Einkauf"),  # Zielordner fuer Bestellbestaetigungen (Issue #230)
     }
 
 
