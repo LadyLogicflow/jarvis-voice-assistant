@@ -2172,7 +2172,12 @@ async def mail_evening_summary_scheduler() -> None:
 
                     try:
                         import telegram_bot as _tgb
-                        await _tgb.send_user_text(message)
+                        _sent = await _tgb.send_user_text(message)
+                        if not _sent:
+                            log.warning(
+                                "mail_evening_summary_scheduler: send_user_text"
+                                " returned False (quiet hours oder Bot nicht bereit)"
+                            )
                     except Exception as _tge:
                         log.warning(
                             "mail_evening_summary_scheduler: Telegram failed: "
