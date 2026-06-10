@@ -186,9 +186,9 @@ async def _validate_imap_spam_folders() -> None:
                 client = aioimaplib.IMAP4_SSL(host=host, port=port)
             else:
                 client = aioimaplib.IMAP4(host=host, port=port)
-            await client.wait_hello_from_server()
-            await client.login(user, password)
-            typ, lines = await client.list('""', '"*"')
+            await asyncio.wait_for(client.wait_hello_from_server(), timeout=15)
+            await asyncio.wait_for(client.login(user, password), timeout=15)
+            typ, lines = await asyncio.wait_for(client.list('""', '"*"'), timeout=15)
             available: list[str] = []
             if typ == "OK":
                 for line in lines:
