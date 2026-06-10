@@ -15,6 +15,7 @@ Heuristiken:
 - Paket-Mails (DHL/Hermes/DPD/UPS/Amazon-Logistics) -> DHL-Folder
 - Reise-Bestaetigungen (Bahn/Lufthansa/Booking/Airbnb/Flixbus) -> Reise-Folder
 - Newsletter (List-Unsubscribe-Header + werbung) -> Werbung-Folder
+- Einkauf-Mails (Bestellbestaetigungen, Versand, PayPal) -> INBOX.Einkauf (Issue #230)
 """
 
 from __future__ import annotations
@@ -71,6 +72,72 @@ _AMAZON_FROM_DOMAINS = (
     "@amazon.de", "@amazon.com", "@marketplace.amazon.de",
     "@email.amazon.de", "@gc.email.amazon.de", "@review.amazon.de",
 )
+
+# ---------------------------------------------------------------------------
+# Einkauf heuristics (Issue #230)
+# ---------------------------------------------------------------------------
+# Known online shops and shipping/payment providers.  Only order-related
+# mails from these domains should land in INBOX.Einkauf -- marketing mails
+# from the same domain are filtered by the subject-keyword check below.
+# Exception: PayPal always routes to Einkauf regardless of subject.
+_EINKAUF_DOMAINS = (
+    "paypal.de", "paypal.com",
+    "amazon.de", "amazon.com", "amazon.co.uk",
+    "zalando.de", "otto.de", "aboutyou.de", "ebay.de", "ebay.com",
+    "myhermes.de", "dpd.de", "gls-pakete.de",
+)
+
+# German + English keywords that indicate a transactional order/shipping/
+# payment mail (not marketing).
+_EINKAUF_SUBJECT_KEYWORDS = (
+    "bestellbest\u00e4tigung", "bestellbestaetigung",
+    "versandbest\u00e4tigung", "versandbestaetigung",
+    "deine bestellung", "ihre bestellung",
+    "wurde versandt", "ist unterwegs",
+    "zahlungsbest\u00e4tigung", "zahlungsbestaetigung",
+    "zahlung erhalten", "zahlungseingang",
+    "payment confirmed", "order confirmation",
+    "has been shipped", "your order",
+)
+
+# PayPal sender domains -- all mails from these senders are einkauf.
+_PAYPAL_DOMAINS = ("paypal.de", "paypal.com")
+
+
+def _is_einkauf_mail(sender_email: str, subject: str) -> bool:
+    """Return True when the mail is a transactional order/shipping/payment mail.
+
+    Fast path -- no LLM needed.  Checks sender domain against known online
+    shops and payment providers, then verifies that the subject contains an
+    order/shipping keyword.  Exception: PayPal mails always return True
+    regardless of subject, because every PayPal mail to Catrin is a
+    payment confirmation.
+
+    Amazon marketing mails (e.g. "Angebot", "Deal", "Sale") are NOT matched
+    here because their subjects will not contain the order keywords -- they
+    will fall through to the normal Werbung/Amazon path.
+
+    Args:
+        sender_email: Normalised sender address (lower-case, e.g.
+                      "auto-confirm@amazon.de").
+        subject:      Decoded mail subject string.
+
+    Returns:
+        True if the mail should be silently moved to the Einkauf folder.
+    """
+    s_lower = (sender_email or "").lower()
+    subj_lower = (subject or "").lower()
+
+    # PayPal: always einkauf, no subject check needed.
+    if any(domain in s_lower for domain in _PAYPAL_DOMAINS):
+        return True
+
+    # Other einkauf domains: require an order/shipping keyword in the subject.
+    if any(domain in s_lower for domain in _EINKAUF_DOMAINS):
+        return any(kw in subj_lower for kw in _EINKAUF_SUBJECT_KEYWORDS)
+
+    return False
+
 
 TRIAGE_RULES = [
     {
@@ -140,6 +207,7 @@ def route(
       {"action": "forward", "to": "...",
        "and_then": "move"|"mark_read",
        "folder": "..."}                        -> after forwarding, also do this
+      {"action": "einkauf", "folder": "..."}   -> silently archive to Einkauf (Issue #230)
     """
     rules = _load_rules()
 
@@ -173,7 +241,20 @@ def route(
         if action == "mark_read":
             return {"action": "mark_read"}
 
-    # 2) Heuristics (vor dem Werbung-Klassifikator damit Bounce/Paket nicht
+    # 2) Einkauf check (Issue #230) -- BEFORE LLM and BEFORE Amazon heuristic.
+    #    Bestellbestaetigungen, Versandmeldungen und PayPal-Zahlungen werden
+    #    still nach INBOX.Einkauf verschoben, ohne Telegram/WebUI-Push.
+    #    Note: invoice detection in mail_monitor runs before triage is called,
+    #    so PDFs are already forwarded to getmyinvoices at this point.
+    _sender_email_raw = parseaddr(sender or "")[1].lower()
+    if _is_einkauf_mail(_sender_email_raw, subject):
+        _einkauf_folder = rules.get("einkauf_folder", "INBOX.Einkauf")
+        return _apply_folder_override(
+            {"action": "einkauf", "folder": _einkauf_folder},
+            account, rules,
+        )
+
+    # 3) Heuristics (vor dem Werbung-Klassifikator damit Bounce/Paket nicht
     #    in den Werbung-Folder wandern)
     heur = rules.get("heuristics", {})
     sender_l = (sender or "").lower()
@@ -205,7 +286,7 @@ def route(
             {"action": "move_with_summary", "folder": amazon_folder}, account, rules
         )
 
-    # 3) Newsletter heuristic — List-Unsubscribe header alone is definitive;
+    # 4) Newsletter heuristic -- List-Unsubscribe header alone is definitive;
     #    LLM category is not required (newsletters often misclassified as "info")
     if msg is not None:
         newsletter_folder = heur.get("newsletter_to_werbung_folder", "Werbung")
@@ -214,7 +295,7 @@ def route(
                 {"action": "move", "folder": newsletter_folder}, account, rules
             )
 
-    # 4) Generic werbung action from the rules file
+    # 5) Generic werbung action from the rules file
     if category == "werbung":
         action = rules.get("werbung_action", "move")  # default: move (Issue #224)
         if action == "move":
@@ -225,5 +306,5 @@ def route(
         if action == "mark_read":
             return {"action": "mark_read"}
 
-    # 5) Nothing matched — normal flow
+    # 6) Nothing matched -- normal flow
     return {"action": "none"}
