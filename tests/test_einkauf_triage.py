@@ -131,15 +131,20 @@ class TestIsEinkaufMail:
             "Service@PayPal.DE", "Zahlungsbestätigung erhalten"
         ) is True
 
-    # English keywords
-    def test_has_been_shipped(self):
+    # English keywords (tightened in #233 to reduce false positives)
+    def test_has_been_shipped_to(self):
         assert mail_triage._is_einkauf_mail(
-            "tracking@ebay.com", "Your item has been shipped"
+            "tracking@ebay.com", "Your item has been shipped to you"
         ) is True
 
-    def test_your_order(self):
+    def test_your_order_hash(self):
         assert mail_triage._is_einkauf_mail(
             "noreply@otto.de", "Your order #ABC has been received"
+        ) is True
+
+    def test_your_order_has(self):
+        assert mail_triage._is_einkauf_mail(
+            "noreply@otto.de", "Your order has been dispatched"
         ) is True
 
     # Zahlungsbestätigung

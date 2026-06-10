@@ -80,6 +80,8 @@ _AMAZON_FROM_DOMAINS = (
 # mails from these domains should land in INBOX.Einkauf -- marketing mails
 # from the same domain are filtered by the subject-keyword check below.
 # Exception: PayPal always routes to Einkauf regardless of subject.
+# UNUSED since #233 — keyword matching now fires regardless of sender domain.
+# Kept as reference; remove if it causes confusion.
 _EINKAUF_DOMAINS = (
     "paypal.de", "paypal.com",
     "amazon.de", "amazon.com", "amazon.co.uk",
@@ -95,11 +97,13 @@ _EINKAUF_SUBJECT_KEYWORDS = (
     "versandbest\u00e4tigung", "versandbestaetigung",
     "deine bestellung", "ihre bestellung",
     "wurde versandt", "ist unterwegs",
-    "abholbereit",
+    "abholbereit",          # Pickup notifications (dm, DHL Packstation…).
+                            # Trade-off: "Rezept abholbereit" also matches →
+                            # lands in Einkauf, no Telegram push. Acceptable.
     "zahlungsbest\u00e4tigung", "zahlungsbestaetigung",
     "zahlung erhalten", "zahlungseingang",
     "payment confirmed", "order confirmation",
-    "has been shipped", "your order",
+    "has been shipped to", "your order #", "your order has",
 )
 
 # PayPal sender domains -- all mails from these senders are einkauf.
@@ -117,7 +121,7 @@ def _is_einkauf_mail(sender_email: str, subject: str) -> bool:
        sender domain.  This avoids maintaining an exhaustive shop-domain list:
        "Bestellbestätigung", "abholbereit", "wurde versandt" etc. never appear
        in marketing subjects, only in real order/shipping/pickup mails.
-    3. Known shop domain but no keyword → False (Amazon/Zalando marketing).
+    3. Anything else → False.
 
     Amazon marketing mails (e.g. "Angebot", "Deal", "Sale") are NOT matched
     because their subjects contain none of the order keywords -- they fall
