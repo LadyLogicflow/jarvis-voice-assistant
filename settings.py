@@ -92,7 +92,7 @@ TASKS_FILE = config.get("obsidian_inbox_path", "")
 MORNING_HOUR = config.get("morning_hour", 7)
 EVENING_HOUR = config.get("evening_hour", 18)
 # Stunde für die tägliche Mail-Zusammenfassung per Telegram (Issue #231).
-MAIL_SUMMARY_HOUR: int = int(config.get("mail_summary_hour", 20))
+MAIL_SUMMARY_HOUR: int = max(0, min(23, int(config.get("mail_summary_hour", 20))))
 
 SERVER_PORT = int(config.get("server_port", 8340))
 SERVER_HOST = config.get("server_host", "0.0.0.0")

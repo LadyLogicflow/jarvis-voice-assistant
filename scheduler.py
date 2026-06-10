@@ -2101,3 +2101,137 @@ async def _append_birthday_draft(
             f"_append_birthday_draft[{account_name}]: {type(e).__name__}: {e}"
         )
         return False, f"{type(e).__name__}: {e}"
+
+
+# ---------------------------------------------------------------------------
+# Mail-Abend-Zusammenfassung (Issue #231)
+# Sendet taeglich um S.MAIL_SUMMARY_HOUR Uhr eine Telegram-Zusammenfassung
+# aller verarbeiteten Mails des Tages. Nur Kategorien mit Zaehler > 0.
+# Zuruecksetzen der Zaehler um Mitternacht via midnight_reset_scheduler().
+# ---------------------------------------------------------------------------
+
+# Startup pre-fill: verhindert Doppel-Senden bei Neustart innerhalb des Trigger-Fensters.
+_last_summary_date: str = (
+    datetime.date.today().isoformat()
+    if datetime.datetime.now().hour >= S.MAIL_SUMMARY_HOUR
+    else ""
+)
+
+
+async def mail_evening_summary_scheduler() -> None:
+    """Long-running task: taeglich um S.MAIL_SUMMARY_HOUR:00 Uhr eine
+    Telegram-Zusammenfassung der verarbeiteten Tages-Mails senden.
+
+    Nur aktiv wenn mindestens ein Zaehler > 0 ist.
+    Guard gegen Doppel-Senden: _last_summary_date merkt sich das Datum
+    der zuletzt gesendeten Zusammenfassung.
+    Kanal: ausschliesslich Telegram (kein Voice, kein WebUI).
+    """
+    import mail_monitor as _mm
+
+    global _last_summary_date
+    _TRIGGER_HOUR = S.MAIL_SUMMARY_HOUR
+
+    log.info(
+        "mail_evening_summary_scheduler: gestartet (taeglich %02d:00 Uhr via Telegram)",
+        _TRIGGER_HOUR,
+    )
+
+    while True:
+        try:
+            now = datetime.datetime.now()
+            today = datetime.date.today().isoformat()
+
+            # Feuert in Minute 0-2 der konfigurierten Stunde, einmal pro Tag.
+            if (
+                now.hour == _TRIGGER_HOUR
+                and 0 <= now.minute <= 2
+                and _last_summary_date != today
+            ):
+                stats = _mm._daily_mail_stats
+
+                # Nur senden wenn mindestens ein Zaehler > 0
+                if any(v > 0 for v in stats.values()):
+                    _last_summary_date = today
+
+                    _LABELS: dict[str, str] = {
+                        "werbung": "Werbung",
+                        "einkauf": "Einkauf",
+                        "info": "Info",
+                        "handlungsbedarf": "Handlungsbedarf",
+                        "invoices_forwarded": "Rechnungen weitergeleitet",
+                    }
+                    parts: list[str] = []
+                    for key, label in _LABELS.items():
+                        count = stats.get(key, 0)
+                        if count > 0:
+                            parts.append(f"{count} {label}")
+
+                    message = "\U0001f4ec Mail-Zusammenfassung heute: " + ", ".join(parts)
+                    log.info("mail_evening_summary_scheduler: sende: %s", message)
+
+                    try:
+                        import telegram_bot as _tgb
+                        _sent = await _tgb.send_user_text(message)
+                        if not _sent:
+                            log.warning(
+                                "mail_evening_summary_scheduler: send_user_text"
+                                " returned False (quiet hours oder Bot nicht bereit)"
+                            )
+                    except Exception as _tge:
+                        log.warning(
+                            "mail_evening_summary_scheduler: Telegram failed: "
+                            "%s: %s", type(_tge).__name__, _tge,
+                        )
+                else:
+                    # Auch ohne Inhalt Guard setzen damit kein Retry in Minute 1/2
+                    _last_summary_date = today
+                    log.info(
+                        "mail_evening_summary_scheduler: alle Zaehler 0, kein Push"
+                    )
+
+        except Exception as e:
+            log.warning(
+                "mail_evening_summary_scheduler loop error: %s: %s",
+                type(e).__name__, e,
+            )
+        await asyncio.sleep(60)
+
+
+async def midnight_reset_scheduler() -> None:
+    """Long-running task: setzt _daily_mail_stats in mail_monitor taeglich
+    um Mitternacht (00:00 - 00:02 Uhr) zurueck auf 0.
+
+    Verhindert, dass Tages-Zaehler ueber den Tageswechsel hinaus akkumulieren.
+    """
+    import mail_monitor as _mm
+
+    # Startup pre-fill: kein Doppel-Reset bei Neustart kurz nach Mitternacht.
+    _reset_date: str = (
+        datetime.date.today().isoformat()
+        if datetime.datetime.now().hour == 0
+        else ""
+    )
+
+    log.info("midnight_reset_scheduler: gestartet (taeglich 00:00 Uhr)")
+
+    while True:
+        try:
+            now = datetime.datetime.now()
+            today = datetime.date.today().isoformat()
+
+            if now.hour == 0 and 0 <= now.minute <= 2 and _reset_date != today:
+                _reset_date = today
+                for key in _mm._daily_mail_stats:
+                    _mm._daily_mail_stats[key] = 0
+                log.info(
+                    "midnight_reset_scheduler: _daily_mail_stats zurueckgesetzt fuer %s",
+                    today,
+                )
+
+        except Exception as e:
+            log.warning(
+                "midnight_reset_scheduler loop error: %s: %s",
+                type(e).__name__, e,
+            )
+        await asyncio.sleep(60)
