@@ -95,11 +95,30 @@ class TestIsEinkaufMail:
             "noreply@dpd.de", "Versandbestätigung Ihre Sendung"
         ) is True
 
-    # Unknown domain: must NOT be matched
-    def test_unknown_domain_not_einkauf(self):
+    # Unknown domain + keyword: NOW matched (Issue #233)
+    def test_unknown_domain_with_keyword_is_einkauf(self):
+        """Since #233 keywords match regardless of sender domain."""
         assert mail_triage._is_einkauf_mail(
             "info@meinshop.de", "Ihre Bestellung wurde versandt"
+        ) is True
+
+    # Unknown domain + no keyword: must NOT be matched
+    def test_unknown_domain_no_keyword_not_einkauf(self):
+        assert mail_triage._is_einkauf_mail(
+            "info@meinshop.de", "Neuheiten im Shop — jetzt entdecken"
         ) is False
+
+    # dm-drogerie markt (Issue #233 real-world case)
+    def test_dm_abholbereit_is_einkauf(self):
+        assert mail_triage._is_einkauf_mail(
+            "no-reply@dm.de", "Deine Bestellung ist abholbereit"
+        ) is True
+
+    def test_abholbereit_keyword_any_sender(self):
+        """'abholbereit' alone triggers einkauf from any sender."""
+        assert mail_triage._is_einkauf_mail(
+            "service@rewe.de", "Dein Paket ist abholbereit"
+        ) is True
 
     # Case-insensitivity
     def test_subject_keyword_case_insensitive(self):
@@ -169,12 +188,29 @@ class TestRouteEinkauf:
         )
         assert result["action"] != "einkauf"
 
-    def test_route_unknown_sender_order_subject_not_einkauf(self):
-        """Order-like subject from an unknown domain must NOT match."""
+    def test_route_unknown_sender_order_subject_is_einkauf(self):
+        """Since #233: order keyword from unknown domain → einkauf."""
         result = mail_triage.route(
             sender="Shop <info@unknownshop.de>",
             subject="Ihre Bestellbestätigung",
             category="info",
+        )
+        assert result["action"] == "einkauf"
+
+    def test_route_dm_abholbereit_is_einkauf(self):
+        result = mail_triage.route(
+            sender="dm-drogerie markt <no-reply@dm.de>",
+            subject="Deine Bestellung ist abholbereit",
+            category="info",
+        )
+        assert result["action"] == "einkauf"
+
+    def test_route_unknown_sender_no_keyword_not_einkauf(self):
+        """Marketing mail from unknown domain → not einkauf."""
+        result = mail_triage.route(
+            sender="Shop <info@unknownshop.de>",
+            subject="Unsere aktuellen Angebote — jetzt entdecken!",
+            category="werbung",
         )
         assert result["action"] != "einkauf"
 
