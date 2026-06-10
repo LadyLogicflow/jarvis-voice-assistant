@@ -2110,7 +2110,12 @@ async def _append_birthday_draft(
 # Zuruecksetzen der Zaehler um Mitternacht via midnight_reset_scheduler().
 # ---------------------------------------------------------------------------
 
-_last_summary_date: str = ""
+# Startup pre-fill: verhindert Doppel-Senden bei Neustart innerhalb des Trigger-Fensters.
+_last_summary_date: str = (
+    datetime.date.today().isoformat()
+    if datetime.datetime.now().hour >= S.MAIL_SUMMARY_HOUR
+    else ""
+)
 
 
 async def mail_evening_summary_scheduler() -> None:
@@ -2196,7 +2201,12 @@ async def midnight_reset_scheduler() -> None:
     """
     import mail_monitor as _mm
 
-    _reset_date: str = ""
+    # Startup pre-fill: kein Doppel-Reset bei Neustart kurz nach Mitternacht.
+    _reset_date: str = (
+        datetime.date.today().isoformat()
+        if datetime.datetime.now().hour == 0
+        else ""
+    )
 
     log.info("midnight_reset_scheduler: gestartet (taeglich 00:00 Uhr)")
 
