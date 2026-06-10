@@ -4367,52 +4367,56 @@ async def _run_scan_invoices_retro(since_str: str = "") -> None:
         client = None
         try:
             client = await mail_actions._connect(acc_cfg)
-            typ, data = await client.search(
-                "SINCE", since_imap, charset=None
+            # UID SEARCH statt SEARCH: UIDs sind stabil, Sequenznummern nicht.
+            # Concurrent Werbung-Moves verschieben Sequenznummern und führen
+            # dazu dass Mails übersprungen oder falsch zugeordnet werden.
+            typ, data = await client.uid(
+                "search", "SINCE", since_imap, charset=None
             )
             if typ != "OK" or not data or not data[0]:
                 log.info("SCAN_INVOICES_RETRO[%s]: keine Mails gefunden", acc_name)
                 continue
             raw_val = (data[0].decode() if isinstance(data[0], (bytes, bytearray))
                        else str(data[0]))
-            seq_nums = [s for s in raw_val.split() if s.isdigit()]
-            if not seq_nums:
+            uid_list = [int(s) for s in raw_val.split() if s.isdigit()]
+            if not uid_list:
                 continue
 
             log.info("SCAN_INVOICES_RETRO[%s]: %d Mails seit %s",
-                     acc_name, len(seq_nums), since_imap)
+                     acc_name, len(uid_list), since_imap)
 
             # Max 500 Mails pro Account
-            for i, seq in enumerate(seq_nums[-500:]):
+            for i, uid in enumerate(uid_list[-500:]):
                 # Fortschrittsmeldung alle 25 Mails
                 if i > 0 and i % 25 == 0:
                     try:
                         await _tgb.send_user_text(
-                            f"Scan {acc_name}: {i}/{min(len(seq_nums), 500)} geprüft, "
+                            f"Scan {acc_name}: {i}/{min(len(uid_list), 500)} geprüft, "
                             f"{total_forwarded} Rechnungen weitergeleitet..."
                         )
                     except Exception:
                         pass
 
                 try:
-                    # Header-Only-Check: multipart-Mails könnten PDFs haben
-                    htyp, hdata = await client.fetch(seq, "(UID BODY.PEEK[HEADER])")
+                    # Header-Only-Check: multipart-Mails könnten PDFs haben.
+                    # Verwende UID FETCH — stabil gegenüber concurrent Moves.
+                    htyp, hdata = await client.uid("fetch", str(uid), "BODY.PEEK[HEADER]")
                     if htyp != "OK" or not hdata:
                         continue
-                    uid = None
                     has_pdf_hint = False
                     for item in hdata:
+                        txt = None
                         if isinstance(item, (bytes, bytearray)):
                             txt = item.decode("utf-8", errors="replace")
-                            import re as _re2
-                            m_uid = _re2.search(r'\bUID\s+(\d+)', txt)
-                            if m_uid:
-                                uid = int(m_uid.group(1))
+                        elif (isinstance(item, (list, tuple)) and len(item) >= 2
+                              and isinstance(item[1], (bytes, bytearray))):
+                            txt = item[1].decode("utf-8", errors="replace")
+                        if txt:
                             ct = txt.lower()
                             if "multipart" in ct or "application/pdf" in ct:
                                 has_pdf_hint = True
 
-                    if uid is None or not has_pdf_hint:
+                    if not has_pdf_hint:
                         total_checked += 1
                         continue
                     if uid in already_fwd:
