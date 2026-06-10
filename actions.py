@@ -4371,7 +4371,7 @@ async def _run_scan_invoices_retro(since_str: str = "") -> None:
             # Concurrent Werbung-Moves verschieben Sequenznummern und führen
             # dazu dass Mails übersprungen oder falsch zugeordnet werden.
             typ, data = await client.uid(
-                "search", "SINCE", since_imap, charset=None
+                "search", "SINCE", since_imap
             )
             if typ != "OK" or not data or not data[0]:
                 log.info("SCAN_INVOICES_RETRO[%s]: keine Mails gefunden", acc_name)
