@@ -1612,8 +1612,48 @@ async def _process_new_uids(account: dict, client, uids: list[int]) -> None:
                         except Exception as e:
                             log.warning(f"mail_monitor[{name}] amazon summary alert failed: {e}")
                     await mail_actions.mark_mail_read(name, uid)
-                    await mail_actions.move_mail(name, uid, folder)
-                # Triage handled it — skip the normal forward/notify path
+                    try:
+                        _amz_ok = await mail_actions.move_mail(name, uid, folder)
+                        if not _amz_ok:
+                            log.warning(
+                                "mail_monitor[%s] uid=%s: amazon move zu %r fehlgeschlagen",
+                                name, uid, folder,
+                            )
+                    except Exception as _amz_exc:
+                        log.warning(
+                            "mail_monitor[%s] uid=%s: amazon move zu %r Exception: %s: %s",
+                            name, uid, folder, type(_amz_exc).__name__, _amz_exc,
+                        )
+                elif triage["action"] == "einkauf":
+                    # Bestellbestaetigungen, Versandmeldungen, PayPal (Issue #230):
+                    # still nach INBOX.Einkauf verschieben + als gelesen markieren.
+                    # Kein Telegram-Push, kein WebUI-Alert.
+                    _einkauf_folder = triage.get("folder", "INBOX.Einkauf")
+                    await mail_actions.mark_mail_read(name, uid)
+                    try:
+                        _ekf_ok = await mail_actions.move_mail(name, uid, _einkauf_folder)
+                        if _ekf_ok:
+                            log.info(
+                                "mail_monitor[%s] uid=%s: einkauf -> verschoben nach %r",
+                                name, uid, _einkauf_folder,
+                            )
+                        else:
+                            log.warning(
+                                "mail_monitor[%s] uid=%s: einkauf move zu %r fehlgeschlagen"
+                                " — Ordner existiert moeglicherweise nicht",
+                                name, uid, _einkauf_folder,
+                            )
+                    except Exception as _ekf_exc:
+                        log.warning(
+                            "mail_monitor[%s] uid=%s: einkauf move zu %r Exception: %s: %s",
+                            name, uid, _einkauf_folder, type(_ekf_exc).__name__, _ekf_exc,
+                        )
+                # Triage handled it — increment daily stats counter and skip
+                # the normal forward/notify path (Issue #231).
+                if triage["action"] == "einkauf":
+                    _daily_mail_stats["einkauf"] += 1
+                elif category in _daily_mail_stats:
+                    _daily_mail_stats[category] += 1
                 continue
 
             if category in S.MAIL_MONITOR_FORWARD:

@@ -10,20 +10,23 @@
   ],
   "werbung_action": "move",
   "werbung_folder": "INBOX.Gelesen_automatisch",
+  "einkauf_folder": "INBOX.Einkauf",
   "account_folder_map": {
     "Apple": {
       "INBOX.Spam": "Junk",
       "INBOX.Elster": "INBOX.Elster",
       "INBOX.Gelesen_automatisch": "Gelesen_automatisch",
       "DHL": "DHL",
-      "Amazon": "Amazon"
+      "Amazon": "Amazon",
+      "INBOX.Einkauf": "INBOX.Einkauf"
     },
     "HILO": {
       "INBOX.Spam": "Spam",
       "INBOX.Elster": "INBOX.Elster",
       "INBOX.Gelesen_automatisch": "INBOX.Werbung",
       "DHL": "INBOX.Erledigt",
-      "Amazon": "INBOX.Erledigt"
+      "Amazon": "INBOX.Erledigt",
+      "INBOX.Einkauf": "INBOX.Einkauf"
     }
   },
   "heuristics": {
