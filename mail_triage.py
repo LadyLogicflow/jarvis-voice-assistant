@@ -80,6 +80,8 @@ _AMAZON_FROM_DOMAINS = (
 # mails from these domains should land in INBOX.Einkauf -- marketing mails
 # from the same domain are filtered by the subject-keyword check below.
 # Exception: PayPal always routes to Einkauf regardless of subject.
+# UNUSED since #233 — keyword matching now fires regardless of sender domain.
+# Kept as reference; remove if it causes confusion.
 _EINKAUF_DOMAINS = (
     "paypal.de", "paypal.com",
     "amazon.de", "amazon.com", "amazon.co.uk",
@@ -88,16 +90,20 @@ _EINKAUF_DOMAINS = (
 )
 
 # German + English keywords that indicate a transactional order/shipping/
-# payment mail (not marketing).
+# payment mail (not marketing).  Strong enough to match regardless of sender
+# domain -- marketing newsletters never say "Bestellbest\u00e4tigung" in the subject.
 _EINKAUF_SUBJECT_KEYWORDS = (
     "bestellbest\u00e4tigung", "bestellbestaetigung",
     "versandbest\u00e4tigung", "versandbestaetigung",
     "deine bestellung", "ihre bestellung",
     "wurde versandt", "ist unterwegs",
+    "abholbereit",          # Pickup notifications (dm, DHL Packstation…).
+                            # Trade-off: "Rezept abholbereit" also matches →
+                            # lands in Einkauf, no Telegram push. Acceptable.
     "zahlungsbest\u00e4tigung", "zahlungsbestaetigung",
     "zahlung erhalten", "zahlungseingang",
     "payment confirmed", "order confirmation",
-    "has been shipped", "your order",
+    "has been shipped to", "your order #", "your order has",
 )
 
 # PayPal sender domains -- all mails from these senders are einkauf.
@@ -107,34 +113,30 @@ _PAYPAL_DOMAINS = ("paypal.de", "paypal.com")
 def _is_einkauf_mail(sender_email: str, subject: str) -> bool:
     """Return True when the mail is a transactional order/shipping/payment mail.
 
-    Fast path -- no LLM needed.  Checks sender domain against known online
-    shops and payment providers, then verifies that the subject contains an
-    order/shipping keyword.  Exception: PayPal mails always return True
-    regardless of subject, because every PayPal mail to Catrin is a
-    payment confirmation.
+    Fast path -- no LLM needed.
+
+    Match order (first match wins):
+    1. PayPal sender domain → always True (every PayPal mail is a payment).
+    2. Subject contains a strong transactional keyword → True, regardless of
+       sender domain.  This avoids maintaining an exhaustive shop-domain list:
+       "Bestellbestätigung", "abholbereit", "wurde versandt" etc. never appear
+       in marketing subjects, only in real order/shipping/pickup mails.
+    3. Anything else → False.
 
     Amazon marketing mails (e.g. "Angebot", "Deal", "Sale") are NOT matched
-    here because their subjects will not contain the order keywords -- they
-    will fall through to the normal Werbung/Amazon path.
-
-    Args:
-        sender_email: Normalised sender address (lower-case, e.g.
-                      "auto-confirm@amazon.de").
-        subject:      Decoded mail subject string.
-
-    Returns:
-        True if the mail should be silently moved to the Einkauf folder.
+    because their subjects contain none of the order keywords -- they fall
+    through to the normal Werbung/Amazon path.
     """
     s_lower = (sender_email or "").lower()
     subj_lower = (subject or "").lower()
 
-    # PayPal: always einkauf, no subject check needed.
+    # PayPal: always einkauf.
     if any(domain in s_lower for domain in _PAYPAL_DOMAINS):
         return True
 
-    # Other einkauf domains: require an order/shipping keyword in the subject.
-    if any(domain in s_lower for domain in _EINKAUF_DOMAINS):
-        return any(kw in subj_lower for kw in _EINKAUF_SUBJECT_KEYWORDS)
+    # Strong transactional keyword in subject → einkauf from any sender.
+    if any(kw in subj_lower for kw in _EINKAUF_SUBJECT_KEYWORDS):
+        return True
 
     return False
 
