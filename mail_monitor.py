@@ -52,6 +52,18 @@ _SENT_POLL_INTERVAL = 15 * 60
 _invoice_forwarded: dict[str, set[int]] = {}
 
 # ---------------------------------------------------------------------------
+# Tages-Zähler für die Abend-Zusammenfassung (Issue #231)
+# Werden über alle Konten summiert und um Mitternacht zurückgesetzt.
+# ---------------------------------------------------------------------------
+_daily_mail_stats: dict[str, int] = {
+    "werbung": 0,
+    "einkauf": 0,
+    "info": 0,
+    "handlungsbedarf": 0,
+    "invoices_forwarded": 0,
+}
+
+# ---------------------------------------------------------------------------
 # Jarvis-Trigger (Issue #159)
 # Mails with 'jarvis' in subject are processed immediately and moved to trash.
 # ---------------------------------------------------------------------------
@@ -1226,6 +1238,8 @@ async def _process_new_uids(account: dict, client, uids: list[int]) -> None:
                                         )
                                         if _fwd_ok:
                                             _invoice_forwarded[_fwd_key].add(uid)
+                                            # Tages-Zähler für Abend-Zusammenfassung (Issue #231)
+                                            _daily_mail_stats["invoices_forwarded"] += 1
                                             log.info(
                                                 "mail_monitor[%s] uid=%s: Rechnung "
                                                 "von %r weitergeleitet an %s",
@@ -1564,6 +1578,12 @@ async def _process_new_uids(account: dict, client, uids: list[int]) -> None:
                 per_account_dhl = account.get("dhl_folder")
                 if per_account_dhl:
                     triage = dict(triage, folder=per_account_dhl)
+            # Per-account einkauf_folder overrides the global INBOX.Einkauf
+            # for Bestellbestaetigungs-Mails (Issue #230).
+            if triage["action"] == "einkauf":
+                per_account_einkauf = account.get("einkauf_folder", "INBOX.Einkauf")
+                if per_account_einkauf:
+                    triage = dict(triage, folder=per_account_einkauf)
             if triage["action"] != "none":
                 log.info(f"mail_monitor[{name}] uid={uid}: triage -> {triage}")
                 import activity_log as _al
@@ -1574,6 +1594,7 @@ async def _process_new_uids(account: dict, client, uids: list[int]) -> None:
                     "move": f"verschoben nach {triage.get('folder', 'Junk')}",
                     "forward": f"weitergeleitet an {triage.get('to', '?')}",
                     "move_with_summary": f"Amazon archiviert nach {triage.get('folder', 'Amazon')}",
+                    "einkauf": f"Einkauf archiviert nach {triage.get('folder', 'INBOX.Einkauf')}",
                 }.get(triage["action"], triage["action"])
                 _al.log_action(
                     "mail_processed",
@@ -1584,7 +1605,19 @@ async def _process_new_uids(account: dict, client, uids: list[int]) -> None:
                 elif triage["action"] == "move":
                     folder = triage.get("folder", "Junk")
                     await mail_actions.mark_mail_read(name, uid)
-                    await mail_actions.move_mail(name, uid, folder)
+                    try:
+                        move_ok = await mail_actions.move_mail(name, uid, folder)
+                        if not move_ok:
+                            log.warning(
+                                "mail_monitor[%s] uid=%s: move zu %r fehlgeschlagen"
+                                " — Ordner existiert moeglicherweise nicht",
+                                name, uid, folder,
+                            )
+                    except Exception as move_exc:
+                        log.warning(
+                            "mail_monitor[%s] uid=%s: move zu %r Exception: %s: %s",
+                            name, uid, folder, type(move_exc).__name__, move_exc,
+                        )
                 elif triage["action"] == "forward":
                     to_addr = triage.get("to", "")
                     if to_addr:
@@ -1593,7 +1626,19 @@ async def _process_new_uids(account: dict, client, uids: list[int]) -> None:
                         # After forwarding: also archive
                         and_then = triage.get("and_then", "mark_read")
                         if and_then == "move":
-                            await mail_actions.move_mail(name, uid, triage.get("folder", "Junk"))
+                            _fwd_folder = triage.get("folder", "Junk")
+                            try:
+                                _fwd_ok = await mail_actions.move_mail(name, uid, _fwd_folder)
+                                if not _fwd_ok:
+                                    log.warning(
+                                        "mail_monitor[%s] uid=%s: move nach forward zu %r fehlgeschlagen",
+                                        name, uid, _fwd_folder,
+                                    )
+                            except Exception as _fwd_exc:
+                                log.warning(
+                                    "mail_monitor[%s] uid=%s: move nach forward zu %r Exception: %s: %s",
+                                    name, uid, _fwd_folder, type(_fwd_exc).__name__, _fwd_exc,
+                                )
                         else:
                             await mail_actions.mark_mail_read(name, uid)
                 elif triage["action"] == "move_with_summary":
@@ -1612,11 +1657,52 @@ async def _process_new_uids(account: dict, client, uids: list[int]) -> None:
                         except Exception as e:
                             log.warning(f"mail_monitor[{name}] amazon summary alert failed: {e}")
                     await mail_actions.mark_mail_read(name, uid)
-                    await mail_actions.move_mail(name, uid, folder)
-                # Triage handled it — skip the normal forward/notify path
+                    try:
+                        _amz_ok = await mail_actions.move_mail(name, uid, folder)
+                        if not _amz_ok:
+                            log.warning(
+                                "mail_monitor[%s] uid=%s: amazon move zu %r fehlgeschlagen",
+                                name, uid, folder,
+                            )
+                    except Exception as _amz_exc:
+                        log.warning(
+                            "mail_monitor[%s] uid=%s: amazon move zu %r Exception: %s: %s",
+                            name, uid, folder, type(_amz_exc).__name__, _amz_exc,
+                        )
+                elif triage["action"] == "einkauf":
+                    # Bestellbestaetigungen, Versandmeldungen, PayPal (Issue #230):
+                    # still nach INBOX.Einkauf verschieben + als gelesen markieren.
+                    # Kein Telegram-Push, kein WebUI-Alert.
+                    _einkauf_folder = triage.get("folder", "INBOX.Einkauf")
+                    await mail_actions.mark_mail_read(name, uid)
+                    try:
+                        _ekf_ok = await mail_actions.move_mail(name, uid, _einkauf_folder)
+                        if _ekf_ok:
+                            log.info(
+                                "mail_monitor[%s] uid=%s: einkauf -> verschoben nach %r",
+                                name, uid, _einkauf_folder,
+                            )
+                        else:
+                            log.warning(
+                                "mail_monitor[%s] uid=%s: einkauf move zu %r fehlgeschlagen"
+                                " — Ordner existiert moeglicherweise nicht",
+                                name, uid, _einkauf_folder,
+                            )
+                    except Exception as _ekf_exc:
+                        log.warning(
+                            "mail_monitor[%s] uid=%s: einkauf move zu %r Exception: %s: %s",
+                            name, uid, _einkauf_folder, type(_ekf_exc).__name__, _ekf_exc,
+                        )
+                # Triage handled it — increment daily stats counter and skip
+                # the normal forward/notify path (Issue #231).
+                if category in _daily_mail_stats:
+                    _daily_mail_stats[category] += 1
                 continue
 
             if category in S.MAIL_MONITOR_FORWARD:
+                # Tages-Zähler für Abend-Zusammenfassung (Issue #231)
+                if category in _daily_mail_stats:
+                    _daily_mail_stats[category] += 1
                 # Prior-context aus persons_db VOR dem Lernen abfragen,
                 # damit nur echte fruehere Eintraege (nicht der aktuelle) angezeigt werden.
                 prior_context = ""
