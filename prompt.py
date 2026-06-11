@@ -23,6 +23,7 @@ mail state — all of these change between requests or depend on wall-clock.
 from __future__ import annotations
 
 import datetime
+import logging as _logging
 import random
 import re
 import time
@@ -141,7 +142,6 @@ def extract_action(text: str) -> tuple[str, dict | None]:
     return text, None
 
 
-import logging as _logging
 _qwen_log = _logging.getLogger("jarvis.qwen")
 
 

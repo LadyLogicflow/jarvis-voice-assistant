@@ -312,7 +312,11 @@ http = httpx.AsyncClient(timeout=30)
 try:
     import openai as _openai_lib
     qwen: "_openai_lib.AsyncOpenAI | None" = (
-        _openai_lib.AsyncOpenAI(base_url=QWEN_BASE_URL, api_key="ollama")
+        _openai_lib.AsyncOpenAI(
+            base_url=QWEN_BASE_URL,
+            api_key="ollama",
+            timeout=_openai_lib.Timeout(connect=5.0, read=25.0, write=10.0, pool=5.0),
+        )
         if QWEN_BASE_URL else None
     )
 except ImportError:
