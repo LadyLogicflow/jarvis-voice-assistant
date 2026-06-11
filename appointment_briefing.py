@@ -16,6 +16,7 @@ import logging
 import re
 
 import settings as S
+from prompt import call_qwen
 
 log = logging.getLogger("jarvis")
 
@@ -47,13 +48,9 @@ async def _extract_names(event: dict) -> list[str]:
     ]
     user_msg = f"Titel: {summary}\nBeschreibung: {description[:300]}\nTeilnehmer: {', '.join(attendee_names[:10])}"
     try:
-        resp = await S.ai.messages.create(
-            model=S.HAIKU_MODEL,
-            max_tokens=120,
-            system=_NAME_EXTRACT_SYSTEM,
-            messages=[{"role": "user", "content": user_msg}],
-        )
-        raw = resp.content[0].text.strip() if resp.content else "[]"
+        raw = await call_qwen(_NAME_EXTRACT_SYSTEM, user_msg, max_tokens=120)
+        if not raw:
+            return []
         if raw.startswith("```"):
             raw = re.sub(r"^```(?:json)?\s*", "", raw)
             raw = re.sub(r"\s*```$", "", raw).strip()

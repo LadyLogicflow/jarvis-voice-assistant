@@ -22,7 +22,7 @@ import logging
 from typing import Optional
 
 import settings as S
-from prompt import llm_text
+from prompt import llm_text, call_qwen
 
 log = logging.getLogger("jarvis.person_context")
 
@@ -467,13 +467,7 @@ async def _synthesize(context_data: dict) -> str:
 
     user_msg = "\n".join(parts)
     try:
-        resp = await S.ai.messages.create(
-            model=S.HAIKU_MODEL,
-            max_tokens=150,
-            system=_SYNTHESIS_PROMPT,
-            messages=[{"role": "user", "content": user_msg}],
-        )
-        return llm_text(resp).strip()
+        return await call_qwen(_SYNTHESIS_PROMPT, user_msg, max_tokens=150)
     except Exception as exc:
         log.warning(
             "person_context: synthesis LLM call failed: %s: %s",

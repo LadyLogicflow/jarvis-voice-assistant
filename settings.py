@@ -74,6 +74,13 @@ ICLOUD_APPLE_ID = os.environ.get("ICLOUD_APPLE_ID", "").strip()
 ICLOUD_APP_PASSWORD = os.environ.get("ICLOUD_APP_PASSWORD", "").strip()
 BELEGSORTIERUNG_API_KEY: str = os.environ.get("BELEGSORTIERUNG_API_KEY", "").strip()
 
+# Optionales lokales LLM-Backend via OpenAI-kompatibler API (Issue #249).
+# Wird fuer schnelle, kostenlose Aufgaben genutzt (Personenkontext-Synthese,
+# Namenserkennung in Terminen, Morning Briefing). Fallback auf Claude Haiku
+# wenn Qwen nicht erreichbar.
+QWEN_BASE_URL: str = os.getenv("QWEN_BASE_URL", "http://100.66.247.110:11435/v1")
+QWEN_MODEL_ID: str = os.getenv("QWEN_MODEL_ID", "qwen3.5-35b")
+
 
 # ---------------------------------------------------------------------------
 # Non-secret runtime settings (from config.json with sane defaults).
@@ -298,6 +305,22 @@ ai = anthropic.AsyncAnthropic(api_key=ANTHROPIC_API_KEY)
 # HTTP/2 + connection pool reuse. One-shot calls in tools intentionally
 # spin up their own short-lived `async with httpx.AsyncClient()`.
 http = httpx.AsyncClient(timeout=30)
+
+# Optionaler Qwen-Client (OpenAI-kompatibel via Ollama, Issue #249).
+# Wird nur instanziiert wenn openai installiert ist und QWEN_BASE_URL gesetzt.
+# qwen = None bedeutet: immer Haiku-Fallback.
+try:
+    import openai as _openai_lib
+    qwen: "_openai_lib.AsyncOpenAI | None" = (
+        _openai_lib.AsyncOpenAI(
+            base_url=QWEN_BASE_URL,
+            api_key="ollama",
+            timeout=_openai_lib.Timeout(connect=5.0, read=25.0, write=10.0, pool=5.0),
+        )
+        if QWEN_BASE_URL else None
+    )
+except ImportError:
+    qwen = None
 
 
 # ---------------------------------------------------------------------------
