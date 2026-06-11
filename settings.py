@@ -72,6 +72,7 @@ PICNIC_PASSWORD = os.environ.get("PICNIC_PASSWORD", "").strip()
 IMAP_PASSWORD = os.environ.get("IMAP_PASSWORD", "").strip()
 ICLOUD_APPLE_ID = os.environ.get("ICLOUD_APPLE_ID", "").strip()
 ICLOUD_APP_PASSWORD = os.environ.get("ICLOUD_APP_PASSWORD", "").strip()
+BELEGSORTIERUNG_API_KEY: str = os.environ.get("BELEGSORTIERUNG_API_KEY", "").strip()
 
 
 # ---------------------------------------------------------------------------
@@ -105,6 +106,9 @@ ACTIVATE_COOLDOWN = float(config.get("activate_cooldown", 90.0))
 REFRESH_COOLDOWN = float(config.get("refresh_cooldown", 30.0))
 CALENDAR_DAYS = int(config.get("calendar_days", 7))
 MICROSOFT_CALENDAR_ICS_URL: str = config.get("microsoft_calendar_ics_url", "")
+# BelegSortierung-API (Issue #234). URL in config.json, API-Key in .env.
+# Feature is a no-op when URL is empty.
+BELEGSORTIERUNG_API_URL: str = config.get("belegsortierung_api_url", "")
 NEWS_URL = config.get(
     "news_url",
     "https://www.tagesschau.de/infoservices/alle-meldungen-100~rss2.xml",

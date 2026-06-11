@@ -9,6 +9,7 @@ Reihenfolge, gibt ein dict mit der zu fuehrenden Aktion zurueck:
   {"action": "mark_read"}
   {"action": "forward", "to": "...", "and_then": "move"|"mark_read", "folder": "..."}
   {"action": "none"}  -> normaler Pfad (Telegram/Mac-Push)
+  {"action": "steuerbeleg"}  -> Anhang-Upload via BelegSortierung-API (Issue #234)
 
 Heuristiken:
 - Bounce-Mails (Mailer-Daemon) -> Junk
@@ -16,6 +17,7 @@ Heuristiken:
 - Reise-Bestaetigungen (Bahn/Lufthansa/Booking/Airbnb/Flixbus) -> Reise-Folder
 - Newsletter (List-Unsubscribe-Header + werbung) -> Werbung-Folder
 - Einkauf-Mails (Bestellbestaetigungen, Versand, PayPal) -> INBOX.Einkauf (Issue #230)
+- Steuerbeleg-Mails (HILO-Mitglieder mit PDF/Bild-Anhaengen) -> BelegSortierung-API (Issue #234)
 """
 
 from __future__ import annotations
@@ -109,6 +111,23 @@ _EINKAUF_SUBJECT_KEYWORDS = (
 # PayPal sender domains -- all mails from these senders are einkauf.
 _PAYPAL_DOMAINS = ("paypal.de", "paypal.com")
 
+# ---------------------------------------------------------------------------
+# Steuerbeleg heuristics (Issue #234)
+# ---------------------------------------------------------------------------
+# Betreff-Schluesselwoerter die auf Steuerbeleg-Mails hinweisen.
+# Konservativ gehalten: nur wenn Schluesselwort IM BETREFF vorkommt.
+# Sender-Matching via mandanten.find_by_name() wird in mail_monitor.py gemacht.
+_STEUERBELEG_SUBJECT_KEYWORDS = (
+    "steuerbeleg",
+    "steuererklärung",
+    "steuererklarung",
+    "unterlagen",
+    "belege",
+    "lohnsteuerbescheinigung",
+    "steuerdokumente",
+    "jahresabschluss",
+)
+
 
 def _is_einkauf_mail(sender_email: str, subject: str) -> bool:
     """Return True when the mail is a transactional order/shipping/payment mail.
@@ -153,6 +172,52 @@ TRIAGE_RULES = [
         "folder": "Amazon",
     },
 ]
+
+
+def _is_steuerbeleg_mail(
+    sender_display: str,
+    subject: str,
+    has_attachment: bool,
+) -> bool:
+    """Gibt True zurueck wenn die Mail mit hoher Konfidenz ein Steuerbeleg ist.
+
+    Prueft zwei Pfade:
+    1. Absender ist bekanntes HILO-Mitglied (laut mandanten.py) UND
+       die Mail hat mindestens einen Anhang.
+    2. Betreff enthaelt ein Steuerbeleg-Schluesselwort UND die Mail hat
+       mindestens einen Anhang.
+
+    Konservativ: ohne Anhang kein Steuerbeleg-Pfad. Mails die bereits
+    als Einkauf/Werbung klassifiziert werden, werden nicht neu klassifiziert
+    (die Einkauf-Pruefung laeuft vorher in route()).
+
+    Args:
+        sender_display: Voller From-Header oder Anzeigename des Absenders.
+        subject:        Betreff der Mail.
+        has_attachment: True wenn die Mail mindestens einen Anhang hat.
+
+    Returns:
+        True wenn die Mail als Steuerbeleg eingestuft werden soll.
+    """
+    if not has_attachment:
+        return False
+
+    subj_lower = (subject or "").lower()
+
+    # Pfad 1: bekannter Absender (Name-Matching gegen Mandanten-DB)
+    try:
+        import mandanten
+        sender_name = sender_display.split("<")[0].strip() or sender_display
+        if sender_name and mandanten.find_by_name(sender_name):
+            return True
+    except Exception:
+        pass
+
+    # Pfad 2: Schluesselwort im Betreff
+    if any(kw in subj_lower for kw in _STEUERBELEG_SUBJECT_KEYWORDS):
+        return True
+
+    return False
 
 
 def _has_attachment(msg) -> bool:
@@ -256,7 +321,17 @@ def route(
             account, rules,
         )
 
-    # 3) Heuristics (vor dem Werbung-Klassifikator damit Bounce/Paket nicht
+    # 3) Steuerbeleg-Check (Issue #234) -- nach Einkauf, vor anderen Heuristiken.
+    #    Nur wenn BelegSortierung konfiguriert; sonst transparenter Durchfall.
+    try:
+        import settings as _S
+        if _S.BELEGSORTIERUNG_API_URL:
+            if _is_steuerbeleg_mail(sender or "", subject, _has_attachment(msg)):
+                return {"action": "steuerbeleg"}
+    except Exception:
+        pass  # Im Fehlerfall normal weiterverarbeiten
+
+    # 4) Heuristics (vor dem Werbung-Klassifikator damit Bounce/Paket nicht
     #    in den Werbung-Folder wandern)
     heur = rules.get("heuristics", {})
     sender_l = (sender or "").lower()
