@@ -102,5 +102,8 @@
   "meal_plan_reminder_time": "17:30",
 
   "_comment_booking": "Simplybook-Buchungslink fuer Rueckruf-Aufgaben (issue #174). Wird in Mail-Entwuerfen fuer Callback-Tasks verwendet.",
-  "booking_link": "https://hiloneuss.simplybook.it/v2/#book/service/4/count/1/provider/5/"
+  "booking_link": "https://hiloneuss.simplybook.it/v2/#book/service/4/count/1/provider/5/",
+
+  "_comment_belegsortierung": "BelegSortierung-API (Issue #234). URL der BelegSortierung-Instanz. API-Key (BELEGSORTIERUNG_API_KEY) geht in .env. Wenn URL leer, ist die Integration deaktiviert.",
+  "belegsortierung_api_url": "https://your-belegsortierung-instance.example.com"
 }

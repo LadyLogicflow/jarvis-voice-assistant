@@ -61,6 +61,7 @@ _daily_mail_stats: dict[str, int] = {
     "info": 0,
     "handlungsbedarf": 0,
     "invoices_forwarded": 0,
+    "steuerbeleg": 0,
 }
 
 # ---------------------------------------------------------------------------
@@ -540,6 +541,191 @@ async def _handle_image_attachments(
             "mail_monitor[%s] uid=%s: kein TODOIST_TOKEN — Task uebersprungen",
             name, uid,
         )
+
+
+async def _handle_steuerbeleg(
+    account: dict,
+    uid: int,
+    sender: str,
+    subject: str,
+    msg,
+) -> None:
+    """Verarbeitet Steuerbeleg-Mails von HILO-Mitgliedern (Issue #234).
+
+    Extrahiert PDF- und Bild-Anhaenge, ordnet den Absender einem Mitglied
+    aus der Mandantendatenbank zu und laedt die Dokumente via BelegSortierung-API
+    hoch. Bei unbekanntem Absender: Telegram-Hinweis und Abbruch.
+    Bei Erfolg wird ein Background-Task fuer das Status-Polling gestartet und
+    eine Telegram-Bestaetigung gesendet.
+
+    Args:
+        account: Normalisiertes Account-Dict aus settings.
+        uid:     IMAP-UID der Mail.
+        sender:  Anzeigename des Absenders.
+        subject: Dekodierter Betreff.
+        msg:     email.message.Message-Objekt (Headers und Body bereits geladen).
+    """
+    import belegsortierung
+    import mandanten
+
+    name = account["name"]
+
+    # Volle Mail laden falls msg nur Header enthaelt (haengt vom Aufruf-Kontext ab)
+    full_msg = msg
+
+    if full_msg is None:
+        log.warning(
+            "mail_monitor[%s] uid=%s: steuerbeleg — kein msg-Objekt, uebersprungen",
+            name, uid,
+        )
+        return
+
+    # 1) Anhaenge extrahieren und auf PDFs/Bilder filtern
+    all_attachments = _extract_attachments(full_msg)
+    _ALLOWED_EXTS = {".pdf", ".jpg", ".jpeg", ".png", ".tiff", ".tif"}
+    doc_attachments = [
+        a for a in all_attachments
+        if any(a["filename"].lower().endswith(ext) for ext in _ALLOWED_EXTS)
+        or a["content_type"] in (
+            "application/pdf", "image/jpeg", "image/png", "image/tiff",
+        )
+    ]
+
+    if not doc_attachments:
+        log.info(
+            "mail_monitor[%s] uid=%s: steuerbeleg — keine relevanten Anhaenge (PDFs/Bilder) gefunden",
+            name, uid,
+        )
+        # Als gelesen markieren und normal weiterverarbeiten (kein Crash)
+        await mail_actions.mark_mail_read(name, uid)
+        return
+
+    # 2) Absender gegen Mandanten-DB abgleichen
+    sender_display = sender.split("<")[0].strip() or sender
+    matches = []
+    try:
+        matches = mandanten.find_by_name(sender_display)
+    except Exception as exc:
+        log.warning(
+            "mail_monitor[%s] uid=%s: steuerbeleg — mandanten.find_by_name fehlgeschlagen: %s: %s",
+            name, uid, type(exc).__name__, exc,
+        )
+
+    if not matches:
+        # Kein Mitglied gefunden — Telegram-Hinweis und Abbruch
+        log.warning(
+            "mail_monitor[%s] uid=%s: steuerbeleg — Mitglied fuer Absender %r nicht gefunden",
+            name, uid, sender,
+        )
+        await telegram_bot.send_user_text(
+            f"Steuerbeleg-Mail von {sender} (Betreff: {subject}) — "
+            f"Mitglied nicht gefunden. Bitte manuell prüfen."
+        )
+        await mail_actions.mark_mail_read(name, uid)
+        return
+
+    # Bei mehreren Treffern ersten nehmen; Catrin per Telegram informieren
+    mandant = matches[0]
+    if len(matches) > 1:
+        match_names = ", ".join(
+            f"{m.get('vorname', '')} {m.get('nachname', '')}".strip()
+            for m in matches
+        )
+        log.warning(
+            "mail_monitor[%s] uid=%s: steuerbeleg — mehrere Mitglieder gefunden fuer %r: %s "
+            "— nehme ersten Treffer",
+            name, uid, sender, match_names,
+        )
+        await telegram_bot.send_user_text(
+            f"Steuerbeleg-Mail von {sender}: mehrere Mitglieder gefunden ({match_names}). "
+            f"Erster Treffer wird verwendet — bitte prüfen."
+        )
+    nachname = mandant.get("nachname", "")
+    vorname = mandant.get("vorname", "")
+    mitgliedsnr = mandant.get("mitgliedsnr", "")
+
+    log.info(
+        "mail_monitor[%s] uid=%s: steuerbeleg — Mitglied identifiziert: %s %s (MNr. %s), "
+        "%d Anhang/Anhaenge",
+        name, uid, vorname, nachname, mitgliedsnr, len(doc_attachments),
+    )
+
+    # 3) Fuer jeden Anhang: Upload starten
+    uploaded: list[str] = []
+    review_filenames: list[str] = []
+
+    for att in doc_attachments:
+        result = await belegsortierung.upload_document(
+            pdf_data=att["data"],
+            filename=att["filename"],
+            nachname=nachname,
+            vorname=vorname,
+            mitgliedsnummer=mitgliedsnr,
+        )
+        if result:
+            uploaded.append(att["filename"])
+            rf = result.get("review_filename", "")
+            if rf:
+                review_filenames.append(rf)
+        else:
+            log.warning(
+                "mail_monitor[%s] uid=%s: steuerbeleg — Upload von %r fehlgeschlagen",
+                name, uid, att["filename"],
+            )
+
+    if not uploaded:
+        log.error(
+            "mail_monitor[%s] uid=%s: steuerbeleg — alle Uploads fehlgeschlagen",
+            name, uid,
+        )
+        await telegram_bot.send_user_text(
+            f"Steuerbeleg-Upload fehlgeschlagen für {vorname} {nachname} "
+            f"(MNr. {mitgliedsnr}) — bitte manuell prüfen. Betreff: {subject}"
+        )
+        return
+
+    # 4) Mail als gelesen markieren
+    await mail_actions.mark_mail_read(name, uid)
+
+    # 5) Telegram-Bestaetigung (inkl. fehlgeschlagener Uploads)
+    filenames_str = ", ".join(uploaded)
+    failed = [a["filename"] for a in doc_attachments if a["filename"] not in uploaded]
+    msg_parts = [
+        f"Steuerbelege von {vorname} {nachname} (MNr. {mitgliedsnr}) hochgeladen: "
+        f"{filenames_str}"
+    ]
+    if failed:
+        msg_parts.append(f"Fehlgeschlagen: {', '.join(failed)} — bitte manuell prüfen.")
+    await telegram_bot.send_user_text(" ".join(msg_parts))
+
+    # 6) Status-Polling im Hintergrund starten
+    async def _poll_all(review_fns: list[str]) -> None:
+        for rf in review_fns:
+            try:
+                status = await belegsortierung.poll_status(rf)
+                log.info(
+                    "mail_monitor[%s] uid=%s: steuerbeleg — Status fuer %r: %s",
+                    name, uid, rf, status,
+                )
+                if status not in ("completed", "done"):
+                    await telegram_bot.send_user_text(
+                        f"BelegSortierung: Status für {rf}: {status} "
+                        f"({vorname} {nachname}, MNr. {mitgliedsnr})"
+                    )
+            except Exception as poll_exc:
+                log.warning(
+                    "mail_monitor[%s] uid=%s: steuerbeleg — Status-Polling fuer %r fehlgeschlagen: "
+                    "%s: %s",
+                    name, uid, rf, type(poll_exc).__name__, poll_exc,
+                )
+
+    if review_filenames:
+        asyncio.create_task(_poll_all(review_filenames))
+
+    log.info(
+        "mail_monitor[%s] uid=%s: steuerbeleg — Verarbeitung abgeschlossen: %d/%d Uploads OK",
+        name, uid, len(uploaded), len(doc_attachments),
+    )
 
 
 async def _move_to_trash(account: dict, client, uid: int) -> None:
@@ -1595,6 +1781,7 @@ async def _process_new_uids(account: dict, client, uids: list[int]) -> None:
                     "forward": f"weitergeleitet an {triage.get('to', '?')}",
                     "move_with_summary": f"Amazon archiviert nach {triage.get('folder', 'Amazon')}",
                     "einkauf": f"Einkauf archiviert nach {triage.get('folder', 'INBOX.Einkauf')}",
+                    "steuerbeleg": "Steuerbeleg-Upload gestartet",
                 }.get(triage["action"], triage["action"])
                 _al.log_action(
                     "mail_processed",
@@ -1693,10 +1880,16 @@ async def _process_new_uids(account: dict, client, uids: list[int]) -> None:
                             "mail_monitor[%s] uid=%s: einkauf move zu %r Exception: %s: %s",
                             name, uid, _einkauf_folder, type(_ekf_exc).__name__, _ekf_exc,
                         )
+                elif triage["action"] == "steuerbeleg":
+                    # Steuerbeleg-Mails von HILO-Mitgliedern (Issue #234):
+                    # Anhaenge extrahieren und via BelegSortierung-API hochladen.
+                    await _handle_steuerbeleg(account, uid, sender, subject, msg)
                 # Triage handled it — increment daily stats counter and skip
                 # the normal forward/notify path (Issue #231).
                 if triage["action"] == "einkauf":
                     _daily_mail_stats["einkauf"] += 1
+                elif triage["action"] == "steuerbeleg":
+                    _daily_mail_stats["steuerbeleg"] += 1
                 elif category in _daily_mail_stats:
                     _daily_mail_stats[category] += 1
                 continue
