@@ -31,7 +31,7 @@ import health_tools
 from holidays import check_free_day
 import jarvis_quotes
 import offer_monitor
-from prompt import llm_text, pick_address, call_qwen
+from prompt import llm_text, pick_address, call_llm
 import settings as S
 import steuer_news
 import todoist_tools
@@ -775,7 +775,7 @@ async def morning_brief_scheduler() -> None:
                         f"Uhrzeit: {now.strftime('%H:%M')}"
                         + (f"\nAktuelle Tagesdaten:{today_block}" if today_block else "")
                     )
-                    brief = await call_qwen(system_prompt, user_msg, max_tokens=600)
+                    brief = await call_llm(system_prompt, user_msg, max_tokens=600)
                     if brief:
                         log.info(f"morning_brief_scheduler: sending brief: {brief[:80]!r}")
                         await _proactive_handler(brief)
