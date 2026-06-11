@@ -61,6 +61,7 @@ _daily_mail_stats: dict[str, int] = {
     "info": 0,
     "handlungsbedarf": 0,
     "invoices_forwarded": 0,
+    "steuerbeleg": 0,
 }
 
 # ---------------------------------------------------------------------------
@@ -623,8 +624,22 @@ async def _handle_steuerbeleg(
         await mail_actions.mark_mail_read(name, uid)
         return
 
-    # Bei mehreren Treffern ersten nehmen (konservativ)
+    # Bei mehreren Treffern ersten nehmen; Catrin per Telegram informieren
     mandant = matches[0]
+    if len(matches) > 1:
+        match_names = ", ".join(
+            f"{m.get('vorname', '')} {m.get('nachname', '')}".strip()
+            for m in matches
+        )
+        log.warning(
+            "mail_monitor[%s] uid=%s: steuerbeleg — mehrere Mitglieder gefunden fuer %r: %s "
+            "— nehme ersten Treffer",
+            name, uid, sender, match_names,
+        )
+        await telegram_bot.send_user_text(
+            f"Steuerbeleg-Mail von {sender}: mehrere Mitglieder gefunden ({match_names}). "
+            f"Erster Treffer wird verwendet — bitte prüfen."
+        )
     nachname = mandant.get("nachname", "")
     vorname = mandant.get("vorname", "")
     mitgliedsnr = mandant.get("mitgliedsnr", "")
@@ -672,12 +687,16 @@ async def _handle_steuerbeleg(
     # 4) Mail als gelesen markieren
     await mail_actions.mark_mail_read(name, uid)
 
-    # 5) Telegram-Bestaetigung
+    # 5) Telegram-Bestaetigung (inkl. fehlgeschlagener Uploads)
     filenames_str = ", ".join(uploaded)
-    await telegram_bot.send_user_text(
+    failed = [a["filename"] for a in doc_attachments if a["filename"] not in uploaded]
+    msg_parts = [
         f"Steuerbelege von {vorname} {nachname} (MNr. {mitgliedsnr}) hochgeladen: "
         f"{filenames_str}"
-    )
+    ]
+    if failed:
+        msg_parts.append(f"Fehlgeschlagen: {', '.join(failed)} — bitte manuell prüfen.")
+    await telegram_bot.send_user_text(" ".join(msg_parts))
 
     # 6) Status-Polling im Hintergrund starten
     async def _poll_all(review_fns: list[str]) -> None:
@@ -1869,6 +1888,8 @@ async def _process_new_uids(account: dict, client, uids: list[int]) -> None:
                 # the normal forward/notify path (Issue #231).
                 if triage["action"] == "einkauf":
                     _daily_mail_stats["einkauf"] += 1
+                elif triage["action"] == "steuerbeleg":
+                    _daily_mail_stats["steuerbeleg"] += 1
                 elif category in _daily_mail_stats:
                     _daily_mail_stats[category] += 1
                 continue

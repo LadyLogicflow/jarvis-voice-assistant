@@ -135,10 +135,11 @@ class TestIsSteuerbeleg:
                 "user@example.de", "STEUERERKLÄRUNG 2024", True
             ) is True
 
-    def test_keyword_unterlagen_uppercase(self):
+    def test_keyword_steuerdokumente(self):
+        # "unterlagen" wurde als false-positive-anfaellig entfernt (ARGUS #234)
         with patch("mandanten.find_by_name", return_value=[]):
             assert mail_triage._is_steuerbeleg_mail(
-                "user@example.de", "UNTERLAGEN FUER STEUERJAHR", True
+                "user@example.de", "STEUERDOKUMENTE FUER 2024", True
             ) is True
 
     # Fehler in mandanten.find_by_name → kein Absturz, Keyword-Fallback

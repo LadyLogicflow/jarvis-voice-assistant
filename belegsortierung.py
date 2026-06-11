@@ -19,6 +19,7 @@ from __future__ import annotations
 import asyncio
 import datetime
 import logging
+import urllib.parse
 
 import httpx
 
@@ -109,8 +110,10 @@ async def upload_document(
             resp.raise_for_status()
             result = resp.json()
             log.info(
-                "belegsortierung: Dokument '%s' hochgeladen fuer %s %s (MNr. %s): %s",
-                filename, vorname, nachname, mitgliedsnummer, result,
+                "belegsortierung: Dokument '%s' hochgeladen fuer %s %s (MNr. %s): "
+                "review_filename=%r status_url=%r",
+                filename, vorname, nachname, mitgliedsnummer,
+                result.get("review_filename"), result.get("status_url"),
             )
             return result
     except httpx.HTTPStatusError as exc:
@@ -159,7 +162,7 @@ async def poll_status(
         return "error"
 
     base_url = S.BELEGSORTIERUNG_API_URL.rstrip("/")
-    status_url = f"{base_url}/api/v1/status/{review_filename}"
+    status_url = f"{base_url}/api/v1/status/{urllib.parse.quote(review_filename, safe='')}"
     headers = {
         "X-API-Key": S.BELEGSORTIERUNG_API_KEY,
     }
@@ -189,15 +192,12 @@ async def poll_status(
                     "belegsortierung: Status-Poll %d/%d fuer '%s': %s",
                     attempt, max_attempts, review_filename, status,
                 )
-                if status in _TERMINAL_STATES or status:
-                    # Ersten nicht-leeren Status als final annehmen wenn er
-                    # ein Terminal-State ist; sonst weiterpolling
-                    if status in _TERMINAL_STATES:
-                        log.info(
-                            "belegsortierung: Finaler Status '%s' fuer '%s'",
-                            status, review_filename,
-                        )
-                        return status
+                if status in _TERMINAL_STATES:
+                    log.info(
+                        "belegsortierung: Finaler Status '%s' fuer '%s'",
+                        status, review_filename,
+                    )
+                    return status
             except httpx.HTTPStatusError as exc:
                 log.warning(
                     "belegsortierung: HTTP-Fehler beim Status-Poll fuer '%s': %s",

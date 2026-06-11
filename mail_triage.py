@@ -121,8 +121,6 @@ _STEUERBELEG_SUBJECT_KEYWORDS = (
     "steuerbeleg",
     "steuererklärung",
     "steuererklarung",
-    "unterlagen",
-    "belege",
     "lohnsteuerbescheinigung",
     "steuerdokumente",
     "jahresabschluss",
