@@ -207,6 +207,30 @@ async def _query_todoist(sender_name: str) -> list[str]:
 # Strukturierte Mail-History-Formatierung (Issue #246)
 # ---------------------------------------------------------------------------
 
+def _parse_mail_date(raw_date: str) -> str:
+    """Konvertiert ein ISO-Datum (YYYY-MM-DD oder YYYY-MM-DDTHH:MM:SS) in DD.MM.YYYY.
+
+    Gibt den Rohwert zurueck wenn das Format nicht erkannt wird.
+
+    Args:
+        raw_date: Datumsstring aus der Datenbank.
+
+    Returns:
+        Formatierter Datumsstring DD.MM.YYYY oder Rohwert bei unbekanntem Format.
+    """
+    if not raw_date:
+        return "—"
+    # Nur die ersten 10 Zeichen (YYYY-MM-DD) benutzen
+    date_part = raw_date[:10]
+    if len(date_part) == 10 and date_part[4] == "-" and date_part[7] == "-":
+        try:
+            year, month, day = date_part.split("-")
+            return f"{int(day):02d}.{int(month):02d}.{year}"
+        except (ValueError, AttributeError):
+            pass
+    return raw_date
+
+
 def _format_mail_history(mail_rows: list[dict], sender_name: str) -> str:
     """Formatiert die letzten 3 Mails als strukturierte Liste mit Datum und Stichworten.
 
@@ -241,7 +265,7 @@ def _format_mail_history(mail_rows: list[dict], sender_name: str) -> str:
         subject = (row.get("subject") or "").strip()
         # Kurzinhalt: raw_summary bevorzugt, sonst content (gekuerzt)
         short_content = (row.get("raw_summary") or row.get("content") or "").strip()
-        # Auf ca. 80 Zeichen kuerzen damit die Zeile ueberschaubar bleibt
+        # Auf max. 80 Zeichen kuerzen (77 Zeichen + "..." = 80)
         if len(short_content) > 80:
             short_content = short_content[:77].rstrip() + "..."
 
@@ -258,30 +282,6 @@ def _format_mail_history(mail_rows: list[dict], sender_name: str) -> str:
         lines.append(line)
 
     return "\n".join(lines)
-
-
-def _parse_mail_date(raw_date: str) -> str:
-    """Konvertiert ein ISO-Datum (YYYY-MM-DD oder YYYY-MM-DDTHH:MM:SS) in DD.MM.YYYY.
-
-    Gibt den Rohwert zurueck wenn das Format nicht erkannt wird.
-
-    Args:
-        raw_date: Datumsstring aus der Datenbank.
-
-    Returns:
-        Formatierter Datumsstring DD.MM.YYYY oder Rohwert bei unbekanntem Format.
-    """
-    if not raw_date:
-        return "—"
-    # Nur die ersten 10 Zeichen (YYYY-MM-DD) benutzen
-    date_part = raw_date[:10]
-    if len(date_part) == 10 and date_part[4] == "-" and date_part[7] == "-":
-        try:
-            year, month, day = date_part.split("-")
-            return f"{int(day):02d}.{int(month):02d}.{year}"
-        except (ValueError, AttributeError):
-            pass
-    return raw_date
 
 
 # ---------------------------------------------------------------------------
