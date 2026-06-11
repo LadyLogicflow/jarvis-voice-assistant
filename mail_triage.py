@@ -43,12 +43,11 @@ _VALID_ACTIONS = {"move", "mark_read", "forward"}
 _last_invalid_rules_hash: str | None = None
 
 
-def _validate_rules(data: dict, raw_bytes: bytes) -> list[str]:
+def _validate_rules(data: dict) -> list[str]:
     """Validate the structure of the parsed rules dict.
 
     Args:
-        data:      Parsed JSON content of mail_triage_rules.json.
-        raw_bytes: Raw file bytes used to compute a content hash.
+        data: Parsed JSON content of mail_triage_rules.json.
 
     Returns:
         A list of human-readable error strings.  Empty list means valid.
@@ -110,7 +109,7 @@ def _load_rules() -> dict:
         )
         return {}
 
-    errors = _validate_rules(data, raw)
+    errors = _validate_rules(data)
     if errors:
         content_hash = hashlib.sha256(raw).hexdigest()
         if content_hash != _last_invalid_rules_hash:
