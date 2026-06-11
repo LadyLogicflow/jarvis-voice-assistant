@@ -10,6 +10,7 @@ ausgegeben. Keine Sprachausgabe.
 from __future__ import annotations
 
 import asyncio
+import html as _html
 import json
 import logging
 import re
@@ -254,7 +255,7 @@ def _format_html_v2(event: dict, person_contexts: list[tuple[str, str]]) -> str:
 
     for name, ctx in person_contexts:
         if ctx:
-            html += f"<br><pre>{ctx}</pre>"
+            html += f"<br><pre>{_html.escape(ctx)}</pre>"
         else:
             html += f"<br><b>👤 {name}</b><br><i>Kein Kontext verfügbar.</i><br>"
 
@@ -321,13 +322,21 @@ async def build_and_send_briefing(event: dict) -> None:
                     email = contacts[0].emails[0]
             except Exception:
                 pass
-        ctx = await _pc.enrich_mail_with_person_context(email, name)
+        try:
+            ctx = await _pc.enrich_mail_with_person_context(email, name)
+        except Exception as exc:
+            log.warning("appointment_briefing: context lookup failed for %r: %s", name, exc)
+            ctx = ""
         return name, ctx
 
     person_contexts: list[tuple[str, str]] = []
     if names:
         ctx_tasks = [_get_context_for_name(n) for n in names[:5]]
-        person_contexts = list(await asyncio.gather(*ctx_tasks))
+        results = await asyncio.gather(*ctx_tasks, return_exceptions=True)
+        person_contexts = [
+            r if isinstance(r, tuple) else (names[i], "")
+            for i, r in enumerate(results)
+        ]
 
     html_msg = _format_html_v2(event, person_contexts)
     tg_msg = _format_telegram_v2(event, person_contexts)
