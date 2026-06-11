@@ -63,6 +63,22 @@ def _load_whisper():
     return _whisper_model
 
 
+async def preload_whisper() -> None:
+    """Vorab-Laden des Whisper-Modells beim Server-Start (Issue #243).
+
+    Wird im lifespan von server.py aufgerufen, damit das Modell beim
+    ersten echten Voice-Note bereits warm ist.  Fehler werden nur
+    geloggt — der Start wird nicht blockiert.
+    """
+    loop = asyncio.get_running_loop()
+    try:
+        await loop.run_in_executor(None, _load_whisper)
+        log.info("STARTUP: faster-whisper vorgeladen (Issue #243)")
+    except Exception as exc:
+        log.warning("STARTUP: faster-whisper konnte nicht vorgeladen werden: %s: %s",
+                    type(exc).__name__, exc)
+
+
 async def _transcribe(audio_bytes: bytes) -> str:
     """Transcribe an OGG/MP3/WAV blob via faster-whisper (German)."""
     loop = asyncio.get_running_loop()
