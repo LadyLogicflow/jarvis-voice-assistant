@@ -204,6 +204,87 @@ async def _query_todoist(sender_name: str) -> list[str]:
 
 
 # ---------------------------------------------------------------------------
+# Strukturierte Mail-History-Formatierung (Issue #246)
+# ---------------------------------------------------------------------------
+
+def _parse_mail_date(raw_date: str) -> str:
+    """Konvertiert ein ISO-Datum (YYYY-MM-DD oder YYYY-MM-DDTHH:MM:SS) in DD.MM.YYYY.
+
+    Gibt den Rohwert zurueck wenn das Format nicht erkannt wird.
+
+    Args:
+        raw_date: Datumsstring aus der Datenbank.
+
+    Returns:
+        Formatierter Datumsstring DD.MM.YYYY oder Rohwert bei unbekanntem Format.
+    """
+    if not raw_date:
+        return "—"
+    # Nur die ersten 10 Zeichen (YYYY-MM-DD) benutzen
+    date_part = raw_date[:10]
+    if len(date_part) == 10 and date_part[4] == "-" and date_part[7] == "-":
+        try:
+            year, month, day = date_part.split("-")
+            return f"{int(day):02d}.{int(month):02d}.{year}"
+        except (ValueError, AttributeError):
+            pass
+    return raw_date
+
+
+def _format_mail_history(mail_rows: list[dict], sender_name: str) -> str:
+    """Formatiert die letzten 3 Mails als strukturierte Liste mit Datum und Stichworten.
+
+    Ersetzt den LLM-Fliesstext fuer den visuellen Kontext-Block (Telegram/Webfrontend).
+    Kein LLM-Aufruf, kein TTS — reine Formatierung.
+
+    Args:
+        mail_rows: Liste von Row-Dicts aus mail_knowledge (Felder: mail_date,
+                   subject, raw_summary, content). Kann leer sein.
+        sender_name: Anzeigename des Absenders fuer den Header.
+
+    Returns:
+        Formatierter String mit max. 3 Mail-Eintraegen oder leerer String.
+
+    Example:
+        >>> rows = [{"mail_date": "2026-06-11", "subject": "Projekt ok",
+        ...          "raw_summary": "Verkauf nach Freigabe bestätigt"}]
+        >>> _format_mail_history(rows, "Thomas Ulbrich")
+        '📋 Thomas Ulbrich – letzte Mails:\\n• 11.06.2026 — Projekt ok: Verkauf nach Freigabe bestätigt'
+    """
+    if not mail_rows:
+        return ""
+
+    header_name = sender_name.strip() if sender_name else "Kontakt"
+    lines: list[str] = [f"\U0001f4cb {header_name} – letzte Mails:"]
+
+    for row in mail_rows[:3]:
+        # Datum: YYYY-MM-DD -> DD.MM.YYYY
+        raw_date = row.get("mail_date") or ""
+        formatted_date = _parse_mail_date(raw_date)
+
+        subject = (row.get("subject") or "").strip()
+        # Kurzinhalt: raw_summary bevorzugt, sonst content (gekuerzt)
+        short_content = (row.get("raw_summary") or row.get("content") or "").strip()
+        # Auf max. 80 Zeichen kuerzen (77 Zeichen + "..." = 80)
+        if len(short_content) > 80:
+            short_content = short_content[:77].rstrip() + "..."
+
+        if subject and short_content:
+            line = f"• {formatted_date} — {subject}: {short_content}"
+        elif subject:
+            line = f"• {formatted_date} — {subject}"
+        elif short_content:
+            line = f"• {formatted_date} — {short_content}"
+        else:
+            # Kein Betreff, kein Inhalt: Zeile trotzdem ausgeben (kein Crash)
+            line = f"• {formatted_date} — (kein Betreff)"
+
+        lines.append(line)
+
+    return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
 # Synthese-Prompt
 # ---------------------------------------------------------------------------
 
@@ -366,4 +447,13 @@ async def enrich_mail_with_person_context(
         "sender_name": sender_name,
     }
 
+    # Visueller Kontext-Block: strukturierte Mail-History (Issue #246)
+    # Wenn mail_rows vorhanden, wird die formatierte Liste genutzt statt
+    # des LLM-Fliesstexts. Fuer TTS-Ausgabe bleibt _synthesize() weiterhin
+    # verfuegbar (wird bei Bedarf von mail_monitor.py direkt aufgerufen).
+    mail_history = _format_mail_history(mail_rows, sender_name)
+    if mail_history:
+        return mail_history
+
+    # Fallback auf LLM-Synthese wenn keine Mail-History vorhanden
     return await _synthesize(context_data)
