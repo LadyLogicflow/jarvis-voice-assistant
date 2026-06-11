@@ -22,6 +22,7 @@ Heuristiken:
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -34,18 +35,96 @@ log = S.log
 
 _RULES_PATH = os.path.join(os.path.dirname(__file__), "mail_triage_rules.json")
 
+# Known valid action values for rules entries.
+_VALID_ACTIONS = {"move", "mark_read", "forward"}
+
+# Hash of the last rules file content that produced a validation warning.
+# Prevents spamming the log on every mail when the file stays broken.
+_last_invalid_rules_hash: str | None = None
+
+
+def _validate_rules(data: dict) -> list[str]:
+    """Validate the structure of the parsed rules dict.
+
+    Args:
+        data: Parsed JSON content of mail_triage_rules.json.
+
+    Returns:
+        A list of human-readable error strings.  Empty list means valid.
+    """
+    errors: list[str] = []
+    for idx, rule in enumerate(data.get("rules", [])):
+        name = rule.get("name", f"rule[{idx}]")
+        action = rule.get("action")
+        if action not in _VALID_ACTIONS:
+            errors.append(
+                f"Regel '{name}': unbekannte action '{action}' "
+                f"(erlaubt: {', '.join(sorted(_VALID_ACTIONS))})"
+            )
+            continue  # skip field checks — action unknown, further checks misleading
+        if action == "forward":
+            to_val = rule.get("to", "")
+            if not to_val or not str(to_val).strip():
+                errors.append(
+                    f"Regel '{name}': action 'forward' erfordert ein nicht-leeres 'to'-Feld"
+                )
+        elif action == "move":
+            folder_val = rule.get("folder", "")
+            if not folder_val or not str(folder_val).strip():
+                errors.append(
+                    f"Regel '{name}': action 'move' erfordert ein nicht-leeres 'folder'-Feld"
+                )
+    return errors
+
 
 def _load_rules() -> dict:
-    """Read fresh from disk on every call so Catrin can edit live."""
+    """Read fresh from disk on every call so Catrin can edit live.
+
+    Validates the loaded rules against a minimal schema.  On validation
+    failure a warning is logged (once per unique file content, to avoid
+    log-spam on every incoming mail) and an empty dict is returned so the
+    caller falls back to safe defaults — identical behaviour to a JSON
+    parse error.
+    """
+    global _last_invalid_rules_hash
+
     if not os.path.exists(_RULES_PATH):
         return {}
     try:
-        with open(_RULES_PATH, "r", encoding="utf-8") as f:
-            return json.load(f)
+        with open(_RULES_PATH, "rb") as f:
+            raw = f.read()
     except Exception as e:
-        log.warning(f"mail_triage: rules-file failed to parse: "
-                    f"{type(e).__name__}: {e}")
+        log.warning(
+            f"mail_triage: rules-file konnte nicht gelesen werden: "
+            f"{type(e).__name__}: {e}"
+        )
         return {}
+
+    try:
+        data = json.loads(raw.decode("utf-8"))
+    except Exception as e:
+        log.warning(
+            f"mail_triage: rules-file failed to parse: "
+            f"{type(e).__name__}: {e}"
+        )
+        return {}
+
+    errors = _validate_rules(data)
+    if errors:
+        content_hash = hashlib.sha256(raw).hexdigest()
+        if content_hash != _last_invalid_rules_hash:
+            _last_invalid_rules_hash = content_hash
+            for err in errors:
+                log.warning(f"mail_triage: Regelvalidierung fehlgeschlagen — {err}")
+            log.warning(
+                "mail_triage: mail_triage_rules.json enthaelt ungueltige Regeln — "
+                "Fallback auf leeres Regelwerk (kein Triage-Matching aktiv)"
+            )
+        return {}
+
+    # File is valid — clear any cached invalid hash so a future re-break is reported again.
+    _last_invalid_rules_hash = None
+    return data
 
 
 # Hard-coded heuristics — domain/keyword sets. Conservative, can be
