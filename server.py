@@ -72,7 +72,7 @@ from appointment_briefing import appointment_briefing_scheduler
 import health_tools
 import planner
 import session_state
-from telegram_bot import telegram_bot_main, send_user_text as telegram_send
+from telegram_bot import telegram_bot_main, preload_whisper, send_user_text as telegram_send
 from tts import speak
 
 log = S.log
@@ -244,6 +244,8 @@ async def _lifespan(_app):  # type: ignore[no-untyped-def]  # AsyncGenerator
             log.error("STARTUP: PyMuPDF-Auto-Install Fehler: %s", _e)
     await refresh_data()
     session_state.load_all()
+    # Issue #243: Whisper-Modell beim Start vorladen (non-blocking, Fehler nur loggen)
+    await preload_whisper()
     # Issue #224: Erstelle mail_triage_rules.json mit sinnvollen Defaults
     # falls die Datei noch nicht existiert.
     _triage_rules_path = os.path.join(os.path.dirname(__file__), "mail_triage_rules.json")
