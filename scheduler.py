@@ -2274,8 +2274,13 @@ async def midnight_reset_scheduler() -> None:
     um Mitternacht (00:00 - 00:02 Uhr) zurueck auf 0.
 
     Verhindert, dass Tages-Zaehler ueber den Tageswechsel hinaus akkumulieren.
+
+    Issue #245: Loescht zusaetzlich Session-State-Dateien die aelter als
+    30 Tage sind und keiner aktiven Session angehoeren.
     """
     import mail_monitor as _mm
+    import pathlib
+    import session_state as _ss
 
     # Startup pre-fill: kein Doppel-Reset bei Neustart kurz nach Mitternacht.
     _reset_date: str = (
@@ -2299,6 +2304,44 @@ async def midnight_reset_scheduler() -> None:
                     "midnight_reset_scheduler: _daily_mail_stats zurueckgesetzt fuer %s",
                     today,
                 )
+
+                # Issue #245: Session-State-Dateien aelter als 30 Tage loeschen.
+                # Aktive Sessions (WebSocket verbunden) werden nie geloescht.
+                try:
+                    state_dir = pathlib.Path(_ss._state_dir())
+                    cutoff = time.time() - 30 * 86400
+                    # Normalisierte Stems aller aktiven Sessions als Schutzliste
+                    active_stems = {
+                        _ss._safe_session(sid) for sid in _ss._active_sessions
+                    }
+                    active_stems.add("default")  # Fallback-Slot immer schützen
+                    deleted = 0
+                    for f in state_dir.glob("*.json"):
+                        if f.stem in active_stems:
+                            continue
+                        try:
+                            if f.stat().st_mtime < cutoff:
+                                f.unlink(missing_ok=True)
+                                log.info(
+                                    "midnight_reset_scheduler: session_state alte Datei geloescht: %s",
+                                    f.name,
+                                )
+                                deleted += 1
+                        except Exception as _fe:
+                            log.warning(
+                                "midnight_reset_scheduler: session_state Loeschen fehlgeschlagen fuer %s: %s",
+                                f.name, _fe,
+                            )
+                    if deleted:
+                        log.info(
+                            "midnight_reset_scheduler: %d alte session_state-Datei(en) geloescht",
+                            deleted,
+                        )
+                except Exception as e:
+                    log.warning(
+                        "midnight_reset_scheduler: session_state Cleanup fehlgeschlagen: %s: %s",
+                        type(e).__name__, e,
+                    )
 
         except Exception as e:
             log.warning(
