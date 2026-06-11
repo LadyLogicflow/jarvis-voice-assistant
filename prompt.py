@@ -5,6 +5,19 @@ System-prompt construction + action-tag parser.
 in fresh weather / tasks / Steuer-news / time-of-day rules.
 `extract_action()` separates the spoken text from the trailing
 `[ACTION:...]` tag the LLM may emit.
+
+Issue #242: Static prompt caching.
+`_STATIC_PROMPT_PREFIX` is built once at module import time and contains
+only the truly static parts: user identity fields from settings.py that
+never change at runtime (USER_NAME, USER_ROLE, MORNING_BRIEF_UNTIL_HOUR,
+CALENDAR_DAYS, USER_ADDRESS_POOL).  It is injected verbatim into
+`build_system_prompt()` so those values are not re-read from the config
+dict on every LLM call.
+
+What is NOT cached: addr (random per request), greeting (time-of-day),
+evening_rules / freeday_rules / stress_rule (computed at request time),
+date_block / greeting_block (current time), weather / tasks / events /
+mail state — all of these change between requests or depend on wall-clock.
 """
 
 from __future__ import annotations
@@ -16,6 +29,39 @@ import time
 
 import settings as S
 from holidays import check_free_day
+
+
+# ---------------------------------------------------------------------------
+# Issue #242: Static prefix — built once at module import.
+# Contains only values from settings.py that are constant at runtime.
+# ---------------------------------------------------------------------------
+
+def _build_static_prefix() -> str:
+    """Build the static user-identity prefix once at module import.
+
+    Resolves S.USER_NAME, S.USER_ROLE, S.MORNING_BRIEF_UNTIL_HOUR and
+    S.CALENDAR_DAYS into a plain string so downstream callers can reference
+    _STATIC_PROMPT_PREFIX without touching the config dict at request time.
+
+    Returns:
+        A short string fragment that is prepended to build_system_prompt()
+        output via direct inclusion in the dynamic f-string.  Kept small and
+        dependency-free so it can safely run at import time.
+    """
+    user_address_pool_str = (
+        ", ".join(S.USER_ADDRESS_POOL) if S.USER_ADDRESS_POOL else S.USER_ADDRESS
+    )
+    return (
+        f"# Jarvis — statische Konfiguration\n"
+        f"Nutzerin: {S.USER_NAME} ({S.USER_ROLE}).\n"
+        f"Erlaubte Anreden: {user_address_pool_str}.\n"
+        f"Morgen-Briefing aktiv bis {S.MORNING_BRIEF_UNTIL_HOUR}:00 Uhr.\n"
+        f"Kalender-Vorschau: {S.CALENDAR_DAYS} Tage.\n"
+    )
+
+
+# Module-level constant — evaluated exactly once when prompt.py is imported.
+_STATIC_PROMPT_PREFIX: str = _build_static_prefix()
 
 _ACTION_TAG_RE = re.compile(r"\[ACTION:[^\]]*\]", re.I)
 
@@ -435,7 +481,11 @@ Heute ist kein Arbeitstag. {addr} hat Erholung verdient und soll diese auch nehm
     else:
         stress_rule = ""
 
-    return f"""Du bist Jarvis, der KI-Assistent von Tony Stark aus Iron Man. Deine Dienstherrin ist {S.USER_NAME}, {S.USER_ROLE} sowie damit verbundene Consulting-Tätigkeiten. Du sprichst ausschließlich Deutsch. {S.USER_NAME} möchte mit "{addr}" angesprochen und gesiezt werden. Nutze "Sie" als Pronomen — FALSCH: "{addr} planen", RICHTIG: "Sie planen, {addr}".
+    # Issue #242: prepend the module-level cached prefix so the static
+    # identity block is not rebuilt from scratch on every LLM call.
+    # The remainder of the f-string is unchanged — it contains all the
+    # dynamic parts (addr, greeting, time, weather, tasks, session state).
+    return _STATIC_PROMPT_PREFIX + f"""Du bist Jarvis, der KI-Assistent von Tony Stark aus Iron Man. Deine Dienstherrin ist {S.USER_NAME}, {S.USER_ROLE} sowie damit verbundene Consulting-Tätigkeiten. Du sprichst ausschließlich Deutsch. {S.USER_NAME} möchte mit "{addr}" angesprochen und gesiezt werden. Nutze "Sie" als Pronomen — FALSCH: "{addr} planen", RICHTIG: "Sie planen, {addr}".
 
 CHARAKTER: Du bist trocken, sarkastisch, ironisch und britisch-höflich — wie ein Butler der alles gesehen hat, alles weiß, und trotzdem loyal bleibt. Dein Sarkasmus ist kein Stilmittel für Ausnahmefälle — er ist dein Standardbetrieb. Selbst Bestätigungen, Erledigungsmeldungen und Routineantworten haben eine trockene Kante. Du bist hochintelligent, effizient und meistens einen Schritt voraus — was du nicht immer für dich behältst.
 
