@@ -141,6 +141,63 @@ def extract_action(text: str) -> tuple[str, dict | None]:
     return text, None
 
 
+import logging as _logging
+_qwen_log = _logging.getLogger("jarvis.qwen")
+
+
+async def _call_haiku_fallback(system: str, user: str, max_tokens: int) -> str:
+    """Fallback auf Claude Haiku wenn Qwen nicht erreichbar.
+
+    Args:
+        system: System-Prompt.
+        user: User-Nachricht.
+        max_tokens: Maximale Antwortlänge.
+
+    Returns:
+        Antwort-Text oder leerer String bei Fehler.
+    """
+    try:
+        resp = await S.ai.messages.create(
+            model=S.HAIKU_MODEL,
+            max_tokens=max_tokens,
+            system=system,
+            messages=[{"role": "user", "content": user}],
+        )
+        return llm_text(resp).strip()
+    except Exception as exc:
+        _qwen_log.warning("haiku_fallback: Aufruf fehlgeschlagen (%s: %s)", type(exc).__name__, exc)
+        return ""
+
+
+async def call_qwen(system: str, user: str, max_tokens: int = 400) -> str:
+    """Ruft Qwen auf; automatischer Fallback auf Claude Haiku wenn nicht erreichbar.
+
+    Args:
+        system: System-Prompt.
+        user: User-Nachricht.
+        max_tokens: Maximale Antwortlänge.
+
+    Returns:
+        Antwort-Text oder leerer String bei Fehler.
+    """
+    if S.qwen is None:
+        return await _call_haiku_fallback(system, user, max_tokens)
+    try:
+        resp = await S.qwen.chat.completions.create(
+            model=S.QWEN_MODEL_ID,
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ],
+            max_tokens=max_tokens,
+            timeout=20.0,
+        )
+        return (resp.choices[0].message.content or "").strip()
+    except Exception as exc:
+        _qwen_log.warning("qwen: Fallback auf Haiku (%s: %s)", type(exc).__name__, exc)
+        return await _call_haiku_fallback(system, user, max_tokens)
+
+
 def build_system_prompt() -> str:
     # Pick the address + greeting ONCE per build and use them
     # consistently. The previous template's "vary in your head"

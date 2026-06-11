@@ -40,6 +40,10 @@ def _install_stubs():
     if "prompt" not in sys.modules:
         p = types.ModuleType("prompt")
         p.llm_text = lambda r: ""
+        # call_qwen stub required since Issue #249 (person_context imports it)
+        async def _call_qwen_stub(system, user, max_tokens=400):
+            return ""
+        p.call_qwen = _call_qwen_stub
         sys.modules["prompt"] = p
 
 
