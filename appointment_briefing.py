@@ -10,6 +10,7 @@ ausgegeben. Keine Sprachausgabe.
 from __future__ import annotations
 
 import asyncio
+import html as _html
 import json
 import logging
 import re
@@ -230,19 +231,115 @@ def _format_telegram(event: dict, persons: list[dict]) -> str:
     return "\n".join(lines)
 
 
+def _format_html_v2(event: dict, person_contexts: list[tuple[str, str]]) -> str:
+    """Baut die HTML-Kachel für die WebUI mit strukturiertem Personenkontext."""
+    summary = event.get("summary", "Termin")
+    start_info = event.get("start", {})
+    end_info = event.get("end", {})
+    time_str = _format_time(start_info)
+    end_str = _format_time(end_info)
+    location = event.get("location", "") or ""
+
+    time_line = f"{time_str}–{end_str}" if end_str else time_str
+    if location:
+        time_line += f" | {location}"
+
+    html = (
+        f"<b>📅 In 15 Min: {summary}</b><br>"
+        f"🕐 {time_line}<br>"
+    )
+
+    if not person_contexts:
+        html += "<br><i>Keine Personendaten verfügbar.</i>"
+        return html
+
+    for name, ctx in person_contexts:
+        if ctx:
+            html += f"<br><pre>{_html.escape(ctx)}</pre>"
+        else:
+            html += f"<br><b>👤 {name}</b><br><i>Kein Kontext verfügbar.</i><br>"
+
+    return html
+
+
+def _format_telegram_v2(event: dict, person_contexts: list[tuple[str, str]]) -> str:
+    """Baut die strukturierte Telegram-Nachricht mit strukturiertem Personenkontext."""
+    summary = event.get("summary", "Termin")
+    start_info = event.get("start", {})
+    end_info = event.get("end", {})
+    time_str = _format_time(start_info)
+    end_str = _format_time(end_info)
+    location = event.get("location", "") or ""
+
+    time_line = f"{time_str}–{end_str}" if end_str else time_str
+    if location:
+        time_line += f" | {location}"
+
+    lines = [
+        f"📅 *In 15 Min: {summary}*",
+        f"🕐 {time_line}",
+    ]
+
+    if not person_contexts:
+        lines.append("\n_Keine Personendaten verfügbar._")
+        return "\n".join(lines)
+
+    for name, ctx in person_contexts:
+        if ctx:
+            lines.append("")
+            lines.extend(ctx.splitlines())
+        else:
+            lines.append(f"\n👤 *{name}* — Kein Kontext verfügbar.")
+
+    return "\n".join(lines)
+
+
 async def build_and_send_briefing(event: dict) -> None:
     """Erstellt das Briefing für einen Termin und sendet es auf WebUI + Telegram."""
+    import person_context as _pc
+
     names = await _extract_names(event)
     log.info("appointment_briefing: event=%r names=%r",
              event.get("summary"), names)
 
-    persons: list[dict] = []
-    if names:
-        person_tasks = [_get_person_context(n) for n in names[:5]]
-        persons = await asyncio.gather(*person_tasks)
+    async def _get_context_for_name(name: str) -> tuple[str, str]:
+        """Gibt (name, kontext_text) zurück."""
+        email = ""
+        # Versuche E-Mail aus persons_db zu ermitteln
+        try:
+            import persons_db as _pdb
+            profile = _pdb.find_by_name(name)
+            if profile and profile.emails:
+                email = profile.emails[0]
+        except Exception:
+            pass
+        # Fallback: Google Contacts
+        if not email:
+            try:
+                import google_contacts_tools as _gc
+                contacts = await _gc.find_contacts_by_name(name)
+                if contacts and contacts[0].emails:
+                    email = contacts[0].emails[0]
+            except Exception:
+                pass
+        try:
+            ctx = await _pc.enrich_mail_with_person_context(email, name)
+        except Exception as exc:
+            log.warning("appointment_briefing: context lookup failed for %r: %s", name, exc)
+            ctx = ""
+        return name, ctx
 
-    html_msg = _format_html(event, persons)
-    tg_msg = _format_telegram(event, persons)
+    person_contexts: list[tuple[str, str]] = []
+    if names:
+        ctx_tasks = [_get_context_for_name(n) for n in names[:5]]
+        results = await asyncio.gather(*ctx_tasks, return_exceptions=True)
+        person_contexts = [
+            r if isinstance(r, tuple) else (names[i], "")
+            for i, r in enumerate(results)
+        ]
+
+    html_msg = _format_html_v2(event, person_contexts)
+    tg_msg = _format_telegram_v2(event, person_contexts)
 
     try:
         from server import broadcast_to_all_sessions
