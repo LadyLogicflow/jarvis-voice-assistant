@@ -50,6 +50,7 @@ from scheduler import (
     birthday_draft_scheduler,
     bring_monitor_scheduler,
     calendar_alert_scheduler,
+    combined_evening_scheduler,
     evening_brief_scheduler,
     evening_summary_scheduler,
     mail_evening_summary_scheduler,
@@ -299,7 +300,7 @@ async def _lifespan(_app):  # type: ignore[no-untyped-def]  # AsyncGenerator
     log.info("Pause-Erinnerung aktiv (stündlich Mo-Fr 09-18 Uhr)")
     log.info("Termin-Briefing aktiv (alle 5 Minuten, 13-17 min vor Termin)")
     log.info(
-        "Mail-Abend-Zusammenfassung aktiv (täglich %02d:00 Uhr, Telegram, Issue #231)",
+        "Kombinierte Abend-Nachricht aktiv (taeglich %02d:00 Uhr, Telegram, Issue #239)",
         S.MAIL_SUMMARY_HOUR,
     )
     log.info("Mitternachts-Reset aktiv (täglich 00:00 Uhr)")
