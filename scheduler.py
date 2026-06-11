@@ -1552,6 +1552,14 @@ async def proactive_briefs_scheduler() -> None:
                 if triggered.get(slot) == today:
                     continue
                 triggered[slot] = today
+                # Issue #239: 18:00-Slot ueberspringen wenn combined_evening_scheduler
+                # denselben Zeitraum abdeckt (MAIL_SUMMARY_HOUR == 18), da dieser
+                # Scheduler Feierabend-Gruss und Mail-Stats kombiniert versendet.
+                if slot == "18:00" and S.MAIL_SUMMARY_HOUR == 18:
+                    log.info(
+                        "proactive 18:00: combined_evening_scheduler uebernimmt — skip"
+                    )
+                    continue
                 if _proactive_handler is None:
                     log.info(f"proactive {slot}: no handler registered, skipping")
                     continue
@@ -2104,9 +2112,9 @@ async def _append_birthday_draft(
 
 
 # ---------------------------------------------------------------------------
-# Mail-Abend-Zusammenfassung (Issue #231)
-# Sendet taeglich um S.MAIL_SUMMARY_HOUR Uhr eine Telegram-Zusammenfassung
-# aller verarbeiteten Mails des Tages. Nur Kategorien mit Zaehler > 0.
+# Mail-Abend-Zusammenfassung (Issue #231, zusammengefuehrt Issue #239)
+# Sendet taeglich um S.MAIL_SUMMARY_HOUR Uhr eine kombinierte Telegram-
+# Nachricht: Feierabend-Gruss + Mail-Tagesstatistik in einem Block.
 # Zuruecksetzen der Zaehler um Mitternacht via midnight_reset_scheduler().
 # ---------------------------------------------------------------------------
 
@@ -2117,23 +2125,56 @@ _last_summary_date: str = (
     else ""
 )
 
+# Formatierungsschluuessel fuer Mail-Kategorien (stabil, wiederverwendbar)
+_MAIL_STAT_LABELS: dict[str, str] = {
+    "werbung": "Werbung",
+    "einkauf": "Einkauf",
+    "info": "Info",
+    "handlungsbedarf": "Handlungsbedarf",
+    "invoices_forwarded": "Rechnungen weitergeleitet",
+    "steuerbeleg": "Steuerbelege",
+}
 
-async def mail_evening_summary_scheduler() -> None:
-    """Long-running task: taeglich um S.MAIL_SUMMARY_HOUR:00 Uhr eine
-    Telegram-Zusammenfassung der verarbeiteten Tages-Mails senden.
 
-    Nur aktiv wenn mindestens ein Zaehler > 0 ist.
-    Guard gegen Doppel-Senden: _last_summary_date merkt sich das Datum
-    der zuletzt gesendeten Zusammenfassung.
-    Kanal: ausschliesslich Telegram (kein Voice, kein WebUI).
+def _build_mail_summary_text() -> str:
+    """Erstellt den Mail-Statistik-Block aus _daily_mail_stats.
+
+    Returns:
+        Einzeiliger Text mit Kategorien-Zaehler oder leerer String wenn
+        alle Zaehler 0 sind.
     """
     import mail_monitor as _mm
+    stats = _mm._daily_mail_stats
+    parts: list[str] = []
+    for key, label in _MAIL_STAT_LABELS.items():
+        count = stats.get(key, 0)
+        if count > 0:
+            parts.append(f"{count} {label}")
+    if not parts:
+        return ""
+    return "Mails heute: " + ", ".join(parts)
 
+
+async def combined_evening_scheduler() -> None:
+    """Long-running task: taeglich um S.MAIL_SUMMARY_HOUR:00 Uhr eine
+    kombinierte Telegram-Nachricht senden (Issue #239).
+
+    Inhalt in einer einzigen Nachricht:
+    - Feierabend-Gruss (generiert per LLM, Butler-Ton)
+    - Mail-Tagesstatistik (nur Kategorien mit Zaehler > 0)
+    - Offene Handlungsbedarfe falls vorhanden
+
+    Ersetzt die bisherigen separaten Trigger von proactive_briefs_scheduler
+    (18:00-Slot) und mail_evening_summary_scheduler.
+
+    Guard gegen Doppel-Senden: _last_summary_date merkt sich das Datum.
+    Kanal: ausschliesslich Telegram (kein Voice, kein WebUI).
+    """
     global _last_summary_date
     _TRIGGER_HOUR = S.MAIL_SUMMARY_HOUR
 
     log.info(
-        "mail_evening_summary_scheduler: gestartet (taeglich %02d:00 Uhr via Telegram)",
+        "combined_evening_scheduler: gestartet (taeglich %02d:00 Uhr via Telegram)",
         _TRIGGER_HOUR,
     )
 
@@ -2148,54 +2189,84 @@ async def mail_evening_summary_scheduler() -> None:
                 and 0 <= now.minute <= 2
                 and _last_summary_date != today
             ):
-                stats = _mm._daily_mail_stats
+                _last_summary_date = today
+                log.info("combined_evening_scheduler: Trigger um %02d:00", _TRIGGER_HOUR)
 
-                # Nur senden wenn mindestens ein Zaehler > 0
-                if any(v > 0 for v in stats.values()):
-                    _last_summary_date = today
+                try:
+                    # Feierabend-Gruss per LLM generieren
+                    await asyncio.gather(refresh_data(), refresh_morning_brief_data())
+                    system_prompt = _PROACTIVE_PROMPTS.get(
+                        "18:00", _DEFAULT_PROACTIVE_PROMPT
+                    ).format(addr=pick_address())
 
-                    _LABELS: dict[str, str] = {
-                        "werbung": "Werbung",
-                        "einkauf": "Einkauf",
-                        "info": "Info",
-                        "handlungsbedarf": "Handlungsbedarf",
-                        "invoices_forwarded": "Rechnungen weitergeleitet",
-                    }
-                    parts: list[str] = []
-                    for key, label in _LABELS.items():
-                        count = stats.get(key, 0)
-                        if count > 0:
-                            parts.append(f"{count} {label}")
+                    today_block = ""
+                    if S.TODAY_TASKS:
+                        today_block += f"\nHeutige Aufgaben:\n{S.TODAY_TASKS}"
+                    if S.TODAY_EVENTS:
+                        today_block += f"\nHeutige Termine:\n{S.TODAY_EVENTS}"
+                    if S.UPCOMING_DEADLINES:
+                        today_block += f"\n{S.UPCOMING_DEADLINES}"
 
-                    message = "\U0001f4ec Mail-Zusammenfassung heute: " + ", ".join(parts)
-                    log.info("mail_evening_summary_scheduler: sende: %s", message)
+                    user_msg = f"Aktuelle Tagesdaten:{today_block or ' (keine offenen Punkte)'}"
 
+                    resp = await S.ai.messages.create(
+                        model=S.HAIKU_MODEL,
+                        max_tokens=400,
+                        system=system_prompt,
+                        messages=[{"role": "user", "content": user_msg}],
+                    )
+                    evening_text = trim_to_complete_sentences(llm_text(resp).strip())
+                except Exception as e:
+                    log.warning(
+                        "combined_evening_scheduler: LLM-Teil fehlgeschlagen: %s: %s",
+                        type(e).__name__, e,
+                    )
+                    evening_text = ""
+
+                # Mail-Statistik-Block
+                mail_text = _build_mail_summary_text()
+
+                # Kombinieren: Feierabend-Gruss + Leerzeile + Mail-Stats
+                parts: list[str] = []
+                if evening_text:
+                    parts.append(evening_text)
+                if mail_text:
+                    parts.append(mail_text)
+
+                if not parts:
+                    log.info(
+                        "combined_evening_scheduler: keine Inhalte — kein Push"
+                    )
+                else:
+                    message = "\n\n".join(parts)
+                    log.info(
+                        "combined_evening_scheduler: sende: %s", message[:120]
+                    )
                     try:
                         import telegram_bot as _tgb
                         _sent = await _tgb.send_user_text(message)
                         if not _sent:
                             log.warning(
-                                "mail_evening_summary_scheduler: send_user_text"
+                                "combined_evening_scheduler: send_user_text"
                                 " returned False (quiet hours oder Bot nicht bereit)"
                             )
                     except Exception as _tge:
                         log.warning(
-                            "mail_evening_summary_scheduler: Telegram failed: "
-                            "%s: %s", type(_tge).__name__, _tge,
+                            "combined_evening_scheduler: Telegram failed: %s: %s",
+                            type(_tge).__name__, _tge,
                         )
-                else:
-                    # Auch ohne Inhalt Guard setzen damit kein Retry in Minute 1/2
-                    _last_summary_date = today
-                    log.info(
-                        "mail_evening_summary_scheduler: alle Zaehler 0, kein Push"
-                    )
 
         except Exception as e:
             log.warning(
-                "mail_evening_summary_scheduler loop error: %s: %s",
+                "combined_evening_scheduler loop error: %s: %s",
                 type(e).__name__, e,
             )
         await asyncio.sleep(60)
+
+
+# Rueckwaerts-kompatibel: mail_evening_summary_scheduler delegiert an den
+# kombinierten Scheduler (wird in server.py noch direkt referenziert).
+mail_evening_summary_scheduler = combined_evening_scheduler
 
 
 async def midnight_reset_scheduler() -> None:
