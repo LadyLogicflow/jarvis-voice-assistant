@@ -231,7 +231,11 @@ def _parse_mail_date(raw_date: str) -> str:
     return raw_date
 
 
-def _format_mail_history(mail_rows: list[dict], sender_name: str) -> str:
+def _format_mail_history(
+    mail_rows: list[dict],
+    sender_name: str,
+    include_header: bool = True,
+) -> str:
     """Formatiert die letzten 3 Mails als strukturierte Liste mit Datum und Stichworten.
 
     Ersetzt den LLM-Fliesstext fuer den visuellen Kontext-Block (Telegram/Webfrontend).
@@ -241,6 +245,10 @@ def _format_mail_history(mail_rows: list[dict], sender_name: str) -> str:
         mail_rows: Liste von Row-Dicts aus mail_knowledge (Felder: mail_date,
                    subject, raw_summary, content). Kann leer sein.
         sender_name: Anzeigename des Absenders fuer den Header.
+        include_header: Wenn True (default), wird der ``📋 Name – letzte Mails:``
+                        Header vorangestellt. Wenn False, werden nur die
+                        ``• Datum — ...`` Eintragszeilen zurueckgegeben
+                        (fuer Einbettung in _format_full_context).
 
     Returns:
         Formatierter String mit max. 3 Mail-Eintraegen oder leerer String.
@@ -255,7 +263,9 @@ def _format_mail_history(mail_rows: list[dict], sender_name: str) -> str:
         return ""
 
     header_name = sender_name.strip() if sender_name else "Kontakt"
-    lines: list[str] = [f"\U0001f4cb {header_name} – letzte Mails:"]
+    lines: list[str] = []
+    if include_header:
+        lines.append(f"\U0001f4cb {header_name} – letzte Mails:")
 
     for row in mail_rows[:3]:
         # Datum: YYYY-MM-DD -> DD.MM.YYYY
@@ -282,6 +292,97 @@ def _format_mail_history(mail_rows: list[dict], sender_name: str) -> str:
         lines.append(line)
 
     return "\n".join(lines)
+
+
+def _format_full_context(context_data: dict) -> str:
+    """Baut einen vollstaendigen strukturierten Kontext-Block aus allen Quellen.
+
+    Nur Sektionen mit tatsaechlichen Daten werden ausgegeben. Wenn gar keine
+    Daten vorhanden sind, wird ein leerer String zurueckgegeben.
+
+    Args:
+        context_data: Gesammelte Daten aus allen Quellen mit den Schluesseln:
+                      - ``profile``: Dict mit Profilfeldern (name, funktion,
+                        open_points) oder None.
+                      - ``mail_rows``: Liste von Mail-Dicts.
+                      - ``calendar_entries``: Liste von Termin-Strings.
+                      - ``todoist_tasks``: Liste von Aufgaben-Strings.
+                      - ``sender_name``: Anzeigename des Absenders.
+
+    Returns:
+        Mehrzeiliger String mit allen vorhandenen Sektionen oder leerer String.
+
+    Example::
+
+        👤 Thomas Ulbrich — Direktionsleitung
+        📋 Letzte Mails:
+          • 11.06.2026 — Rueckmeldung Herr Bosch: Projekt ok
+        📅 Termine:
+          • 15.06.2026 — Besprechung Jahresabschluss
+        ✅ Offene Aufgaben:
+          • Steuererklärung 2024 prüfen
+        📌 Offene Punkte:
+          • Vorauszahlung Q3 noch offen
+    """
+    profile = context_data.get("profile")
+    mail_rows = context_data.get("mail_rows", [])
+    calendar_entries = context_data.get("calendar_entries", [])
+    todoist_tasks = context_data.get("todoist_tasks", [])
+    sender_name = (context_data.get("sender_name") or "").strip()
+
+    # --- Mail-Verlauf ---
+    body_sections: list[str] = []
+
+    if mail_rows:
+        mail_lines = _format_mail_history(mail_rows, sender_name, include_header=False)
+        if mail_lines:
+            body_sections.append("\U0001f4cb Letzte Mails:")
+            # Einrueckung: 2 Leerzeichen vor jedem Eintrag
+            indented = "\n".join(f"  {l}" for l in mail_lines.splitlines())
+            body_sections.append(indented)
+
+    # --- Kalender-Termine ---
+    if calendar_entries:
+        body_sections.append("\U0001f4c5 Termine:")
+        for entry in calendar_entries[:3]:
+            body_sections.append(f"  • {entry}")
+
+    # --- Todoist-Aufgaben ---
+    if todoist_tasks:
+        body_sections.append("✅ Offene Aufgaben:")
+        for task in todoist_tasks[:3]:
+            body_sections.append(f"  • {task}")
+
+    # --- Offene Punkte aus Profil ---
+    if profile and profile.get("open_points"):
+        body_sections.append("\U0001f4cc Offene Punkte:")
+        for point in profile["open_points"][:3]:
+            body_sections.append(f"  • {point}")
+
+    # Header-Zeile nur ausgeben wenn tatsaechlich Daten oder Profil vorhanden
+    has_data = bool(body_sections) or profile is not None
+    if not has_data:
+        return ""
+
+    header_parts: list[str] = []
+    if profile:
+        name = (profile.get("name") or sender_name or "").strip()
+        funktion = (profile.get("funktion") or "").strip()
+        if name and funktion:
+            header_parts.append(f"\U0001f464 {name} — {funktion}")
+        elif name:
+            header_parts.append(f"\U0001f464 {name}")
+        elif sender_name:
+            header_parts.append(f"\U0001f464 {sender_name}")
+    elif sender_name and body_sections:
+        # sender_name ohne Profil nur als Header wenn es Daten-Sektionen gibt
+        header_parts.append(f"\U0001f464 {sender_name}")
+
+    all_sections = header_parts + body_sections
+    if not all_sections:
+        return ""
+
+    return "\n".join(all_sections)
 
 
 # ---------------------------------------------------------------------------
@@ -447,13 +548,14 @@ async def enrich_mail_with_person_context(
         "sender_name": sender_name,
     }
 
-    # Visueller Kontext-Block: strukturierte Mail-History (Issue #246)
-    # Wenn mail_rows vorhanden, wird die formatierte Liste genutzt statt
-    # des LLM-Fliesstexts. Fuer TTS-Ausgabe bleibt _synthesize() weiterhin
-    # verfuegbar (wird bei Bedarf von mail_monitor.py direkt aufgerufen).
-    mail_history = _format_mail_history(mail_rows, sender_name)
-    if mail_history:
-        return mail_history
+    # Visueller Kontext-Block: strukturierter Gesamt-Block aus allen Quellen (#247)
+    # Profil, Mail-Verlauf, Kalender und Todoist werden gemeinsam angezeigt.
+    # Nur Sektionen mit tatsaechlichen Daten erscheinen.
+    # Fuer TTS-Ausgabe bleibt _synthesize() weiterhin verfuegbar
+    # (wird bei Bedarf von mail_monitor.py direkt aufgerufen).
+    full_context = _format_full_context(context_data)
+    if full_context:
+        return full_context
 
-    # Fallback auf LLM-Synthese wenn keine Mail-History vorhanden
+    # Fallback auf LLM-Synthese wenn keine strukturierten Daten vorhanden
     return await _synthesize(context_data)
