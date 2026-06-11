@@ -2314,6 +2314,7 @@ async def midnight_reset_scheduler() -> None:
                     active_stems = {
                         _ss._safe_session(sid) for sid in _ss._active_sessions
                     }
+                    active_stems.add("default")  # Fallback-Slot immer schützen
                     deleted = 0
                     for f in state_dir.glob("*.json"):
                         if f.stem in active_stems:
