@@ -4265,6 +4265,29 @@ async def execute_action(action: dict) -> str:
         S.PENDING_MAIL_FIND = {}
         return f"Abgebrochen, {pick_address()}."
 
+    elif t == "SET_LLM_MODE":
+        # Issue #250: LLM-Backend per Sprachbefehl umschalten.
+        mode = (p or "").lower().strip()
+        if mode in ("qwen", "claude"):
+            S.set_llm_mode(mode)
+            if mode == "qwen":
+                label = f"Qwen ({S.QWEN_MODEL_ID}) — lokales Modell"
+            else:
+                label = "Claude Haiku — Anthropic API"
+            return f"Verstanden. Ich nutze ab jetzt {label}."
+        return "Ich kenne diesen Modus nicht. Bitte sagen Sie 'Qwen' oder 'Claude'."
+
+    elif t == "GET_LLM_MODE":
+        # Issue #250: Aktives LLM-Backend abfragen.
+        mode = S.get_llm_mode()
+        if mode == "qwen":
+            status = f"Qwen ({S.QWEN_MODEL_ID}) — lokales Modell"
+            if S.qwen is None:
+                status += " (nicht erreichbar, Fallback auf Haiku aktiv)"
+        else:
+            status = "Claude Haiku — Anthropic API"
+        return f"Ich nutze gerade {status}."
+
     return ""
 
 

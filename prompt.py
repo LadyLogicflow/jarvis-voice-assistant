@@ -169,6 +169,24 @@ async def _call_haiku_fallback(system: str, user: str, max_tokens: int) -> str:
         return ""
 
 
+async def call_llm(system: str, user: str, max_tokens: int = 400) -> str:
+    """Ruft das aktive LLM-Backend auf (Qwen oder Claude Haiku).
+
+    Respektiert S.get_llm_mode(): 'qwen' → call_qwen(), 'claude' → Haiku direkt.
+
+    Args:
+        system: System-Prompt.
+        user: User-Nachricht.
+        max_tokens: Maximale Antwortlänge.
+
+    Returns:
+        Antwort-Text oder leerer String bei Fehler.
+    """
+    if S.get_llm_mode() == "qwen":
+        return await call_qwen(system, user, max_tokens)
+    return await _call_haiku_fallback(system, user, max_tokens)
+
+
 async def call_qwen(system: str, user: str, max_tokens: int = 400) -> str:
     """Ruft Qwen auf; automatischer Fallback auf Claude Haiku wenn nicht erreichbar.
 
@@ -767,6 +785,10 @@ Wenn Jarvis proaktiv nach einem Vorhaben fragt ("Uebrigens — Sie wollten noch:
 [ACTION:MAIL_FIND_AND_FORWARD] absender|empfänger|datum - Mail nach Absender und Datum suchen und weiterleiten. absender=E-Mail oder Name, empfänger=E-Mail oder Name, datum=heute/gestern/diese woche. Nutze wenn {addr} sagt "Leite die Mail von [Absender] weiter an [Empfänger]", "Finde die Mail von [Absender] von heute und leite sie weiter", "Schicke die Mail von [Name] vom heutigen Tag an [Empfänger]". Absender und Empfänger exakt so übernehmen wie genannt. Datum aus der Anfrage extrahieren: "heute"/"heute morgen" -> heute, "gestern" -> gestern, "diese Woche" -> diese Woche, kein Datum -> heute. Beispiel: [ACTION:MAIL_FIND_AND_FORWARD] mueller@kanzlei.de|getmyinvoices@app.de|heute
 [ACTION:MAIL_FIND_CONFIRM] nummer - Bestätigt eine der gefundenen Mails zur Weiterleitung (1-4). Nur verwenden wenn vorher MAIL_FIND_AND_FORWARD mehrere Treffer hatte und {addr} eine Zahl nennt. Beispiel: [ACTION:MAIL_FIND_CONFIRM] 2
 [ACTION:MAIL_FIND_CANCEL] - Bricht die laufende Mail-Suche ab. Nutze wenn {addr} sagt "abbrechen", "lass es", "vergiss es" nachdem MAIL_FIND_AND_FORWARD mehrere Treffer gemeldet hatte. Beispiel: [ACTION:MAIL_FIND_CANCEL]
+[ACTION:SET_LLM_MODE] modus - Schaltet das LLM-Backend um. modus ist "qwen" oder "claude".
+  Nutze wenn {addr} sagt: "wechsle zu Qwen", "nutze Qwen", "schalte auf Claude", "wechsle zu Claude", "nutze Claude", "Qwen-Modus", "Claude-Modus"
+[ACTION:GET_LLM_MODE] - Fragt das aktive LLM-Backend ab.
+  Nutze wenn {addr} sagt: "welches Modell nutzt du", "welches LLM", "bist du auf Qwen", "bist du auf Claude", "welches Backend"
 
 MAIL-WORKFLOW (Decision-Tree nach Mail-Eingang):
 Wenn eine aktive Mail existiert (siehe "Aktive Mail" unter AKTUELLE DATEN), reagiere auf folgende Befehle — {addr} kann SOFORT entscheiden, OHNE erst "vorlesen" zu sagen.

@@ -16,7 +16,7 @@ import logging
 import re
 
 import settings as S
-from prompt import call_qwen
+from prompt import call_llm
 
 log = logging.getLogger("jarvis")
 
@@ -48,7 +48,7 @@ async def _extract_names(event: dict) -> list[str]:
     ]
     user_msg = f"Titel: {summary}\nBeschreibung: {description[:300]}\nTeilnehmer: {', '.join(attendee_names[:10])}"
     try:
-        raw = await call_qwen(_NAME_EXTRACT_SYSTEM, user_msg, max_tokens=120)
+        raw = await call_llm(_NAME_EXTRACT_SYSTEM, user_msg, max_tokens=120)
         if not raw:
             return []
         if raw.startswith("```"):

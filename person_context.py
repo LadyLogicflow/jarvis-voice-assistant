@@ -22,7 +22,7 @@ import logging
 from typing import Optional
 
 import settings as S
-from prompt import llm_text, call_qwen
+from prompt import llm_text, call_llm
 
 log = logging.getLogger("jarvis.person_context")
 
@@ -467,7 +467,7 @@ async def _synthesize(context_data: dict) -> str:
 
     user_msg = "\n".join(parts)
     try:
-        return await call_qwen(_SYNTHESIS_PROMPT, user_msg, max_tokens=150)
+        return await call_llm(_SYNTHESIS_PROMPT, user_msg, max_tokens=150)
     except Exception as exc:
         log.warning(
             "person_context: synthesis LLM call failed: %s: %s",

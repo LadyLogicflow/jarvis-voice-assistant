@@ -322,6 +322,30 @@ try:
 except ImportError:
     qwen = None
 
+# Laufzeit-Modus: "qwen" oder "claude"
+# Default: "qwen" wenn Qwen konfiguriert, sonst "claude"
+_llm_mode: str = "qwen" if (qwen is not None) else "claude"
+
+
+def get_llm_mode() -> str:
+    """Gibt den aktuellen LLM-Modus zurück ('qwen' oder 'claude')."""
+    return _llm_mode
+
+
+def set_llm_mode(mode: str) -> None:
+    """Schaltet den LLM-Modus um. Erlaubt: 'qwen', 'claude'.
+
+    Args:
+        mode: Ziel-Modus. Muss 'qwen' oder 'claude' sein.
+
+    Raises:
+        ValueError: Wenn der Modus unbekannt ist.
+    """
+    global _llm_mode
+    if mode not in ("qwen", "claude"):
+        raise ValueError(f"Unbekannter LLM-Modus: {mode!r}")
+    _llm_mode = mode
+
 
 # ---------------------------------------------------------------------------
 # Mutable runtime state. Other modules MUST access these via
