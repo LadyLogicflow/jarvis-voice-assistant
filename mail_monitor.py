@@ -2226,32 +2226,99 @@ async def _idle_session(account: dict, aioimaplib_module) -> None:
 
 async def _account_loop(account: dict, aioimaplib_module) -> None:
     """Keep the IDLE session alive for one account, reconnecting on
-    crash with back-off. Auth failures use a long back-off (30 min) to
-    avoid triggering IP bans from repeated rapid login attempts."""
+    crash with exponential back-off (Issue #240).
+
+    Back-off schedule (seconds): 30, 60, 120, 240, 300 (capped).
+    After 3 consecutive failures a single Telegram warning is sent.
+    On successful reconnect the failure counter is reset and a log
+    message confirms recovery.
+
+    Auth failures bypass the back-off schedule and use a fixed 30-min
+    delay to avoid triggering IP bans from repeated rapid login attempts.
+    """
     name = account["name"]
+    # Exponential back-off levels (seconds). After the last step the
+    # maximum (300 s) is reused indefinitely.
+    _BACKOFF_STEPS = [30, 60, 120, 240, 300]
+    _WARN_AFTER = 3  # send Telegram warning after this many consecutive failures
+
+    consecutive_failures = 0
+    episode_warned = False  # only one Telegram warning per outage episode
+
     while True:
+        session_error: Exception | None = None
         try:
             await _idle_session(account, aioimaplib_module)
         except asyncio.CancelledError:
             raise
         except Exception as e:
-            err = str(e)
-            is_auth = "LOGIN rejected" in err or "AUTHENTICATIONFAILED" in err
-            is_timeout = (isinstance(e, (asyncio.TimeoutError, TimeoutError))
-                          or "TimeoutError" in type(e).__name__
-                          or "timeout" in err.lower())
-            if is_auth:
-                log.warning(f"mail_monitor[{name}] auth failed: {e}; "
-                            f"reconnect in 30min (avoid IP ban)")
-                await asyncio.sleep(1800)
-            elif is_timeout:
-                log.warning(f"mail_monitor[{name}] connection timeout (server unresponsive / IP throttle?); "
-                            f"reconnect in 10min")
-                await asyncio.sleep(600)
-            else:
-                log.warning(f"mail_monitor[{name}] session crashed: "
-                            f"{type(e).__name__}: {e}; reconnect in 30s")
-                await asyncio.sleep(30)
+            session_error = e
+
+        if session_error is None:
+            # _idle_session returned normally — treat as a clean end of
+            # session (e.g. server closed the connection gracefully).
+            # Reset failure counters and reconnect immediately (no back-off).
+            if consecutive_failures > 0:
+                log.info(
+                    "mail_monitor[%s] Reconnect erfolgreich nach %d Versuch(en).",
+                    name, consecutive_failures,
+                )
+                consecutive_failures = 0
+                episode_warned = False
+            log.info("mail_monitor[%s] session ended cleanly, reconnecting…", name)
+            continue
+
+        # --- session raised an exception ---
+        e = session_error
+        err = str(e)
+        is_auth = "LOGIN rejected" in err or "AUTHENTICATIONFAILED" in err
+        is_timeout = (isinstance(e, (asyncio.TimeoutError, TimeoutError))
+                      or "TimeoutError" in type(e).__name__
+                      or "timeout" in err.lower())
+
+        consecutive_failures += 1
+
+        # Send a single Telegram warning per outage episode once the
+        # failure threshold is reached.
+        if consecutive_failures >= _WARN_AFTER and not episode_warned:
+            episode_warned = True
+            _warn_msg = (
+                f"Mail-Monitor [{name}]: Verbindung zum IMAP-Server unterbrochen. "
+                f"{consecutive_failures} Fehlversuche bisher. "
+                f"JARVIS versucht weiterhin automatisch zu reconnecten."
+            )
+            log.warning("mail_monitor[%s] %s", name, _warn_msg)
+            try:
+                await telegram_bot.send_user_text(_warn_msg)
+            except Exception as _tg_exc:
+                log.warning(
+                    "mail_monitor[%s] Telegram-Warnung fehlgeschlagen: %s: %s",
+                    name, type(_tg_exc).__name__, _tg_exc,
+                )
+
+        if is_auth:
+            log.warning(
+                "mail_monitor[%s] auth failed (attempt %d): %s; "
+                "reconnect in 30min (avoid IP ban)",
+                name, consecutive_failures, e,
+            )
+            await asyncio.sleep(1800)
+        elif is_timeout:
+            backoff = _BACKOFF_STEPS[min(consecutive_failures - 1, len(_BACKOFF_STEPS) - 1)]
+            log.warning(
+                "mail_monitor[%s] connection timeout (attempt %d); "
+                "reconnect in %ds",
+                name, consecutive_failures, backoff,
+            )
+            await asyncio.sleep(backoff)
+        else:
+            backoff = _BACKOFF_STEPS[min(consecutive_failures - 1, len(_BACKOFF_STEPS) - 1)]
+            log.warning(
+                "mail_monitor[%s] session error (attempt %d): %s: %s; "
+                "reconnect in %ds",
+                name, consecutive_failures, type(e).__name__, e, backoff,
+            )
+            await asyncio.sleep(backoff)
 
 
 async def mail_monitor_main() -> None:
