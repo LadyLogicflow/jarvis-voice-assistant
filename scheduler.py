@@ -2132,6 +2132,7 @@ _MAIL_STAT_LABELS: dict[str, str] = {
     "info": "Info",
     "handlungsbedarf": "Handlungsbedarf",
     "invoices_forwarded": "Rechnungen weitergeleitet",
+    "steuerbeleg": "Steuerbelege",
 }
 
 
