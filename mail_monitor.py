@@ -51,6 +51,10 @@ _SENT_POLL_INTERVAL = 15 * 60
 # Format: {account_name: {uid, ...}}
 _invoice_forwarded: dict[str, set[int]] = {}
 
+# Issue #255: Während des Startup-Catchup keine Telegram/Voice-Benachrichtigungen.
+# Wird pro Account auf True gesetzt sobald der initiale Catch-up abgeschlossen ist.
+_catchup_done: dict[str, bool] = {}
+
 # ---------------------------------------------------------------------------
 # Tages-Zähler für die Abend-Zusammenfassung (Issue #231)
 # Werden über alle Konten summiert und um Mitternacht zurückgesetzt.
@@ -1447,7 +1451,8 @@ async def _process_new_uids(account: dict, client, uids: list[int]) -> None:
                                                 f"Rechnung von {sender} an "
                                                 f"getmyinvoices weitergeleitet, Madam."
                                             )
-                                            if not S.is_quiet_hours():
+                                            # Issue #255: keine Benachrichtigung während Catch-up
+                                            if not S.is_quiet_hours() and _catchup_done.get(name, True):
                                                 try:
                                                     import telegram_bot as _tgb
                                                     await _tgb.send_user_text(_inv_notice)
@@ -1462,6 +1467,7 @@ async def _process_new_uids(account: dict, client, uids: list[int]) -> None:
                                             if (
                                                 not S.is_mac_quiet_hours()
                                                 and _mail_alert_handler is not None
+                                                and _catchup_done.get(name, True)
                                             ):
                                                 try:
                                                     await _mail_alert_handler(_inv_notice)
@@ -1603,11 +1609,13 @@ async def _process_new_uids(account: dict, client, uids: list[int]) -> None:
                             references=msg.get("References", ""),
                         )
                         session_state.broadcast_active_mail(_mail_ref_drift)
-                        if not S.is_quiet_hours():
+                        # Issue #255: keine Drift-Benachrichtigung während Catch-up
+                        if not S.is_quiet_hours() and _catchup_done.get(name, True):
                             await telegram_bot.send_user_voice(
                                 spoken, caption=spoken, mail_ref=_mail_ref_drift
                             )
-                        if not S.is_mac_quiet_hours() and _mail_alert_handler is not None:
+                        if (not S.is_mac_quiet_hours() and _mail_alert_handler is not None
+                                and _catchup_done.get(name, True)):
                             try:
                                 await _mail_alert_handler(spoken)
                             except Exception as e:
@@ -1672,12 +1680,15 @@ async def _process_new_uids(account: dict, client, uids: list[int]) -> None:
                     f"Von: {sender}\nBetreff: {subject}\n"
                     f"Termin: {when_human or ics_invite.get('dtstart', '?')}"
                 )
-                if tg_quiet:
-                    log.info(f"mail_monitor[{name}] uid={uid}: telegram quiet hours, suppressed (calendar)")
+                # Issue #255: keine Kalender-Einladungs-Benachrichtigung während Catch-up
+                _live_cal = _catchup_done.get(name, True)
+                if tg_quiet or not _live_cal:
+                    log.info(f"mail_monitor[{name}] uid={uid}: suppressed (calendar, "
+                             f"quiet={tg_quiet}, catchup={not _live_cal})")
                 else:
                     await telegram_bot.send_user_voice(spoken, caption=caption, mail_ref=_mail_ref_cal)
-                if mac_quiet:
-                    log.info(f"mail_monitor[{name}] uid={uid}: mac quiet hours, suppressed (calendar)")
+                if mac_quiet or not _live_cal:
+                    log.info(f"mail_monitor[{name}] uid={uid}: mac suppressed (calendar)")
                 elif _mail_alert_handler is not None:
                     try:
                         await _mail_alert_handler(spoken)
@@ -1954,15 +1965,19 @@ async def _process_new_uids(account: dict, client, uids: list[int]) -> None:
                     "mail_processed",
                     f"{_dt_notify.datetime.now().strftime('%H:%M')} | {sender} | {subject} | gemeldet",
                 )
-                if tg_quiet:
-                    log.info(f"mail_monitor[{name}] uid={uid}: telegram quiet hours, suppressed")
+                # Issue #255: Während Startup-Catch-up keine Benachrichtigungen.
+                _live = _catchup_done.get(name, True)
+                if tg_quiet or not _live:
+                    log.info(f"mail_monitor[{name}] uid={uid}: telegram suppressed "
+                             f"(quiet={tg_quiet}, catchup={not _live})")
                 else:
                     await telegram_bot.send_user_voice(spoken, caption=caption, mail_ref=_mail_ref)
                 # Mac-Ansage zusaetzlich, sofern nicht in Mac-Quiet-
                 # Hours UND eine Web-UI verbunden ist (der Handler
                 # prueft das selbst).
-                if mac_quiet:
-                    log.info(f"mail_monitor[{name}] uid={uid}: mac quiet hours, suppressed")
+                if mac_quiet or not _live:
+                    log.info(f"mail_monitor[{name}] uid={uid}: mac suppressed "
+                             f"(quiet={mac_quiet}, catchup={not _live})")
                 elif _mail_alert_handler is not None:
                     try:
                         await _mail_alert_handler(spoken)
@@ -1983,7 +1998,7 @@ async def _process_new_uids(account: dict, client, uids: list[int]) -> None:
                             ),
                             timeout=10.0,
                         )
-                        if context_text:
+                        if context_text and _catchup_done.get(name, True):
                             log.debug(
                                 f"mail_monitor[{name}] uid={uid}: "
                                 f"person context enrichment: {context_text[:80]!r}"
@@ -2159,8 +2174,16 @@ async def _idle_session(account: dict, aioimaplib_module) -> None:
             new_uids = await _uids_in_range(client, _max_seen[name], server_max)
             if not new_uids:
                 new_uids = list(range(_max_seen[name] + 1, server_max + 1))
-            log.info(f"mail_monitor[{name}] catching up on {len(new_uids)} mail(s)")
+            log.info(
+                f"mail_monitor[{name}] catching up on {len(new_uids)} mail(s) "
+                "(Issue #255: Benachrichtigungen während Catch-up unterdrückt)"
+            )
+            # Issue #255: Catch-up still nicht benachrichtigen — nur State aktualisieren.
+            _catchup_done[name] = False
             await _process_new_uids(account, client, new_uids)
+
+    # Catch-up abgeschlossen — ab jetzt Live-Benachrichtigungen erlaubt.
+    _catchup_done[name] = True
 
     # Startup-Scan: Suche nach allen noch vorhandenen Jarvis-Mails im Posteingang.
     # Verarbeitet ALLE Treffer (nicht nur neue UIDs) — persons_db.save_tax_assessment
