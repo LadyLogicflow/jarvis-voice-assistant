@@ -141,6 +141,9 @@ TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
 TELEGRAM_CHAT_ID = config.get("telegram_chat_id", "")
 TELEGRAM_QUIET_START = config.get("telegram_quiet_start", "21:00")
 TELEGRAM_QUIET_END = config.get("telegram_quiet_end", "07:00")
+# Admin-Panel (Issue #253): Telegram-Bot per Web-UI ein- oder ausschalten.
+# Default True, damit bestehende Installationen ohne config-Eintrag weiter funktionieren.
+TELEGRAM_ENABLED: bool = bool(config.get("telegram_enabled", True))
 # Mac UI quiet hours — typically eine Stunde laenger erreichbar als
 # Telegram, damit Catrin am Schreibtisch arbeiten kann ohne dass das
 # Handy schon nervt.

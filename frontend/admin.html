@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JARVIS Admin</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            background: #0a0a0f;
+            color: #e0e0e0;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            min-height: 100vh;
+            padding: 40px 20px;
+        }
+
+        .container {
+            max-width: 580px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            color: #00d4ff;
+            font-size: 1.4em;
+            font-weight: 600;
+            letter-spacing: 1px;
+            margin-bottom: 6px;
+        }
+
+        .subtitle {
+            color: #555;
+            font-size: 0.82em;
+            margin-bottom: 36px;
+        }
+
+        .section {
+            margin-bottom: 32px;
+        }
+
+        .section-title {
+            color: rgba(0, 212, 255, 0.6);
+            font-size: 0.72em;
+            text-transform: uppercase;
+            letter-spacing: 1.2px;
+            border-bottom: 1px solid rgba(0, 212, 255, 0.18);
+            padding-bottom: 6px;
+            margin-bottom: 16px;
+        }
+
+        .field {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 12px 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+            gap: 16px;
+        }
+
+        .field:last-child {
+            border-bottom: none;
+        }
+
+        .field-label {
+            flex: 1;
+        }
+
+        .field-name {
+            font-size: 0.92em;
+            color: #ddd;
+        }
+
+        .field-desc {
+            font-size: 0.77em;
+            color: #555;
+            margin-top: 2px;
+        }
+
+        /* Toggle switch */
+        .toggle-wrap {
+            flex-shrink: 0;
+        }
+
+        .toggle {
+            position: relative;
+            display: inline-block;
+            width: 44px;
+            height: 24px;
+        }
+
+        .toggle input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: #2a2a3a;
+            border-radius: 24px;
+            transition: background 0.2s;
+            border: 1px solid #333;
+        }
+
+        .slider:before {
+            content: "";
+            position: absolute;
+            height: 18px;
+            width: 18px;
+            left: 2px;
+            bottom: 2px;
+            background: #666;
+            border-radius: 50%;
+            transition: transform 0.2s, background 0.2s;
+        }
+
+        input:checked + .slider {
+            background: rgba(0, 212, 255, 0.18);
+            border-color: rgba(0, 212, 255, 0.5);
+        }
+
+        input:checked + .slider:before {
+            transform: translateX(20px);
+            background: #00d4ff;
+        }
+
+        /* Number / text inputs */
+        .input-wrap {
+            flex-shrink: 0;
+        }
+
+        input[type="number"],
+        input[type="text"] {
+            background: #141420;
+            border: 1px solid #2a2a3a;
+            border-radius: 6px;
+            color: #e0e0e0;
+            font-size: 0.9em;
+            padding: 6px 10px;
+            width: 90px;
+            text-align: center;
+            transition: border-color 0.15s;
+        }
+
+        input[type="number"]:focus,
+        input[type="text"]:focus {
+            outline: none;
+            border-color: rgba(0, 212, 255, 0.5);
+        }
+
+        /* Save button */
+        .actions {
+            margin-top: 32px;
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            flex-wrap: wrap;
+        }
+
+        button#save-btn {
+            background: rgba(0, 212, 255, 0.12);
+            border: 1px solid rgba(0, 212, 255, 0.4);
+            border-radius: 8px;
+            color: #00d4ff;
+            cursor: pointer;
+            font-size: 0.92em;
+            font-weight: 500;
+            letter-spacing: 0.4px;
+            padding: 10px 28px;
+            transition: background 0.15s, border-color 0.15s;
+        }
+
+        button#save-btn:hover {
+            background: rgba(0, 212, 255, 0.2);
+            border-color: rgba(0, 212, 255, 0.7);
+        }
+
+        button#save-btn:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+
+        #feedback {
+            font-size: 0.85em;
+            padding: 8px 14px;
+            border-radius: 6px;
+            display: none;
+        }
+
+        #feedback.success {
+            background: rgba(0, 255, 136, 0.08);
+            border: 1px solid rgba(0, 255, 136, 0.3);
+            color: #00ff88;
+            display: block;
+        }
+
+        #feedback.error {
+            background: rgba(255, 68, 68, 0.08);
+            border: 1px solid rgba(255, 68, 68, 0.35);
+            color: #ff6666;
+            display: block;
+        }
+
+        .restart-note {
+            margin-top: 24px;
+            font-size: 0.78em;
+            color: #444;
+            padding: 10px 14px;
+            border: 1px solid #1e1e2e;
+            border-radius: 6px;
+            background: #0d0d18;
+        }
+
+        .restart-note strong {
+            color: #666;
+        }
+
+        a.back-link {
+            display: inline-block;
+            margin-bottom: 28px;
+            color: #444;
+            font-size: 0.82em;
+            text-decoration: none;
+        }
+
+        a.back-link:hover { color: #00d4ff; }
+    </style>
+</head>
+<body>
+<div class="container">
+    <a href="/" class="back-link">← Zurück zur Hauptansicht</a>
+
+    <h1>J.A.R.V.I.S. &mdash; Einstellungen</h1>
+    <p class="subtitle">Konfiguration ohne Terminal. Änderungen werden sofort gespeichert.</p>
+
+    <form id="admin-form" novalidate>
+
+        <!-- Feature-Schalter -->
+        <div class="section">
+            <div class="section-title">Feature-Schalter</div>
+
+            <div class="field">
+                <div class="field-label">
+                    <div class="field-name">Pause-Erinnerung</div>
+                    <div class="field-desc">Stündliche Bewegungs- und Wasserpause Mo–Fr 09–18 Uhr</div>
+                </div>
+                <div class="toggle-wrap">
+                    <label class="toggle">
+                        <input type="checkbox" id="pause_reminder_enabled" name="pause_reminder_enabled">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+            </div>
+
+            <div class="field">
+                <div class="field-label">
+                    <div class="field-name">Diabetes-Modus (Speiseplan)</div>
+                    <div class="field-desc">Typ-2-geeignete Gerichte — kein Zucker, wenig einfache Kohlenhydrate</div>
+                </div>
+                <div class="toggle-wrap">
+                    <label class="toggle">
+                        <input type="checkbox" id="meal_plan_diabetes_mode" name="meal_plan_diabetes_mode">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+            </div>
+
+            <div class="field">
+                <div class="field-label">
+                    <div class="field-name">Mail-Monitor</div>
+                    <div class="field-desc">IMAP IDLE — eingehende Mails per Telegram weiterleiten</div>
+                </div>
+                <div class="toggle-wrap">
+                    <label class="toggle">
+                        <input type="checkbox" id="mail_monitor_enabled" name="mail_monitor_enabled">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+            </div>
+
+            <div class="field">
+                <div class="field-label">
+                    <div class="field-name">Telegram-Bot</div>
+                    <div class="field-desc">Bot-Verbindung aktiv halten und auf Nachrichten reagieren</div>
+                </div>
+                <div class="toggle-wrap">
+                    <label class="toggle">
+                        <input type="checkbox" id="telegram_enabled" name="telegram_enabled">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+            </div>
+        </div>
+
+        <!-- Zeitangaben -->
+        <div class="section">
+            <div class="section-title">Zeitangaben</div>
+
+            <div class="field">
+                <div class="field-label">
+                    <div class="field-name">Morgen-Briefing Uhrzeit</div>
+                    <div class="field-desc">Stunde (0–23) für das tägliche Morgen-Briefing</div>
+                </div>
+                <div class="input-wrap">
+                    <input type="number" id="morning_hour" name="morning_hour" min="0" max="23">
+                </div>
+            </div>
+
+            <div class="field">
+                <div class="field-label">
+                    <div class="field-name">Abend-Briefing Uhrzeit</div>
+                    <div class="field-desc">Stunde (0–23) für den Tagesabschluss</div>
+                </div>
+                <div class="input-wrap">
+                    <input type="number" id="evening_hour" name="evening_hour" min="0" max="23">
+                </div>
+            </div>
+
+            <div class="field">
+                <div class="field-label">
+                    <div class="field-name">Rezept-Erinnerung</div>
+                    <div class="field-desc">Uhrzeit der täglichen Kochrezept-Erinnerung per Telegram (HH:MM)</div>
+                </div>
+                <div class="input-wrap">
+                    <input type="text" id="meal_plan_reminder_time" name="meal_plan_reminder_time"
+                           placeholder="17:30" maxlength="5">
+                </div>
+            </div>
+        </div>
+
+        <!-- Speiseplan -->
+        <div class="section">
+            <div class="section-title">Speiseplan</div>
+
+            <div class="field">
+                <div class="field-label">
+                    <div class="field-name">Standard-Portionen</div>
+                    <div class="field-desc">Anzahl Personen für den Wochenplan (1–20)</div>
+                </div>
+                <div class="input-wrap">
+                    <input type="number" id="meal_plan_servings_default" name="meal_plan_servings_default"
+                           min="1" max="20">
+                </div>
+            </div>
+        </div>
+
+        <div class="actions">
+            <button type="submit" id="save-btn">Speichern</button>
+            <div id="feedback"></div>
+        </div>
+
+        <div class="restart-note">
+            <strong>Hinweis:</strong>
+            Einfache Einstellungen (Uhrzeiten, Portionen, Diabetes-Modus, Pause-Erinnerung)
+            werden sofort übernommen. Änderungen am Mail-Monitor oder Telegram-Bot
+            erfordern einen <strong>Neustart von JARVIS</strong>, um vollständig zu greifen.
+        </div>
+
+    </form>
+</div>
+
+<script>
+(function () {
+    const form = document.getElementById('admin-form');
+    const feedback = document.getElementById('feedback');
+    const saveBtn = document.getElementById('save-btn');
+
+    function showFeedback(msg, type) {
+        feedback.textContent = msg;
+        feedback.className = type;  // 'success' or 'error'
+        setTimeout(() => { feedback.className = ''; }, 5000);
+    }
+
+    // Load current config from API
+    async function loadConfig() {
+        try {
+            const res = await fetch('/admin/config');
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            const cfg = await res.json();
+
+            // Booleans -> toggles
+            ['pause_reminder_enabled', 'meal_plan_diabetes_mode',
+             'mail_monitor_enabled', 'telegram_enabled'].forEach(function (key) {
+                const el = document.getElementById(key);
+                if (el && cfg[key] !== undefined) el.checked = Boolean(cfg[key]);
+            });
+
+            // Numbers / strings -> inputs
+            ['morning_hour', 'evening_hour', 'meal_plan_servings_default',
+             'meal_plan_reminder_time'].forEach(function (key) {
+                const el = document.getElementById(key);
+                if (el && cfg[key] !== undefined) el.value = cfg[key];
+            });
+        } catch (err) {
+            showFeedback('Konfiguration konnte nicht geladen werden: ' + err.message, 'error');
+        }
+    }
+
+    // Save config via API
+    form.addEventListener('submit', async function (e) {
+        e.preventDefault();
+        saveBtn.disabled = true;
+
+        const payload = {
+            pause_reminder_enabled:   document.getElementById('pause_reminder_enabled').checked,
+            meal_plan_diabetes_mode:  document.getElementById('meal_plan_diabetes_mode').checked,
+            mail_monitor_enabled:     document.getElementById('mail_monitor_enabled').checked,
+            telegram_enabled:         document.getElementById('telegram_enabled').checked,
+            morning_hour:             parseInt(document.getElementById('morning_hour').value, 10),
+            evening_hour:             parseInt(document.getElementById('evening_hour').value, 10),
+            meal_plan_reminder_time:  document.getElementById('meal_plan_reminder_time').value.trim(),
+            meal_plan_servings_default: parseInt(document.getElementById('meal_plan_servings_default').value, 10),
+        };
+
+        try {
+            const res = await fetch('/admin/config', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+            });
+            const data = await res.json();
+            if (!res.ok) {
+                showFeedback('Fehler: ' + (data.detail || res.statusText), 'error');
+            } else {
+                showFeedback('Einstellungen gespeichert.', 'success');
+            }
+        } catch (err) {
+            showFeedback('Netzwerkfehler: ' + err.message, 'error');
+        } finally {
+            saveBtn.disabled = false;
+        }
+    });
+
+    loadConfig();
+})();
+</script>
+</body>
+</html>
