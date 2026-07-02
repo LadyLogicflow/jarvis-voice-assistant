@@ -96,6 +96,9 @@
   "_comment_bring": "Bring!-Integration (issue #123). bring_list_uuid: optionale UUID der Bring!-Liste. Wenn leer, wird die erste Liste des Accounts automatisch verwendet. Login-Daten (BRING_EMAIL, BRING_PASSWORD) gehen in .env.",
   "bring_list_uuid": "",
 
+  "_comment_pause_reminder": "Pause-Erinnerung (Issue #252). pause_reminder_enabled: stündliche Bewegungs-/Wasserpause-Erinnerung Mo-Fr 09-18 Uhr ein- (true) oder ausschalten (false).",
+  "pause_reminder_enabled": true,
+
   "_comment_meal_plan": "Speiseplanung (issue #125). meal_plan_servings_default: Standardanzahl Personen (ausser Mo/Do: immer 3). meal_plan_diabetes_mode: Typ-2-Diabetiker-geeignete Gerichte (kein Zucker, wenig einfache Kohlenhydrate). meal_plan_reminder_time: Uhrzeit der taeglichen Rezept-Erinnerung via Telegram (HH:MM).",
   "meal_plan_servings_default": 4,
   "meal_plan_diabetes_mode": true,
