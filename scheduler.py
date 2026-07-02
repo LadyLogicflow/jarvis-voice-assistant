@@ -1193,6 +1193,10 @@ async def pause_reminder_scheduler() -> None:
     Nur wenn JARVIS in der aktuellen Stunde genutzt wurde — kein Aufwecken
     aus dem Idle. Stille: Wochenende, Mac-Quiet-Hours.
     """
+    if not S.PAUSE_REMINDER_ENABLED:
+        log.info("pause_reminder_scheduler: deaktiviert via config (pause_reminder_enabled=false)")
+        return
+
     global _pause_last_reminder_hhmm
     _WORK_START = 9
     _WORK_END = 18

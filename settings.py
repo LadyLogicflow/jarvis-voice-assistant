@@ -383,6 +383,9 @@ WEEKLY_OFFERS: str = ""  # populated Monday morning by refresh_offers()
 BRING_LIST_UUID: str = config.get("bring_list_uuid", "")
 BRING_LIST_UUID_CACHE: str = ""  # wird beim ersten bring_login() befuellt
 
+# Pause-Erinnerung (Issue #252).
+PAUSE_REMINDER_ENABLED: bool = bool(config.get("pause_reminder_enabled", True))
+
 # Speiseplanung (Issue #125).
 MEAL_PLAN_SERVINGS_DEFAULT = int(config.get("meal_plan_servings_default", 4))
 MEAL_PLAN_DIABETES_MODE = bool(config.get("meal_plan_diabetes_mode", True))
