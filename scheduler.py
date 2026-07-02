@@ -1121,6 +1121,8 @@ async def calendar_alert_scheduler() -> None:
     Stille: ausserhalb 07-21 Uhr und an Mac-Quiet-Hours.
     """
     global _alerted_event_ids
+    import sent_log as _sl
+    await _sl.init_db()
     log.info("calendar_alert_scheduler: gestartet (alle 5 Minuten)")
     while True:
         try:
@@ -1134,7 +1136,11 @@ async def calendar_alert_scheduler() -> None:
 
                 for event in events:
                     event_id = event.get("id", "")
-                    if not event_id or event_id in _alerted_event_ids:
+                    if not event_id:
+                        continue
+                    # Issue #255: sent_log verhindert Doppel-Alert nach Neustart
+                    _sl_key = f"{event_id}_{datetime.date.today().isoformat()}"
+                    if event_id in _alerted_event_ids or await _sl.already_sent("calendar_alert", _sl_key):
                         continue
                     summary = event.get("summary", "Termin ohne Bezeichnung")
                     start_info = event.get("start", {})
@@ -1147,6 +1153,7 @@ async def calendar_alert_scheduler() -> None:
                         except Exception:
                             pass
                     _alerted_event_ids.add(event_id)
+                    await _sl.mark_sent("calendar_alert", _sl_key)
                     addr = pick_address()
                     msg = (
                         f"{addr}, in etwa 30 Minuten{time_label}: {summary}. "
@@ -2302,6 +2309,15 @@ async def midnight_reset_scheduler() -> None:
                     "midnight_reset_scheduler: _daily_mail_stats zurueckgesetzt fuer %s",
                     today,
                 )
+
+                # Issue #255: sent_log-Eintraege bereinigen
+                try:
+                    import sent_log as _sl_prune
+                    _pruned = await _sl_prune.prune_old_entries()
+                    if _pruned:
+                        log.info("midnight_reset_scheduler: sent_log: %d alte Eintraege geloescht", _pruned)
+                except Exception as _sle:
+                    log.warning("midnight_reset_scheduler: sent_log prune fehlgeschlagen: %s", _sle)
 
                 # Issue #245: Session-State-Dateien aelter als 30 Tage loeschen.
                 # Aktive Sessions (WebSocket verbunden) werden nie geloescht.

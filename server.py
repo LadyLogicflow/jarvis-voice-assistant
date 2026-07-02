@@ -242,6 +242,13 @@ async def _lifespan(_app):  # type: ignore[no-untyped-def]  # AsyncGenerator
                 log.error("STARTUP: PyMuPDF-Install fehlgeschlagen: %s", _r.stderr[-300:])
         except Exception as _e:
             log.error("STARTUP: PyMuPDF-Auto-Install Fehler: %s", _e)
+    # Issue #255: sent_log-Datenbank initialisieren (verhindert Duplikat-Meldungen nach Neustart)
+    try:
+        import sent_log as _sl
+        await _sl.init_db()
+        log.info("STARTUP: sent_log DB initialisiert")
+    except Exception as _sle:
+        log.warning("STARTUP: sent_log init fehlgeschlagen: %s", _sle)
     await refresh_data()
     session_state.load_all()
     # Issue #243: Whisper-Modell beim Start vorladen (non-blocking, Fehler nur loggen)
