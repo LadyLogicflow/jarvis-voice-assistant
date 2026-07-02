@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import json
 import os
 import subprocess
 import sys
@@ -33,7 +34,7 @@ from fastapi import (
     WebSocket,
     WebSocketDisconnect,
 )
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 import settings as S
@@ -140,8 +141,7 @@ async def broadcast_to_all_sessions(text: str) -> None:
     (display only, no TTS). Used by the planner for silent notifications."""
     for ws in list(active_clients):
         try:
-            import json as _json
-            await ws.send_text(_json.dumps({"type": "status", "text": text}))
+            await ws.send_text(json.dumps({"type": "status", "text": text}))
         except Exception:
             pass
 
@@ -264,7 +264,7 @@ async def _lifespan(_app):  # type: ignore[no-untyped-def]  # AsyncGenerator
         }
         try:
             with open(_triage_rules_path, "w", encoding="utf-8") as _f:
-                _json.dump(_default_rules, _f, indent=2, ensure_ascii=False)
+                json.dump(_default_rules, _f, indent=2, ensure_ascii=False)
             log.info("STARTUP: mail_triage_rules.json mit Defaults angelegt: %s", _default_rules)
         except Exception as _e:
             log.warning("STARTUP: mail_triage_rules.json konnte nicht angelegt werden: %s", _e)
@@ -886,6 +886,166 @@ async def websocket_endpoint(ws: WebSocket) -> None:
         ka_task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await ka_task
+
+
+# ---------------------------------------------------------------------------
+# Admin-Panel (Issue #253) — /admin, /admin/config GET/POST
+# ---------------------------------------------------------------------------
+
+# Keys that the admin panel may read and write.  Only scalar values that
+# map 1:1 to a config.json key are listed here; complex structures like
+# mail_monitor_accounts are deliberately excluded.
+_ADMIN_EDITABLE_KEYS: set[str] = {
+    "pause_reminder_enabled",
+    "meal_plan_diabetes_mode",
+    "mail_monitor_enabled",
+    "telegram_enabled",
+    "morning_hour",
+    "evening_hour",
+    "meal_plan_reminder_time",
+    "meal_plan_servings_default",
+}
+
+
+def _require_admin_token(
+    request: Request,
+    x_jarvis_token: str | None = Header(default=None),
+) -> None:
+    """Reject the request when JARVIS_AUTH_TOKEN is set and not supplied."""
+    if not S.JARVIS_AUTH_TOKEN:
+        return
+    # Accept via header (X-Jarvis-Token) or query param (?token=...)
+    token_param = request.query_params.get("token", "")
+    if x_jarvis_token == S.JARVIS_AUTH_TOKEN or token_param == S.JARVIS_AUTH_TOKEN:
+        return
+    raise HTTPException(status_code=401, detail="invalid or missing token")
+
+
+@app.get("/admin", dependencies=[Depends(_require_admin_token)])
+async def admin_page(request: Request):
+    """Serve the admin configuration panel."""
+    filepath = os.path.join(os.path.dirname(__file__), "frontend", "admin.html")
+    with open(filepath, encoding="utf-8") as _f:
+        html = _f.read()
+    return HTMLResponse(content=html)
+
+
+@app.get("/admin/config", dependencies=[Depends(_require_admin_token)])
+async def admin_config_get() -> JSONResponse:
+    """Return the subset of config.json that is editable via the admin panel."""
+    try:
+        with open(S.CONFIG_PATH, encoding="utf-8") as _f:
+            raw: dict = json.load(_f)
+    except Exception as _e:
+        raise HTTPException(status_code=500, detail=f"config.json unlesbar: {_e}")
+    editable = {k: raw.get(k) for k in _ADMIN_EDITABLE_KEYS if k in raw}
+    # Also expose defaults from settings constants for keys missing in config.json
+    defaults: dict = {
+        "pause_reminder_enabled": S.PAUSE_REMINDER_ENABLED,
+        "meal_plan_diabetes_mode": S.MEAL_PLAN_DIABETES_MODE,
+        "mail_monitor_enabled": S.MAIL_MONITOR_ENABLED,
+        "telegram_enabled": S.TELEGRAM_ENABLED,
+        "morning_hour": S.MORNING_HOUR,
+        "evening_hour": S.EVENING_HOUR,
+        "meal_plan_reminder_time": S.MEAL_PLAN_REMINDER_TIME,
+        "meal_plan_servings_default": S.MEAL_PLAN_SERVINGS_DEFAULT,
+    }
+    for k, v in defaults.items():
+        if k not in editable:
+            editable[k] = v
+    return JSONResponse(content=editable)
+
+
+@app.post("/admin/config", dependencies=[Depends(_require_admin_token)])
+async def admin_config_post(request: Request) -> JSONResponse:
+    """Accept a JSON body with config values, validate and write to config.json.
+
+    Only keys listed in _ADMIN_EDITABLE_KEYS are accepted.  The full
+    config.json is preserved; only the submitted keys are updated.
+    """
+    try:
+        body: dict = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Ungültiges JSON")
+
+    # Filter to known-safe keys only
+    updates: dict = {}
+    for key in _ADMIN_EDITABLE_KEYS:
+        if key not in body:
+            continue
+        value = body[key]
+        # Type coercion + validation
+        if key in ("pause_reminder_enabled", "meal_plan_diabetes_mode",
+                   "mail_monitor_enabled", "telegram_enabled"):
+            if not isinstance(value, bool):
+                raise HTTPException(status_code=422,
+                                    detail=f"{key} muss ein Boolean sein")
+            updates[key] = value
+        elif key in ("morning_hour", "evening_hour", "meal_plan_servings_default"):
+            try:
+                int_val = int(value)
+            except (TypeError, ValueError):
+                raise HTTPException(status_code=422,
+                                    detail=f"{key} muss eine ganze Zahl sein")
+            if key in ("morning_hour", "evening_hour") and not (0 <= int_val <= 23):
+                raise HTTPException(status_code=422,
+                                    detail=f"{key} muss zwischen 0 und 23 liegen")
+            if key == "meal_plan_servings_default" and not (1 <= int_val <= 20):
+                raise HTTPException(status_code=422,
+                                    detail="meal_plan_servings_default muss zwischen 1 und 20 liegen")
+            updates[key] = int_val
+        elif key == "meal_plan_reminder_time":
+            # Expect HH:MM
+            import re as _re
+            if not isinstance(value, str) or not _re.match(r"^\d{1,2}:\d{2}$", value):
+                raise HTTPException(status_code=422,
+                                    detail="meal_plan_reminder_time muss im Format HH:MM angegeben werden")
+            h, m = (int(x) for x in value.split(":"))
+            if not (0 <= h <= 23 and 0 <= m <= 59):
+                raise HTTPException(status_code=422,
+                                    detail="meal_plan_reminder_time: ungültige Uhrzeit")
+            updates[key] = value
+
+    if not updates:
+        raise HTTPException(status_code=400, detail="Keine gültigen Felder übermittelt")
+
+    # Read, merge, write
+    try:
+        with open(S.CONFIG_PATH, encoding="utf-8") as _f:
+            current: dict = json.load(_f)
+    except Exception as _e:
+        raise HTTPException(status_code=500, detail=f"config.json unlesbar: {_e}")
+
+    current.update(updates)
+
+    try:
+        with open(S.CONFIG_PATH, "w", encoding="utf-8") as _f:
+            json.dump(current, _f, indent=2, ensure_ascii=False)
+            _f.write("\n")
+    except Exception as _e:
+        raise HTTPException(status_code=500, detail=f"config.json nicht schreibbar: {_e}")
+
+    # Update in-memory settings so the running process reflects changes immediately
+    # (no restart required for read-only state; scheduler/bot changes need restart).
+    if "pause_reminder_enabled" in updates:
+        S.PAUSE_REMINDER_ENABLED = updates["pause_reminder_enabled"]
+    if "meal_plan_diabetes_mode" in updates:
+        S.MEAL_PLAN_DIABETES_MODE = updates["meal_plan_diabetes_mode"]
+    if "mail_monitor_enabled" in updates:
+        S.MAIL_MONITOR_ENABLED = updates["mail_monitor_enabled"]
+    if "telegram_enabled" in updates:
+        S.TELEGRAM_ENABLED = updates["telegram_enabled"]
+    if "morning_hour" in updates:
+        S.MORNING_HOUR = updates["morning_hour"]
+    if "evening_hour" in updates:
+        S.EVENING_HOUR = updates["evening_hour"]
+    if "meal_plan_reminder_time" in updates:
+        S.MEAL_PLAN_REMINDER_TIME = updates["meal_plan_reminder_time"]
+    if "meal_plan_servings_default" in updates:
+        S.MEAL_PLAN_SERVINGS_DEFAULT = updates["meal_plan_servings_default"]
+
+    log.info("Admin: config.json aktualisiert — %s", updates)
+    return JSONResponse(content={"ok": True, "updated": updates})
 
 
 app.mount(
