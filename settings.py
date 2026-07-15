@@ -389,6 +389,13 @@ BRING_LIST_UUID_CACHE: str = ""  # wird beim ersten bring_login() befuellt
 # Pause-Erinnerung (Issue #252).
 PAUSE_REMINDER_ENABLED: bool = bool(config.get("pause_reminder_enabled", True))
 
+# Briefing-Toggles (Issue #258): einzelne Scheduler ein-/ausschalten.
+MORNING_BRIEF_ENABLED: bool = bool(config.get("morning_brief_enabled", True))
+PROACTIVE_BRIEFS_ENABLED: bool = bool(config.get("proactive_briefs_enabled", True))
+EVENING_BRIEF_ENABLED: bool = bool(config.get("evening_brief_enabled", True))
+EVENING_SUMMARY_ENABLED: bool = bool(config.get("evening_summary_enabled", True))
+COMBINED_EVENING_ENABLED: bool = bool(config.get("combined_evening_enabled", True))
+
 # Speiseplanung (Issue #125).
 MEAL_PLAN_SERVINGS_DEFAULT = int(config.get("meal_plan_servings_default", 4))
 MEAL_PLAN_DIABETES_MODE = bool(config.get("meal_plan_diabetes_mode", True))
