@@ -900,6 +900,11 @@ _ADMIN_EDITABLE_KEYS: set[str] = {
     "meal_plan_diabetes_mode",
     "mail_monitor_enabled",
     "telegram_enabled",
+    "morning_brief_enabled",
+    "proactive_briefs_enabled",
+    "evening_brief_enabled",
+    "evening_summary_enabled",
+    "combined_evening_enabled",
     "morning_hour",
     "evening_hour",
     "meal_plan_reminder_time",
@@ -945,6 +950,11 @@ async def admin_config_get() -> JSONResponse:
         "meal_plan_diabetes_mode": S.MEAL_PLAN_DIABETES_MODE,
         "mail_monitor_enabled": S.MAIL_MONITOR_ENABLED,
         "telegram_enabled": S.TELEGRAM_ENABLED,
+        "morning_brief_enabled": S.MORNING_BRIEF_ENABLED,
+        "proactive_briefs_enabled": S.PROACTIVE_BRIEFS_ENABLED,
+        "evening_brief_enabled": S.EVENING_BRIEF_ENABLED,
+        "evening_summary_enabled": S.EVENING_SUMMARY_ENABLED,
+        "combined_evening_enabled": S.COMBINED_EVENING_ENABLED,
         "morning_hour": S.MORNING_HOUR,
         "evening_hour": S.EVENING_HOUR,
         "meal_plan_reminder_time": S.MEAL_PLAN_REMINDER_TIME,
@@ -976,7 +986,10 @@ async def admin_config_post(request: Request) -> JSONResponse:
         value = body[key]
         # Type coercion + validation
         if key in ("pause_reminder_enabled", "meal_plan_diabetes_mode",
-                   "mail_monitor_enabled", "telegram_enabled"):
+                   "mail_monitor_enabled", "telegram_enabled",
+                   "morning_brief_enabled", "proactive_briefs_enabled",
+                   "evening_brief_enabled", "evening_summary_enabled",
+                   "combined_evening_enabled"):
             if not isinstance(value, bool):
                 raise HTTPException(status_code=422,
                                     detail=f"{key} muss ein Boolean sein")
@@ -1035,6 +1048,16 @@ async def admin_config_post(request: Request) -> JSONResponse:
         S.MAIL_MONITOR_ENABLED = updates["mail_monitor_enabled"]
     if "telegram_enabled" in updates:
         S.TELEGRAM_ENABLED = updates["telegram_enabled"]
+    if "morning_brief_enabled" in updates:
+        S.MORNING_BRIEF_ENABLED = updates["morning_brief_enabled"]
+    if "proactive_briefs_enabled" in updates:
+        S.PROACTIVE_BRIEFS_ENABLED = updates["proactive_briefs_enabled"]
+    if "evening_brief_enabled" in updates:
+        S.EVENING_BRIEF_ENABLED = updates["evening_brief_enabled"]
+    if "evening_summary_enabled" in updates:
+        S.EVENING_SUMMARY_ENABLED = updates["evening_summary_enabled"]
+    if "combined_evening_enabled" in updates:
+        S.COMBINED_EVENING_ENABLED = updates["combined_evening_enabled"]
     if "morning_hour" in updates:
         S.MORNING_HOUR = updates["morning_hour"]
     if "evening_hour" in updates:

@@ -665,6 +665,9 @@ async def morning_brief_scheduler() -> None:
     Uses '>=' on the hour (not '=='): if the server was asleep at exactly
     7:00 and the loop wakes up at 7:05, the brief still fires today.
     """
+    if not S.MORNING_BRIEF_ENABLED:
+        log.info("morning_brief_scheduler: deaktiviert via config (morning_brief_enabled=false)")
+        return
     # Pre-fill guard so a restart after the brief hour does not re-fire.
     _now_init = datetime.datetime.now()
     _is_weekend_init = _now_init.weekday() in (5, 6)
@@ -1058,6 +1061,9 @@ async def evening_brief_scheduler() -> None:
     Uses the same '>=' pattern as morning_brief_scheduler so the brief
     still fires if the loop woke up a few minutes after EVENING_HOUR:00.
     """
+    if not S.EVENING_BRIEF_ENABLED:
+        log.info("evening_brief_scheduler: deaktiviert via config (evening_brief_enabled=false)")
+        return
     _now_init = datetime.datetime.now()
     triggered_today = (
         datetime.date.today().isoformat() if _now_init.hour >= S.EVENING_HOUR else ""
@@ -1434,6 +1440,9 @@ async def evening_summary_scheduler() -> None:
     Server um genau 20:30 schlaeft und um 20:35 aufwacht, wird die
     Zusammenfassung trotzdem gesendet.
     """
+    if not S.EVENING_SUMMARY_ENABLED:
+        log.info("evening_summary_scheduler: deaktiviert via config (evening_summary_enabled=false)")
+        return
     _TRIGGER_HHMM = "20:30"
     _now_init = datetime.datetime.now()
     triggered_today = (
@@ -1532,6 +1541,9 @@ async def proactive_briefs_scheduler() -> None:
     appended when there is an overdue open promise and no followup was sent
     today yet (Issue #124).
     """
+    if not S.PROACTIVE_BRIEFS_ENABLED:
+        log.info("proactive_briefs_scheduler: deaktiviert via config (proactive_briefs_enabled=false)")
+        return
     # Pre-fill all slots already past today so a restart doesn't re-fire them.
     _now_init = datetime.datetime.now()
     _today_init = datetime.date.today().isoformat()
@@ -2175,6 +2187,9 @@ async def combined_evening_scheduler() -> None:
     Guard gegen Doppel-Senden: _last_summary_date merkt sich das Datum.
     Kanal: ausschliesslich Telegram (kein Voice, kein WebUI).
     """
+    if not S.COMBINED_EVENING_ENABLED:
+        log.info("combined_evening_scheduler: deaktiviert via config (combined_evening_enabled=false)")
+        return
     global _last_summary_date
     _TRIGGER_HOUR = S.MAIL_SUMMARY_HOUR
 

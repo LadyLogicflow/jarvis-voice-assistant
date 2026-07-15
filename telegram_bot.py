@@ -408,6 +408,9 @@ async def send_user_text(text: str, parse_mode: str = "") -> bool:
         parse_mode: Optional Telegram parse mode ("HTML", "MarkdownV2").
             Pass an empty string for plain text (default).
     """
+    if not S.TELEGRAM_ENABLED:
+        log.info("send_user_text: Telegram deaktiviert (TELEGRAM_ENABLED=false)")
+        return False
     if S.is_quiet_hours():
         log.info("send_user_text: quiet hours, skipping Telegram")
         return False
@@ -438,6 +441,9 @@ async def send_user_voice(
     """Send a Telegram text notification and, when mail_ref is given, record
     the returned message_id so reply-context detection in _handle_message can
     restore the mail as active_mail when Catrin replies to this note."""
+    if not S.TELEGRAM_ENABLED:
+        log.info("send_user_voice: Telegram deaktiviert (TELEGRAM_ENABLED=false)")
+        return False
     if not S.TELEGRAM_BOT_TOKEN or not S.TELEGRAM_CHAT_ID:
         return False
     if _app is None:
@@ -464,6 +470,9 @@ async def send_user_document(filepath: str, caption: str = "") -> bool:
 
     Returns True on success, False if not configured or send failed.
     """
+    if not S.TELEGRAM_ENABLED:
+        log.info("send_user_document: Telegram deaktiviert (TELEGRAM_ENABLED=false)")
+        return False
     if not S.TELEGRAM_BOT_TOKEN or not S.TELEGRAM_CHAT_ID:
         return False
     if _app is None:

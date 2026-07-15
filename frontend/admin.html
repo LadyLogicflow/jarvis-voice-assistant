@@ -294,6 +294,76 @@
             </div>
         </div>
 
+        <!-- Briefings -->
+        <div class="section">
+            <div class="section-title">Briefings</div>
+
+            <div class="field">
+                <div class="field-label">
+                    <div class="field-name">Morgen-Briefing</div>
+                    <div class="field-desc">Tägliches Morgen-Briefing mit Wetter, Terminen und Aufgaben</div>
+                </div>
+                <div class="toggle-wrap">
+                    <label class="toggle">
+                        <input type="checkbox" id="morning_brief_enabled" name="morning_brief_enabled">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+            </div>
+
+            <div class="field">
+                <div class="field-label">
+                    <div class="field-name">Proaktive Nachrichten</div>
+                    <div class="field-desc">Automatische Updates um 12:30, 16:00 und 18:00 Uhr</div>
+                </div>
+                <div class="toggle-wrap">
+                    <label class="toggle">
+                        <input type="checkbox" id="proactive_briefs_enabled" name="proactive_briefs_enabled">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+            </div>
+
+            <div class="field">
+                <div class="field-label">
+                    <div class="field-name">Abend-Briefing</div>
+                    <div class="field-desc">Tägliches Abschluss-Ritual mit Rückblick auf den Tag</div>
+                </div>
+                <div class="toggle-wrap">
+                    <label class="toggle">
+                        <input type="checkbox" id="evening_brief_enabled" name="evening_brief_enabled">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+            </div>
+
+            <div class="field">
+                <div class="field-label">
+                    <div class="field-name">Abend-Zusammenfassung (20:30)</div>
+                    <div class="field-desc">Tägliche Zusammenfassung aus Mails, Kalender und Aufgaben</div>
+                </div>
+                <div class="toggle-wrap">
+                    <label class="toggle">
+                        <input type="checkbox" id="evening_summary_enabled" name="evening_summary_enabled">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+            </div>
+
+            <div class="field">
+                <div class="field-label">
+                    <div class="field-name">Kombinierter Abend-Scheduler</div>
+                    <div class="field-desc">Kombinierte Telegram-Nachricht mit Feierabend-Gruss und Mail-Statistik</div>
+                </div>
+                <div class="toggle-wrap">
+                    <label class="toggle">
+                        <input type="checkbox" id="combined_evening_enabled" name="combined_evening_enabled">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+            </div>
+        </div>
+
         <!-- Zeitangaben -->
         <div class="section">
             <div class="section-title">Zeitangaben</div>
@@ -382,7 +452,10 @@
 
             // Booleans -> toggles
             ['pause_reminder_enabled', 'meal_plan_diabetes_mode',
-             'mail_monitor_enabled', 'telegram_enabled'].forEach(function (key) {
+             'mail_monitor_enabled', 'telegram_enabled',
+             'morning_brief_enabled', 'proactive_briefs_enabled',
+             'evening_brief_enabled', 'evening_summary_enabled',
+             'combined_evening_enabled'].forEach(function (key) {
                 const el = document.getElementById(key);
                 if (el && cfg[key] !== undefined) el.checked = Boolean(cfg[key]);
             });
@@ -404,13 +477,18 @@
         saveBtn.disabled = true;
 
         const payload = {
-            pause_reminder_enabled:   document.getElementById('pause_reminder_enabled').checked,
-            meal_plan_diabetes_mode:  document.getElementById('meal_plan_diabetes_mode').checked,
-            mail_monitor_enabled:     document.getElementById('mail_monitor_enabled').checked,
-            telegram_enabled:         document.getElementById('telegram_enabled').checked,
-            morning_hour:             parseInt(document.getElementById('morning_hour').value, 10),
-            evening_hour:             parseInt(document.getElementById('evening_hour').value, 10),
-            meal_plan_reminder_time:  document.getElementById('meal_plan_reminder_time').value.trim(),
+            pause_reminder_enabled:    document.getElementById('pause_reminder_enabled').checked,
+            meal_plan_diabetes_mode:   document.getElementById('meal_plan_diabetes_mode').checked,
+            mail_monitor_enabled:      document.getElementById('mail_monitor_enabled').checked,
+            telegram_enabled:          document.getElementById('telegram_enabled').checked,
+            morning_brief_enabled:     document.getElementById('morning_brief_enabled').checked,
+            proactive_briefs_enabled:  document.getElementById('proactive_briefs_enabled').checked,
+            evening_brief_enabled:     document.getElementById('evening_brief_enabled').checked,
+            evening_summary_enabled:   document.getElementById('evening_summary_enabled').checked,
+            combined_evening_enabled:  document.getElementById('combined_evening_enabled').checked,
+            morning_hour:              parseInt(document.getElementById('morning_hour').value, 10),
+            evening_hour:              parseInt(document.getElementById('evening_hour').value, 10),
+            meal_plan_reminder_time:   document.getElementById('meal_plan_reminder_time').value.trim(),
             meal_plan_servings_default: parseInt(document.getElementById('meal_plan_servings_default').value, 10),
         };
 
